@@ -6,4 +6,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-plugin.configureServer();
+if (typeof window === 'undefined') {
+	plugin.configureServer();
+}

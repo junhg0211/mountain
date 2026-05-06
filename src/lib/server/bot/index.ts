@@ -4,19 +4,13 @@ import ping from './commands/utility/ping';
 
 dotenv.config();
 
-export const client = new Client({
-	intents: [
-		GatewayIntentBits.Guilds,
-		GatewayIntentBits.GuildMessages,
-		GatewayIntentBits.MessageContent
-	]
-});
+let client: Client | null = null;
 
 const commands = new Map<string, any>([[ping.data.name, ping]]);
 
-const rest = new REST().setToken(process.env.BOT_TOKEN!);
+async function reloadCommands() {
+	const rest = new REST().setToken(process.env.BOT_TOKEN!);
 
-(async () => {
 	try {
 		console.log(`Started refreshing ${commands.size} application (/) commands.`);
 
@@ -28,13 +22,21 @@ const rest = new REST().setToken(process.env.BOT_TOKEN!);
 	} catch (error) {
 		console.error(error);
 	}
-})();
+}
 
 export const plugin = {
 	name: 'discord-bot',
-	configureServer() {
+	async configureServer() {
+		client = new Client({
+			intents: [
+				GatewayIntentBits.Guilds,
+				GatewayIntentBits.GuildMessages,
+				GatewayIntentBits.MessageContent
+			]
+		});
+
 		client.once(Events.ClientReady, () => {
-			console.log(`Logged in as ${client.user?.tag}!`);
+			console.log(`Logged in as ${client?.user?.tag}!`);
 		});
 
 		client.on(Events.InteractionCreate, async (interaction) => {
@@ -50,6 +52,11 @@ export const plugin = {
 			await command.execute(interaction);
 		});
 
+		await reloadCommands();
 		client.login(process.env.BOT_TOKEN);
 	}
 };
+
+export function getClient() {
+	return client;
+}
