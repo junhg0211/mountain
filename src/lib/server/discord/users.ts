@@ -1,3 +1,5 @@
+import { db } from '$lib/server/db';
+
 const API_BASE_URL = 'https://discord.com/api/v10';
 
 export async function getMe(token: string): Promise<any> {
@@ -18,4 +20,10 @@ export async function getMe(token: string): Promise<any> {
 	}
 
 	return response.json();
+}
+
+export async function ensureUser(id: string, username: string, avatar_url: string): Promise<void> {
+	await db`
+    INSERT INTO users (id, username, avatar_url) VALUES (${id}, ${username}, ${avatar_url})
+    ON CONFLICT (id) DO UPDATE SET username = EXCLUDED.username, avatar_url = EXCLUDED.avatar_url`;
 }

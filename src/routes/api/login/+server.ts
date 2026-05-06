@@ -1,4 +1,4 @@
-import { getMe } from '$lib/server/discord/users';
+import { ensureUser, getMe } from '$lib/server/discord/users';
 import { json, redirect, type RequestHandler } from '@sveltejs/kit';
 
 export const GET: RequestHandler = async ({ cookies, fetch, request }) => {
@@ -34,9 +34,8 @@ export const GET: RequestHandler = async ({ cookies, fetch, request }) => {
 		sameSite: 'lax'
 	});
 
-	console.log(data);
 	const me = await getMe(data.access_token);
-	console.log(JSON.stringify(me));
+	await ensureUser(me.id, me.global_name, me.avatar);
 
 	return redirect(308, '/');
 };
