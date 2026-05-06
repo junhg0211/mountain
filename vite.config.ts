@@ -1,4 +1,4 @@
-import { plugin as discordBot } from './src/lib/bot';
+import { plugin as discordBot } from './src/lib/server/bot';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 

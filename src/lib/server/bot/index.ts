@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import { Client, Events, GatewayIntentBits, REST, Routes } from 'discord.js';
-import path from 'node:path';
-import { readdirSync } from 'node:fs';
+import ping from './commands/utility/ping';
 
 dotenv.config();
 
@@ -13,25 +12,7 @@ export const client = new Client({
 	]
 });
 
-const commands = new Map<string, any>();
-
-const foldersPath = path.join(__dirname, 'commands');
-const commandFolders = readdirSync(foldersPath);
-for (const folder of commandFolders) {
-	const commandsPath = path.join(foldersPath, folder);
-	const commandFiles = readdirSync(commandsPath).filter((file) => file.endsWith('.ts'));
-	for (const file of commandFiles) {
-		const filePath = path.join(commandsPath, file);
-		const command = require(filePath);
-		if ('data' in command && 'execute' in command) {
-			commands.set(command.data.name, command);
-		} else {
-			console.log(
-				`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`
-			);
-		}
-	}
-}
+const commands = new Map<string, any>([[ping.data.name, ping]]);
 
 const rest = new REST().setToken(process.env.BOT_TOKEN!);
 

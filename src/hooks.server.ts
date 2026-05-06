@@ -1,4 +1,4 @@
-import { plugin } from '$lib/bot';
+import { plugin } from '$lib/server/bot';
 import type { Handle } from '@sveltejs/kit';
 
 export const handle: Handle = async ({ event, resolve }) => {
