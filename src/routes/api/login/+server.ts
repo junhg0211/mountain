@@ -1,4 +1,5 @@
-import { ensureUser, getMe } from '$lib/server/discord/users';
+import { ensureUser } from '$lib/server/db/users';
+import { getMe } from '$lib/server/discord/users';
 import { json, redirect, type RequestHandler } from '@sveltejs/kit';
 
 export const GET: RequestHandler = async ({ cookies, fetch, request }) => {
