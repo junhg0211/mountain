@@ -1,0 +1,12 @@
+DROP DATABASE IF EXISTS mountain;
+
+CREATE DATABASE mountain;
+
+USE mountain;
+
+CREATE TABLE accounts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    balance DECIMAL(16, 2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
