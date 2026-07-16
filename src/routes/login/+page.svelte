@@ -8,7 +8,7 @@
 			client_id,
 			response_type: 'code',
 			redirect_uri,
-			scope: 'identify',
+			scope: 'identify guilds',
 			state
 		});
 		window.location.replace(`https://discord.com/oauth2/authorize?${params}`);

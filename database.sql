@@ -29,6 +29,18 @@ CREATE TABLE IF NOT EXISTS sessions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS user_guilds (
+    user_id VARCHAR(255) NOT NULL,
+    guild_id VARCHAR(255) NOT NULL,
+    guild_name VARCHAR(255) NOT NULL,
+    icon_hash VARCHAR(255),
+    permissions VARCHAR(32) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, guild_id),
+    INDEX user_guilds_guild_idx (guild_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id VARCHAR(255) PRIMARY KEY,
     currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin',

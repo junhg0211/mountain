@@ -7,6 +7,13 @@ export interface DiscordUser {
 	avatar: string | null;
 }
 
+export interface DiscordGuild {
+	id: string;
+	name: string;
+	icon: string | null;
+	permissions: string;
+}
+
 export async function getMe(token: string): Promise<DiscordUser> {
 	if (!token) throw new Error('Discord access token is missing.');
 
@@ -21,4 +28,12 @@ export async function getMe(token: string): Promise<DiscordUser> {
 	}
 
 	return (await response.json()) as DiscordUser;
+}
+
+export async function getGuilds(token: string): Promise<DiscordGuild[]> {
+	const response = await fetch(`${API_BASE_URL}/users/@me/guilds`, {
+		headers: { Authorization: `Bearer ${token}` }
+	});
+	if (!response.ok) throw new Error(`Discord guild request failed (${response.status}).`);
+	return (await response.json()) as DiscordGuild[];
 }
