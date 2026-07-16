@@ -14,7 +14,6 @@ import balance from './commands/economy/balance';
 import pay from './commands/economy/pay';
 import ranking from './commands/economy/ranking';
 import dashboard from './commands/utility/dashboard';
-import ping from './commands/utility/ping';
 import { getLanguage } from './i18n';
 
 dotenv.config();
@@ -36,7 +35,6 @@ interface Command {
 }
 
 const commands = new Map<string, Command>([
-	[ping.data.name, ping],
 	[settings.data.name, settings],
 	[balance.data.name, balance],
 	[pay.data.name, pay],
