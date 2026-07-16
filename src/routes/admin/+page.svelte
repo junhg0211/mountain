@@ -96,12 +96,12 @@
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>거래 알림 채널</h3>
 				<p>송금, Mint, Burn이 완료되면 선택한 Discord 채널에 기록합니다.</p>
-				<label
+				<label class="channel-select"
 					>알림 채널<select name="channelId"
 						><option value="">알림 사용 안 함</option>{#each data.channels as channel}<option
 								value={channel.id}
 								selected={channel.id === selectedGuild.notificationChannelId}
-								># {channel.name}</option
+								>{channel.categoryName ? `${channel.categoryName} / ` : ''}# {channel.name}</option
 							>{/each}</select
 					></label
 				>
@@ -322,6 +322,11 @@
 		color: #747d8d;
 		font-size: 13px;
 		margin: 0;
+	}
+	.channel-select select {
+		display: block;
+		min-height: 48px;
+		margin-top: 8px;
 	}
 	.visibility h3 {
 		margin: 0 0 6px;

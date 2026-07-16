@@ -24,6 +24,8 @@ export interface DiscordChannel {
 	name: string;
 	type: number;
 	position: number;
+	parent_id: string | null;
+	categoryName?: string;
 }
 
 export async function getMe(token: string): Promise<DiscordUser> {
@@ -101,7 +103,14 @@ export async function getGuildTextChannels(guildId: string): Promise<DiscordChan
 	});
 	if (!response.ok) throw new Error(`Discord channel request failed (${response.status}).`);
 	const channels = (await response.json()) as DiscordChannel[];
+	const categoryNames = new Map(
+		channels.filter((channel) => channel.type === 4).map((channel) => [channel.id, channel.name])
+	);
 	return channels
 		.filter((channel) => channel.type === 0 || channel.type === 5)
+		.map((channel) => ({
+			...channel,
+			categoryName: channel.parent_id ? categoryNames.get(channel.parent_id) : undefined
+		}))
 		.sort((a, b) => a.position - b.position);
 }
