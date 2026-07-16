@@ -7,6 +7,8 @@
 	let query = $state('');
 	let results = $state<Member[]>([]);
 	let target = $state<Member | null>(null);
+	let searching = $state(false);
+	let searchSequence = 0;
 	let timer: ReturnType<typeof setTimeout>;
 	function schedule() {
 		target = null;
@@ -15,14 +17,22 @@
 	}
 	async function search() {
 		target = null;
-		if (!selectedGuild || !query.trim()) {
+		const memberQuery = query.trim();
+		const sequence = ++searchSequence;
+		if (!selectedGuild || !memberQuery) {
 			results = [];
+			searching = false;
 			return;
 		}
+		searching = true;
 		const response = await fetch(
-			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(query.trim())}`
+			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(memberQuery)}`
 		);
-		results = response.ok ? (await response.json()).members : [];
+		const body = response.ok ? await response.json() : { members: [] };
+		if (sequence === searchSequence) {
+			results = body.members;
+			searching = false;
+		}
 	}
 	function choose(member: Member) {
 		target = member;
@@ -120,11 +130,13 @@
 						oninput={schedule}
 						autocomplete="off"
 						placeholder="닉네임 또는 사용자 이름 검색"
-					/>{#if results.length}<div class="results">
+					/>{#if searching}<span class="search-state">검색 중…</span>{/if}{#if results.length}<div
+							class="results"
+						>
 							{#each results as member}<button type="button" onclick={() => choose(member)}
-									>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{/if}<span
-										>{member.username}</span
-									></button
+									>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i
+											>{member.username.slice(0, 1)}</i
+										>{/if}<span>{member.username}</span></button
 								>{/each}
 						</div>{/if}</label
 				>
@@ -233,13 +245,15 @@
 	}
 	.results {
 		position: absolute;
-		z-index: 4;
+		z-index: 5;
+		top: 68px;
 		left: 0;
 		right: 0;
 		background: #181c24;
 		border: 1px solid #303744;
 		border-radius: 9px;
 		padding: 5px;
+		box-shadow: 0 14px 35px #0008;
 	}
 	.results button {
 		width: 100%;
@@ -249,10 +263,23 @@
 		align-items: center;
 		gap: 9px;
 	}
-	.results img {
+	.results img,
+	.results i {
 		width: 28px;
 		height: 28px;
 		border-radius: 50%;
+	}
+	.results i {
+		display: grid;
+		place-items: center;
+		background: #7657ff;
+		font-style: normal;
+	}
+	.search-state {
+		position: absolute;
+		right: 12px;
+		top: 36px;
+		color: #7f8796;
 	}
 	.selected-user {
 		display: flex;
