@@ -7,6 +7,7 @@
 	let memberQuery = $state('');
 	let memberResults = $state<Member[]>([]);
 	let selectedRecipient = $state<Member | null>(null);
+	let transferAmount = $state('');
 	let searching = $state(false);
 	let searchSequence = 0;
 	let searchTimer: ReturnType<typeof setTimeout>;
@@ -37,6 +38,13 @@
 		selectedRecipient = member;
 		memberQuery = member.username;
 		memberResults = [];
+	}
+	function confirmTransfer(event: SubmitEvent) {
+		if (!selectedRecipient || !selectedGuild) return;
+		const confirmed = window.confirm(
+			`${selectedRecipient.username}님에게 ${transferAmount.trim()} ${selectedGuild.currencyUnit}만큼을 송금합니다.\n계속하시겠습니까?`
+		);
+		if (!confirmed) event.preventDefault();
 	}
 </script>
 
@@ -122,7 +130,11 @@
 							<p>같은 서버의 사용자에게 보냅니다.</p>
 						</div>
 					</div>
-					<form method="POST" action={`?/transfer&guild=${selectedGuild.id}`}>
+					<form
+						method="POST"
+						action={`?/transfer&guild=${selectedGuild.id}`}
+						onsubmit={confirmTransfer}
+					>
 						<input type="hidden" name="guildId" value={selectedGuild.id} />
 						<label class="member-search"
 							>받는 사람<input
@@ -130,9 +142,9 @@
 								oninput={scheduleMemberSearch}
 								autocomplete="off"
 								placeholder="닉네임 또는 사용자 이름 검색"
-							/><input type="hidden" name="recipientId" value={selectedRecipient?.id || ''} /><input
+							/><input
 								type="hidden"
-								name="targetId"
+								name="recipientId"
 								value={selectedRecipient?.id || ''}
 							/>{#if searching}<span class="search-state">검색 중…</span
 								>{/if}{#if memberResults.length}<div class="results">
@@ -160,21 +172,17 @@
 						<label
 							>금액
 							<div class="amount">
-								<input name="amount" inputmode="decimal" placeholder="0.01" required /><span
-									>{selectedGuild.currencyUnit}</span
-								>
+								<input
+									name="amount"
+									inputmode="decimal"
+									placeholder="0.01"
+									required
+									bind:value={transferAmount}
+								/><span>{selectedGuild.currencyUnit}</span>
 							</div></label
 						>
 						<div class="button-row">
-							{#if selectedGuild.publicBalanceEnabled}<button
-									class="secondary"
-									type="submit"
-									formnovalidate
-									disabled={!selectedRecipient}
-									formaction={`?/lookup&guild=${selectedGuild.id}`}>소지금 보기</button
-								>{/if}<button class="primary" type="submit" disabled={!selectedRecipient}
-								>송금하기</button
-							>
+							<button class="primary" type="submit" disabled={!selectedRecipient}>송금하기</button>
 						</div>
 					</form>
 				</section>
@@ -303,8 +311,7 @@
 		line-height: 1.7;
 		margin: 28px 0 36px;
 	}
-	.primary,
-	.secondary {
+	.primary {
 		font-weight: 750;
 	}
 	.primary {
@@ -345,8 +352,7 @@
 	.context-picker select {
 		flex: 1;
 	}
-	.context-picker button,
-	.secondary {
+	.context-picker button {
 		background: #252a34;
 		color: #fff;
 	}
@@ -454,7 +460,7 @@
 	}
 	.button-row {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: 1fr;
 		gap: 8px;
 	}
 	.ranking {
