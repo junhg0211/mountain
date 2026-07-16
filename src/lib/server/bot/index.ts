@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { closeDB } from '$lib/server/db';
 import {
 	Client,
 	Events,
@@ -21,10 +22,53 @@ dotenv.config();
 interface BotState {
 	client: Client | null;
 	startPromise: Promise<void> | null;
+	shutdownHandlersRegistered: boolean;
+	shuttingDown: boolean;
 }
 
 const globalState = globalThis as typeof globalThis & { __mountainBot?: BotState };
-const state = (globalState.__mountainBot ??= { client: null, startPromise: null });
+const state = (globalState.__mountainBot ??= {
+	client: null,
+	startPromise: null,
+	shutdownHandlersRegistered: false,
+	shuttingDown: false
+});
+
+async function shutdown(signal: NodeJS.Signals) {
+	if (state.shuttingDown) return;
+	state.shuttingDown = true;
+	console.log(`${signal} received. Shutting down Mountain...`);
+
+	const forceExit = setTimeout(() => {
+		console.error('Graceful shutdown timed out; forcing process exit.');
+		process.exit(1);
+	}, 5_000);
+	forceExit.unref();
+
+	try {
+		state.client?.removeAllListeners();
+		state.client?.destroy();
+		state.client = null;
+		state.startPromise = null;
+		await closeDB();
+		console.log('Mountain shut down cleanly.');
+		clearTimeout(forceExit);
+		process.exit(0);
+	} catch (error) {
+		console.error('Mountain shutdown failed:', error);
+		clearTimeout(forceExit);
+		process.exit(1);
+	}
+}
+
+function registerShutdownHandlers() {
+	if (state.shutdownHandlersRegistered) return;
+	state.shutdownHandlersRegistered = true;
+	process.once('SIGINT', () => void shutdown('SIGINT'));
+	process.once('SIGTERM', () => void shutdown('SIGTERM'));
+}
+
+registerShutdownHandlers();
 
 interface Command {
 	data: {

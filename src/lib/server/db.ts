@@ -147,3 +147,11 @@ export function getDB(): Promise<SQL> {
 	}
 	return dbPromise;
 }
+
+export async function closeDB(): Promise<void> {
+	const current = dbPromise;
+	dbPromise = null;
+	if (!current) return;
+	const db = await current;
+	await db.close();
+}
