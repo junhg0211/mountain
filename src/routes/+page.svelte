@@ -176,6 +176,10 @@
 							{/if}
 						</div>
 						<div class="attendance-reward">
+							<div class="streak-summary">
+								<span>현재 연속 <b>{data.attendance.currentStreak}일</b></span>
+								<span>최장 연속 <b>{data.attendance.longestStreak}일</b></span>
+							</div>
 							<strong>{data.attendance.reward}</strong><span>{selectedGuild.currencyUnit}</span>
 							<form method="POST" action={`?/attendance&guild=${selectedGuild.id}`}>
 								<input type="hidden" name="guildId" value={selectedGuild.id} />
@@ -186,6 +190,30 @@
 						</div>
 					</section>
 				{/if}
+
+				<section class="card attendance-ranking-card">
+					<div class="history-heading">
+						<div>
+							<p class="card-label">ATTENDANCE STREAK</p>
+							<h3>연속 출석 리더보드</h3>
+						</div>
+						<span>최장 기록 기준</span>
+					</div>
+					{#if data.attendanceLeaderboard.length}
+						<ol class="attendance-ranking">
+							{#each data.attendanceLeaderboard as entry}
+								<li>
+									<b>{entry.rank}</b><span>{entry.username}</span>
+									<small>현재 {entry.currentStreak}일</small><strong
+										>최장 {entry.longestStreak}일</strong
+									>
+								</li>
+							{/each}
+						</ol>
+					{:else}
+						<p class="history-empty">아직 연속 출석 기록이 없습니다.</p>
+					{/if}
+				</section>
 
 				<BettingBoard
 					initialPools={data.bettingPools}
@@ -578,6 +606,16 @@
 		align-items: center;
 		gap: 8px;
 	}
+	.streak-summary {
+		display: grid;
+		gap: 3px;
+		margin-right: 12px;
+		color: #83978f;
+		font-size: 11px;
+	}
+	.streak-summary b {
+		color: #79dfb7;
+	}
 	.attendance-reward strong {
 		font-size: 28px;
 	}
@@ -597,6 +635,33 @@
 	.attendance-reward button:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+	.attendance-ranking-card {
+		grid-column: 1 / -1;
+	}
+	.attendance-ranking {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: grid;
+	}
+	.attendance-ranking li {
+		display: grid;
+		grid-template-columns: 26px 1fr auto auto;
+		align-items: center;
+		gap: 12px;
+		padding: 11px 0;
+		border-top: 1px solid #252a34;
+		font-size: 12px;
+	}
+	.attendance-ranking li > b {
+		color: #8f79ff;
+	}
+	.attendance-ranking small {
+		color: #747d8d;
+	}
+	.attendance-ranking strong {
+		color: #79dfb7;
 	}
 	.card-title {
 		display: flex;
@@ -917,6 +982,12 @@
 		.attendance-reward {
 			align-items: flex-start;
 			flex-direction: column;
+		}
+		.attendance-ranking li {
+			grid-template-columns: 24px 1fr auto;
+		}
+		.attendance-ranking small {
+			display: none;
 		}
 		.attendance-reward form {
 			margin-left: 0;

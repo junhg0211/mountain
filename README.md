@@ -24,7 +24,8 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 - `/dashboard` opens the web dashboard. It is localized as `/대시보드` and `/ダッシュボード`.
 - `/bet` creates, joins, views, settles, or refunds server betting pools. It is localized as
   `/베팅` and `/ベット`.
-- `/attendance` claims the server's daily reward. It is localized as `/출석` and `/出席`.
+- `/attendance` claims the server's daily reward or shows the streak ranking. It is localized as
+  `/출석` and `/出席`.
 
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
 Balances are isolated per Discord server.

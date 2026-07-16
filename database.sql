@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS attendance_claims (
     CHECK (reward_amount >= 0.01)
 );
 
+CREATE TABLE IF NOT EXISTS attendance_streaks (
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    current_streak INT NOT NULL DEFAULT 0,
+    longest_streak INT NOT NULL DEFAULT 0,
+    last_attendance_date DATE NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, user_id),
+    INDEX attendance_streaks_guild_longest_idx (guild_id, longest_streak, current_streak),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS betting_pools (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     guild_id VARCHAR(255) NOT NULL,

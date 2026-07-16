@@ -65,6 +65,15 @@ be at least `0.01`. Claims use the `Asia/Seoul` calendar date and the composite 
 `attendance` ledger row must happen in one database transaction. This prevents duplicate rewards
 when web and Discord claims race each other.
 
+`attendance_streaks` stores the current streak, longest streak, and last attendance date per guild
+and user. A claim on the Korean calendar day immediately following the last claim increments the
+current streak; otherwise it resets to one. The longest streak never decreases. Streak updates are
+part of the claim transaction. If a streak row is missing for an existing user, rebuild it from
+`attendance_claims` before saving. Leaderboards rank longest streak first and current streak second.
+Display the current streak as zero after a missed Korean calendar day, while preserving the stored
+longest streak. Read SQL `DATE` values with `DATE_FORMAT(..., '%Y-%m-%d')` to avoid driver timezone
+shifts.
+
 Use row locks for debit operations. A failed insufficient-balance check must change neither the
 balance nor the ledger. Discord notifications are sent after commit and intentionally swallow
 delivery failures so an external Discord error cannot invalidate completed money movement.

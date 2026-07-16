@@ -42,6 +42,8 @@ These rules apply to every change in this repository.
 - For schema changes, update both `database.sql` and the bootstrap/repair statements in
   `src/lib/server/db.ts`, then verify the migration against the configured database when possible.
 - Daily attendance is keyed by `(guild_id, user_id, attendance_date)` using the `Asia/Seoul`
-  calendar date. Web and Discord claims must share this same key and atomic claim service.
+  calendar date. Web and Discord claims must share this same key and atomic claim service. Update
+  current and longest streaks in that same transaction; skipping a Korean calendar day resets only
+  the current streak.
 
 See `docs/ECONOMY_DEVELOPMENT.md` for the detailed architecture and change checklist.

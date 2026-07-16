@@ -3,7 +3,8 @@ import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import {
 	AttendanceAlreadyClaimedError,
 	AttendanceDisabledError,
-	claimAttendance
+	claimAttendance,
+	getAttendanceLeaderboard
 } from '$lib/server/db/attendance';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
@@ -22,12 +23,60 @@ const data = new SlashCommandBuilder()
 		[Locale.Korean]: '서버의 일일 출석 보상을 받습니다.',
 		[Locale.Japanese]: 'サーバーのデイリー出席報酬を受け取ります。'
 	})
+	.addStringOption((option) =>
+		option
+			.setName('mode')
+			.setNameLocalizations({ [Locale.Korean]: '기능', [Locale.Japanese]: '機能' })
+			.setDescription('Claim a reward or view the streak ranking.')
+			.setDescriptionLocalizations({
+				[Locale.Korean]: '출석 보상을 받거나 연속 출석 순위를 확인합니다.',
+				[Locale.Japanese]: '出席報酬を受け取るか、連続出席ランキングを表示します。'
+			})
+			.addChoices(
+				{
+					name: 'Claim reward',
+					name_localizations: { ko: '보상 받기', ja: '報酬を受け取る' },
+					value: 'claim'
+				},
+				{
+					name: 'Streak ranking',
+					name_localizations: { ko: '연속 출석 순위', ja: '連続出席ランキング' },
+					value: 'ranking'
+				}
+			)
+	)
 	.setDMPermission(false);
 
 async function execute(interaction: ChatInputCommandInteraction) {
 	if (!interaction.guildId) return;
 	const language = getLanguage(interaction.locale);
+	const mode = interaction.options.getString('mode') || 'claim';
 	await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+	if (mode === 'ranking') {
+		const leaderboard = await getAttendanceLeaderboard(interaction.guildId);
+		const headings = {
+			en: '## Attendance streak ranking',
+			ko: '## 연속 출석 리더보드',
+			ja: '## 連続出席ランキング'
+		};
+		const lines = leaderboard.map(
+			(entry: { rank: number; username: string; currentStreak: number; longestStreak: number }) => {
+				const labels = {
+					en: `current ${entry.currentStreak}d · best ${entry.longestStreak}d`,
+					ko: `현재 ${entry.currentStreak}일 · 최장 ${entry.longestStreak}일`,
+					ja: `現在 ${entry.currentStreak}日 · 最長 ${entry.longestStreak}日`
+				};
+				return `**${entry.rank}.** ${entry.username} — ${labels[language]}`;
+			}
+		);
+		const empty = {
+			en: 'No attendance records yet.',
+			ko: '아직 출석 기록이 없습니다.',
+			ja: '出席記録はまだありません。'
+		};
+		await interaction.editReply(`${headings[language]}\n${lines.join('\n') || empty[language]}`);
+		return;
+	}
 
 	await ensureUser(
 		interaction.user.id,
@@ -41,13 +90,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			getCurrencyUnit(interaction.guildId)
 		]);
 		const messages = {
-			en: `📅 Attendance complete! You received **${result.reward} ${unit}**. Balance: **${result.balance} ${unit}**.`,
-			ko: `📅 출석 완료! **${result.reward} ${unit}**을(를) 받았습니다. 현재 소지금: **${result.balance} ${unit}**.`,
-			ja: `📅 出席完了！ **${result.reward} ${unit}** を受け取りました。残高: **${result.balance} ${unit}**。`
+			en: `📅 Attendance complete! You received **${result.reward} ${unit}**. Balance: **${result.balance} ${unit}**. Current streak: **${result.currentStreak} days** · Best: **${result.longestStreak} days**.`,
+			ko: `📅 출석 완료! **${result.reward} ${unit}**을(를) 받았습니다. 현재 소지금: **${result.balance} ${unit}**. 현재 **${result.currentStreak}일 연속** · 최장 **${result.longestStreak}일**.`,
+			ja: `📅 出席完了！ **${result.reward} ${unit}** を受け取りました。残高: **${result.balance} ${unit}**。現在 **${result.currentStreak}日連続** · 最長 **${result.longestStreak}日**。`
 		};
 		await sendTransactionNotification(
 			interaction.guildId,
-			`📅 **출석 보상**\n사용자: ${interaction.user}\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**`
+			`📅 **출석 보상**\n사용자: ${interaction.user}\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
 		);
 		await interaction.editReply(messages[language]);
 	} catch (error) {

@@ -11,6 +11,7 @@ import {
 	AttendanceAlreadyClaimedError,
 	AttendanceDisabledError,
 	claimAttendance,
+	getAttendanceLeaderboard,
 	getAttendanceStatus
 } from '$lib/server/db/attendance';
 import {
@@ -78,14 +79,15 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const rankingEnabled =
 		selectedGuildId &&
 		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled;
-	const [ranking, transactions, bettingPools, attendance] = selectedGuildId
+	const [ranking, transactions, bettingPools, attendance, attendanceLeaderboard] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
 				getUserTransactions(selectedGuildId, user.id),
 				getBettingPools(selectedGuildId),
-				getAttendanceStatus(selectedGuildId, user.id)
+				getAttendanceStatus(selectedGuildId, user.id),
+				getAttendanceLeaderboard(selectedGuildId)
 			])
-		: [[], [], [], null];
+		: [[], [], [], null, []];
 	return {
 		user,
 		guilds,
@@ -93,7 +95,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		ranking,
 		transactions,
 		bettingPools,
-		attendance
+		attendance,
+		attendanceLeaderboard
 	};
 };
 
@@ -162,11 +165,11 @@ export const actions: Actions = {
 			]);
 			await sendTransactionNotification(
 				guildId,
-				`📅 **출석 보상**\n사용자: <@${membership.user.id}>\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**`
+				`📅 **출석 보상**\n사용자: <@${membership.user.id}>\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
 			);
 			return {
 				success: true,
-				message: `출석 완료! ${result.reward} ${unit}을(를) 받았습니다. 현재 소지금: ${result.balance} ${unit}`
+				message: `출석 완료! ${result.reward} ${unit}을(를) 받았습니다. 현재 ${result.currentStreak}일 연속, 최장 ${result.longestStreak}일입니다.`
 			};
 		} catch (error) {
 			if (error instanceof AttendanceAlreadyClaimedError)
