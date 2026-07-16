@@ -11,6 +11,7 @@
 	let searchSequence = 0;
 	let searchTimer: ReturnType<typeof setTimeout>;
 	function scheduleMemberSearch() {
+		selectedRecipient = null;
 		clearTimeout(searchTimer);
 		searchTimer = setTimeout(searchMembers, 250);
 	}
@@ -144,6 +145,18 @@
 										>{/each}
 								</div>{/if}</label
 						>
+						{#if selectedRecipient}<div class="selected-user">
+								{#if selectedRecipient.avatarUrl}<img
+										src={selectedRecipient.avatarUrl}
+										alt=""
+									/>{:else}<i>{selectedRecipient.username.slice(0, 1)}</i>{/if}
+								<div>
+									<small>선택된 사용자</small><strong>{selectedRecipient.username}</strong><code
+										>{selectedRecipient.id}</code
+									>
+								</div>
+								<span>선택됨 ✓</span>
+							</div>{/if}
 						<label
 							>금액
 							<div class="amount">
@@ -157,8 +170,11 @@
 									class="secondary"
 									type="submit"
 									formnovalidate
+									disabled={!selectedRecipient}
 									formaction={`?/lookup&guild=${selectedGuild.id}`}>소지금 보기</button
-								>{/if}<button class="primary" type="submit">송금하기</button>
+								>{/if}<button class="primary" type="submit" disabled={!selectedRecipient}
+								>송금하기</button
+							>
 						</div>
 					</form>
 				</section>
@@ -433,6 +449,10 @@
 	.action-card button {
 		margin-top: 3px;
 	}
+	.action-card button:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
 	.button-row {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -536,6 +556,45 @@
 		width: 30px;
 		height: 30px;
 		border-radius: 50%;
+	}
+	.selected-user {
+		display: flex;
+		align-items: center;
+		gap: 11px;
+		padding: 12px;
+		background: #10291f;
+		border: 1px solid #24523f;
+		border-radius: 10px;
+	}
+	.selected-user img,
+	.selected-user i {
+		width: 38px;
+		height: 38px;
+		border-radius: 50%;
+	}
+	.selected-user i {
+		display: grid;
+		place-items: center;
+		background: #7657ff;
+		font-style: normal;
+	}
+	.selected-user div {
+		display: grid;
+		gap: 1px;
+		flex: 1;
+	}
+	.selected-user small,
+	.selected-user code {
+		color: #7f9d90;
+		font-size: 10px;
+	}
+	.selected-user strong {
+		font-size: 14px;
+	}
+	.selected-user > span {
+		color: #76d9b0;
+		font-size: 11px;
+		font-weight: 750;
 	}
 	.results i {
 		display: grid;

@@ -9,6 +9,7 @@
 	let target = $state<Member | null>(null);
 	let timer: ReturnType<typeof setTimeout>;
 	function schedule() {
+		target = null;
 		clearTimeout(timer);
 		timer = setTimeout(search, 250);
 	}
@@ -102,15 +103,27 @@
 						placeholder="닉네임 또는 사용자 이름 검색"
 					/>{#if results.length}<div class="results">
 							{#each results as member}<button type="button" onclick={() => choose(member)}
-									>{member.username}</button
+									>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{/if}<span
+										>{member.username}</span
+									></button
 								>{/each}
 						</div>{/if}</label
 				>
+				{#if target}<div class="selected-user">
+						{#if target.avatarUrl}<img src={target.avatarUrl} alt="" />{:else}<i
+								>{target.username.slice(0, 1)}</i
+							>{/if}
+						<div>
+							<small>작업 대상</small><strong>{target.username}</strong><code>{target.id}</code>
+						</div>
+						<span>선택됨 ✓</span>
+					</div>{/if}
 				<label>금액<input name="amount" inputmode="decimal" placeholder="0.01" required /></label>
 				<div class="buttons">
-					<button type="submit">Mint · 발행</button><button
+					<button type="submit" disabled={!target}>Mint · 발행</button><button
 						class="danger"
 						type="submit"
+						disabled={!target}
 						formaction={`?/burn&guild=${selectedGuild.id}`}>Burn · 소각</button
 					>
 				</div>
@@ -213,6 +226,53 @@
 		width: 100%;
 		text-align: left;
 		background: transparent;
+		display: flex;
+		align-items: center;
+		gap: 9px;
+	}
+	.results img {
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+	}
+	.selected-user {
+		display: flex;
+		align-items: center;
+		gap: 11px;
+		padding: 12px;
+		background: #10291f;
+		border: 1px solid #24523f;
+		border-radius: 10px;
+	}
+	.selected-user img,
+	.selected-user i {
+		width: 38px;
+		height: 38px;
+		border-radius: 50%;
+	}
+	.selected-user i {
+		display: grid;
+		place-items: center;
+		background: #7657ff;
+		font-style: normal;
+	}
+	.selected-user div {
+		display: grid;
+		gap: 1px;
+		flex: 1;
+	}
+	.selected-user small,
+	.selected-user code {
+		color: #7f9d90;
+		font-size: 10px;
+	}
+	.selected-user strong {
+		font-size: 14px;
+	}
+	.selected-user > span {
+		color: #76d9b0;
+		font-size: 11px;
+		font-weight: 750;
 	}
 	.buttons {
 		display: grid;
@@ -268,6 +328,10 @@
 		border: 1px solid #303744;
 		border-radius: 9px;
 		padding: 11px 13px;
+	}
+	button:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
 	}
 	input,
 	select {
