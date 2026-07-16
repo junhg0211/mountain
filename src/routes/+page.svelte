@@ -162,58 +162,60 @@
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
 
-				{#if data.attendance}
-					<section class="card attendance-card">
-						<div>
-							<p class="card-label">DAILY ATTENDANCE</p>
-							<h3>오늘의 출석</h3>
-							{#if data.attendance.reward === '0.00'}
-								<p>이 서버는 아직 출석 보상을 설정하지 않았습니다.</p>
-							{:else if data.attendance.claimed}
-								<p>오늘의 보상을 이미 받았습니다. 내일 다시 만나요!</p>
-							{:else}
-								<p>하루 한 번 출석하고 서버 보상을 받아보세요.</p>
-							{/if}
-						</div>
-						<div class="attendance-reward">
-							<div class="streak-summary">
-								<span>현재 연속 <b>{data.attendance.currentStreak}일</b></span>
-								<span>최장 연속 <b>{data.attendance.longestStreak}일</b></span>
+				<div class="attendance-grid">
+					{#if data.attendance}
+						<section class="card attendance-card">
+							<div>
+								<p class="card-label">DAILY ATTENDANCE</p>
+								<h3>오늘의 출석</h3>
+								{#if data.attendance.reward === '0.00'}
+									<p>이 서버는 아직 출석 보상을 설정하지 않았습니다.</p>
+								{:else if data.attendance.claimed}
+									<p>오늘의 보상을 이미 받았습니다. 내일 다시 만나요!</p>
+								{:else}
+									<p>하루 한 번 출석하고 서버 보상을 받아보세요.</p>
+								{/if}
 							</div>
-							<strong>{data.attendance.reward}</strong><span>{selectedGuild.currencyUnit}</span>
-							<form method="POST" action={`?/attendance&guild=${selectedGuild.id}`}>
-								<input type="hidden" name="guildId" value={selectedGuild.id} />
-								<button disabled={data.attendance.claimed || data.attendance.reward === '0.00'}
-									>{data.attendance.claimed ? '출석 완료 ✓' : '출석하기'}</button
-								>
-							</form>
-						</div>
-					</section>
-				{/if}
-
-				<section class="card attendance-ranking-card">
-					<div class="history-heading">
-						<div>
-							<p class="card-label">ATTENDANCE STREAK</p>
-							<h3>연속 출석 리더보드</h3>
-						</div>
-						<span>최장 기록 기준</span>
-					</div>
-					{#if data.attendanceLeaderboard.length}
-						<ol class="attendance-ranking">
-							{#each data.attendanceLeaderboard as entry}
-								<li>
-									<b>{entry.rank}</b><span>{entry.username}</span>
-									<small>현재 {entry.currentStreak}일</small><strong
-										>최장 {entry.longestStreak}일</strong
+							<div class="attendance-reward">
+								<div class="streak-summary">
+									<span>현재 연속 <b>{data.attendance.currentStreak}일</b></span>
+									<span>최장 연속 <b>{data.attendance.longestStreak}일</b></span>
+								</div>
+								<strong>{data.attendance.reward}</strong><span>{selectedGuild.currencyUnit}</span>
+								<form method="POST" action={`?/attendance&guild=${selectedGuild.id}`}>
+									<input type="hidden" name="guildId" value={selectedGuild.id} />
+									<button disabled={data.attendance.claimed || data.attendance.reward === '0.00'}
+										>{data.attendance.claimed ? '출석 완료 ✓' : '출석하기'}</button
 									>
-								</li>
-							{/each}
-						</ol>
-					{:else}
-						<p class="history-empty">아직 연속 출석 기록이 없습니다.</p>
+								</form>
+							</div>
+						</section>
 					{/if}
-				</section>
+
+					<section class="card attendance-ranking-card">
+						<div class="history-heading">
+							<div>
+								<p class="card-label">ATTENDANCE STREAK</p>
+								<h3>연속 출석 리더보드</h3>
+							</div>
+							<span>최장 기록 기준</span>
+						</div>
+						{#if data.attendanceLeaderboard.length}
+							<ol class="attendance-ranking">
+								{#each data.attendanceLeaderboard as entry}
+									<li>
+										<b>{entry.rank}</b><span>{entry.username}</span>
+										<small>현재 {entry.currentStreak}일</small><strong
+											>최장 {entry.longestStreak}일</strong
+										>
+									</li>
+								{/each}
+							</ol>
+						{:else}
+							<p class="history-empty">아직 연속 출석 기록이 없습니다.</p>
+						{/if}
+					</section>
+				</div>
 
 				<BettingBoard
 					initialPools={data.bettingPools}
@@ -582,12 +584,18 @@
 		max-width: 240px;
 	}
 	.attendance-card {
-		grid-column: 1 / -1;
 		display: flex;
-		align-items: center;
+		align-items: flex-start;
 		justify-content: space-between;
 		gap: 24px;
 		background: linear-gradient(120deg, #12251f, #11141a 58%);
+	}
+	.attendance-grid {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 16px;
+		align-items: stretch;
 	}
 	.attendance-card h3,
 	.attendance-card p {
@@ -604,6 +612,7 @@
 	.attendance-reward {
 		display: flex;
 		align-items: center;
+		flex-wrap: wrap;
 		gap: 8px;
 	}
 	.streak-summary {
@@ -637,7 +646,7 @@
 		cursor: not-allowed;
 	}
 	.attendance-ranking-card {
-		grid-column: 1 / -1;
+		min-width: 0;
 	}
 	.attendance-ranking {
 		list-style: none;
@@ -971,6 +980,9 @@
 			width: 100%;
 		}
 		.dashboard {
+			grid-template-columns: 1fr;
+		}
+		.attendance-grid {
 			grid-template-columns: 1fr;
 		}
 		.balance-card {
