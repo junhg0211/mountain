@@ -11,9 +11,12 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS accounts (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(255) NOT NULL UNIQUE,
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
     balance DECIMAL(15, 2) DEFAULT 0.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY accounts_guild_user_unique (guild_id, user_id),
+    INDEX accounts_user_id_fk (user_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 

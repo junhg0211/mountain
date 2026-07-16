@@ -24,7 +24,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 	await ensureUser(user.id, user.globalName || user.username, user.displayAvatarURL());
 
 	const [balance, currencyUnit] = await Promise.all([
-		getOrCreateBalance(user.id),
+		getOrCreateBalance(interaction.guildId, user.id),
 		getCurrencyUnit(interaction.guildId)
 	]);
 	const language = getLanguage(interaction.locale);

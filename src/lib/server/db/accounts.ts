@@ -1,13 +1,13 @@
 import { getDB } from '$lib/server/db';
 
-export async function getOrCreateBalance(userId: string): Promise<string> {
+export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = getDB();
-	await db`INSERT IGNORE INTO accounts (user_id) VALUES (${userId})`;
+	await db`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${guildId}, ${userId})`;
 
 	const rows = await db`
 		SELECT balance
 		FROM accounts
-		WHERE user_id = ${userId}
+		WHERE guild_id = ${guildId} AND user_id = ${userId}
 		LIMIT 1
 	`;
 

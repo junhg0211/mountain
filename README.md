@@ -17,3 +17,4 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 - `/settings currency unit:<unit>` sets the server currency unit. It is shown as `/설정 통화` in Korean and `/設定 通貨` in Japanese.
 
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
+Balances are isolated per Discord server.
