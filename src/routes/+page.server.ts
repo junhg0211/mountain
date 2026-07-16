@@ -22,9 +22,9 @@ interface MemberRow {
 	username: unknown;
 }
 
-export const load: PageServerLoad = async ({ cookies }) => {
+export const load: PageServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
-	if (!user) return { user, guilds: [], members: [] };
+	if (!user) return { user, guilds: [], members: [], selectedGuildId: null };
 
 	const db = getDB();
 	const guildRows = await db`
@@ -46,18 +46,25 @@ export const load: PageServerLoad = async ({ cookies }) => {
 		ORDER BY u.username
 	`;
 
+	const guilds = guildRows.map((row: GuildRow) => ({
+		id: String(row.guild_id),
+		name: String(row.guild_name),
+		iconUrl: row.icon_hash
+			? `https://cdn.discordapp.com/icons/${row.guild_id}/${row.icon_hash}.png`
+			: null,
+		balance: Number(row.balance).toFixed(2),
+		currencyUnit: String(row.currency_unit),
+		canManage: canManageGuild(String(row.permissions))
+	}));
+	const requestedGuildId = url.searchParams.get('guild');
+	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requestedGuildId)
+		? requestedGuildId
+		: guilds[0]?.id || null;
+
 	return {
 		user,
-		guilds: guildRows.map((row: GuildRow) => ({
-			id: String(row.guild_id),
-			name: String(row.guild_name),
-			iconUrl: row.icon_hash
-				? `https://cdn.discordapp.com/icons/${row.guild_id}/${row.icon_hash}.png`
-				: null,
-			balance: Number(row.balance).toFixed(2),
-			currencyUnit: String(row.currency_unit),
-			canManage: canManageGuild(String(row.permissions))
-		})),
+		guilds,
+		selectedGuildId,
 		members: memberRows.map((row: MemberRow) => ({
 			guildId: String(row.guild_id),
 			id: String(row.id),

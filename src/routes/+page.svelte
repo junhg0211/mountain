@@ -1,93 +1,138 @@
 <script lang="ts">
 	const { data, form } = $props();
+	const selectedGuild = $derived(
+		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
+	);
+	const contextMembers = $derived(
+		data.members.filter((member: { guildId: string }) => member.guildId === data.selectedGuildId)
+	);
 </script>
 
 <svelte:head><title>Mountain Economy</title></svelte:head>
 
 <main>
 	<header>
-		<div>
-			<span class="eyebrow">MOUNTAIN</span>
-			<h1>Economy dashboard</h1>
-		</div>
+		<a class="brand" href="/"><span class="mark">M</span><span>Mountain</span></a>
 		{#if data.user}
-			<form method="POST" action="?/logout"><button class="ghost">로그아웃</button></form>
+			<div class="user">
+				<span>{data.user.username}</span>
+				<form method="POST" action="?/logout"><button class="ghost">로그아웃</button></form>
+			</div>
 		{/if}
 	</header>
 
 	{#if !data.user}
 		<section class="hero">
-			<p class="eyebrow">DISCORD ECONOMY</p>
-			<h2>서버 경제를 한곳에서 관리하세요.</h2>
-			<p>잔액 확인, 송금, 경제 단위 설정을 웹과 Discord에서 함께 사용할 수 있습니다.</p>
-			<a class="primary" href="/login">Discord로 로그인</a>
+			<p class="eyebrow">DISCORD ECONOMY, ONE PLACE</p>
+			<h1>서버의 경제를<br />더 선명하게.</h1>
+			<p class="lead">Discord에서 쓰던 경제 기능을 웹에서도 같은 잔액과 설정으로 관리하세요.</p>
+			<a class="primary large" href="/login">Discord로 시작하기</a>
+		</section>
+	{:else if data.guilds.length === 0}
+		<section class="empty">
+			<span class="empty-icon">M</span>
+			<h1>함께 참여 중인 서버가 없습니다.</h1>
+			<p>Mountain 봇을 Discord 서버에 추가한 뒤 다시 로그인해 주세요.</p>
 		</section>
 	{:else}
-		<section class="welcome">
+		<section class="context-bar">
 			<div>
-				<p class="eyebrow">SIGNED IN</p>
-				<h2>{data.user.username}님의 서버</h2>
+				<p class="eyebrow">CURRENT CONTEXT</p>
+				<h1>서버 대시보드</h1>
 			</div>
-			<p>봇이 참여한 서버 {data.guilds.length}개</p>
+			<form method="GET" class="context-picker">
+				<label for="guild">서버 컨텍스트</label>
+				<div>
+					<select id="guild" name="guild"
+						>{#each data.guilds as guild}<option
+								value={guild.id}
+								selected={guild.id === data.selectedGuildId}>{guild.name}</option
+							>{/each}</select
+					><button type="submit">적용</button>
+				</div>
+			</form>
 		</section>
 
 		{#if form?.message}<p class:success={form.success} class="notice">{form.message}</p>{/if}
 
-		{#if data.guilds.length === 0}
-			<section class="empty">
-				<h3>함께 참여 중인 서버가 없습니다.</h3>
-				<p>Mountain 봇을 서버에 추가한 뒤 다시 로그인해 주세요.</p>
+		{#if selectedGuild}
+			<section class="server-heading">
+				<div class="server-identity">
+					{#if selectedGuild.iconUrl}<img src={selectedGuild.iconUrl} alt="" />{:else}<span
+							class="server-icon">{selectedGuild.name.slice(0, 1)}</span
+						>{/if}
+					<div>
+						<p class="eyebrow">SELECTED SERVER</p>
+						<h2>{selectedGuild.name}</h2>
+					</div>
+				</div>
+				<span class="status"><i></i> 봇 연결됨</span>
 			</section>
-		{:else}
-			<div class="grid">
-				{#each data.guilds as guild}
-					<article>
-						<div class="server">
-							{#if guild.iconUrl}<img src={guild.iconUrl} alt="" />{:else}<span class="icon"
-									>{guild.name.slice(0, 1)}</span
-								>{/if}
-							<div>
-								<h3>{guild.name}</h3>
-								<p>서버별 계좌</p>
-							</div>
-						</div>
-						<div class="balance">
-							<span>소지금</span><strong>{guild.balance} <small>{guild.currencyUnit}</small></strong
-							>
-						</div>
 
-						<form method="POST" action="?/transfer" class="panel">
-							<input type="hidden" name="guildId" value={guild.id} />
-							<label
-								>받는 사람<select name="recipientId" required
-									><option value="">선택</option
-									>{#each data.members.filter((member: { guildId: string }) => member.guildId === guild.id) as member}<option
-											value={member.id}>{member.username}</option
-										>{/each}</select
-								></label
-							>
-							<label
-								>금액<input name="amount" inputmode="decimal" placeholder="0.01" required /></label
-							>
-							<button class="primary" type="submit">송금하기</button>
-						</form>
+			<div class="dashboard">
+				<section class="card balance-card">
+					<div>
+						<p class="card-label">내 소지금</p>
+						<strong>{selectedGuild.balance}</strong><span>{selectedGuild.currencyUnit}</span>
+					</div>
+					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
+				</section>
 
-						{#if guild.canManage}
-							<form method="POST" action="?/settings" class="settings">
-								<input type="hidden" name="guildId" value={guild.id} />
-								<label
-									>경제 단위<input
-										name="unit"
-										value={guild.currencyUnit}
-										maxlength="16"
-										required
-									/></label
+				<section class="card action-card">
+					<div class="card-title">
+						<span>01</span>
+						<div>
+							<h3>송금</h3>
+							<p>같은 서버의 사용자에게 보냅니다.</p>
+						</div>
+					</div>
+					<form method="POST" action={`?/transfer&guild=${selectedGuild.id}`}>
+						<input type="hidden" name="guildId" value={selectedGuild.id} />
+						<label
+							>받는 사람<select name="recipientId" required
+								><option value="">사용자 선택</option>{#each contextMembers as member}<option
+										value={member.id}>{member.username}</option
+									>{/each}</select
+							></label
+						>
+						<label
+							>금액
+							<div class="amount">
+								<input name="amount" inputmode="decimal" placeholder="0.01" required /><span
+									>{selectedGuild.currencyUnit}</span
 								>
-								<button type="submit">변경</button>
-							</form>
-						{/if}
-					</article>
-				{/each}
+							</div></label
+						>
+						<button class="primary" type="submit">송금하기</button>
+					</form>
+				</section>
+
+				<section class="card action-card" class:locked={!selectedGuild.canManage}>
+					<div class="card-title">
+						<span>02</span>
+						<div>
+							<h3>경제 설정</h3>
+							<p>이 서버에서 사용할 단위를 관리합니다.</p>
+						</div>
+					</div>
+					{#if selectedGuild.canManage}
+						<form method="POST" action={`?/settings&guild=${selectedGuild.id}`}>
+							<input type="hidden" name="guildId" value={selectedGuild.id} />
+							<label
+								>경제 단위<input
+									name="unit"
+									value={selectedGuild.currencyUnit}
+									maxlength="16"
+									required
+								/></label
+							>
+							<button class="secondary" type="submit">설정 저장</button>
+						</form>
+					{:else}<div class="permission">
+							<span>🔒</span>
+							<p>서버 관리 권한이 있는 사용자만 변경할 수 있습니다.</p>
+						</div>{/if}
+				</section>
 			</div>
 		{/if}
 	{/if}
@@ -99,190 +144,330 @@
 	}
 	:global(body) {
 		margin: 0;
-		background: #0b0d12;
-		color: #f7f7f8;
+		background: #0a0c10;
+		color: #f5f6f8;
 		font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 	}
-	main {
-		max-width: 1100px;
-		margin: auto;
-		padding: 32px 24px 80px;
+	:global(button),
+	:global(input),
+	:global(select) {
+		font: inherit;
 	}
-	header,
-	.welcome,
-	.server,
-	.settings {
+	main {
+		max-width: 1180px;
+		margin: auto;
+		padding: 0 28px 80px;
+	}
+	header {
+		height: 82px;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		gap: 16px;
+		border-bottom: 1px solid #20242d;
 	}
-	h1,
-	h2,
-	h3,
-	p {
-		margin: 0;
+	.brand,
+	.user {
+		display: flex;
+		align-items: center;
+		gap: 12px;
 	}
-	h1 {
-		font-size: 18px;
-	}
-	h2 {
-		font-size: clamp(28px, 5vw, 48px);
-		letter-spacing: -0.04em;
-	}
-	h3 {
-		font-size: 18px;
-	}
-	.eyebrow {
-		font-size: 11px;
-		font-weight: 800;
-		letter-spacing: 0.18em;
-		color: #8b95a7;
-		margin-bottom: 8px;
-	}
-	.hero {
-		margin-top: 15vh;
-		max-width: 700px;
-	}
-	.hero p:not(.eyebrow) {
-		margin: 20px 0 32px;
-		color: #a8afbc;
-		font-size: 18px;
-		line-height: 1.6;
-	}
-	.primary,
-	button {
-		border: 0;
-		border-radius: 10px;
-		padding: 11px 16px;
-		font-weight: 700;
-		cursor: pointer;
-	}
-	.primary {
-		display: inline-block;
-		background: #7c5cff;
-		color: white;
+	.brand {
+		color: #fff;
 		text-decoration: none;
+		font-weight: 800;
 	}
-	.ghost {
-		background: #191d26;
-		color: #ddd;
-	}
-	.welcome {
-		margin: 72px 0 28px;
-	}
-	.welcome > p {
-		color: #8b95a7;
-	}
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
-		gap: 18px;
-	}
-	article,
-	.empty {
-		background: #12151c;
-		border: 1px solid #242936;
-		border-radius: 18px;
-		padding: 22px;
-	}
-	.server {
-		justify-content: flex-start;
-	}
-	.server img,
-	.icon {
-		width: 44px;
-		height: 44px;
-		border-radius: 14px;
-	}
-	.icon {
+	.mark,
+	.server-icon {
 		display: grid;
 		place-items: center;
-		background: #7c5cff;
-		font-weight: 800;
+		background: #7657ff;
+		color: white;
+		font-weight: 900;
 	}
-	.server p,
-	label,
-	.balance span {
-		color: #8b95a7;
+	.mark {
+		width: 32px;
+		height: 32px;
+		border-radius: 9px;
+	}
+	.user {
 		font-size: 13px;
+		color: #aab0bd;
 	}
-	.balance {
+	.ghost,
+	button {
+		border: 0;
+		border-radius: 9px;
+		padding: 10px 14px;
+		cursor: pointer;
+	}
+	.ghost {
+		background: #171a21;
+		color: #cbd0da;
+	}
+	.hero {
+		padding: 15vh 0 8vh;
+		max-width: 780px;
+	}
+	.eyebrow,
+	.card-label {
+		margin: 0 0 9px;
+		color: #858d9d;
+		font-size: 11px;
+		font-weight: 800;
+		letter-spacing: 0.16em;
+	}
+	.hero h1 {
+		font-size: clamp(54px, 8vw, 92px);
+		line-height: 0.98;
+		letter-spacing: -0.065em;
+		margin: 0;
+	}
+	.lead {
+		max-width: 590px;
+		color: #9da4b2;
+		font-size: 19px;
+		line-height: 1.7;
+		margin: 28px 0 36px;
+	}
+	.primary,
+	.secondary {
+		font-weight: 750;
+	}
+	.primary {
+		background: #7657ff;
+		color: white;
+	}
+	.large {
+		display: inline-block;
+		padding: 14px 21px;
+		text-decoration: none;
+		border-radius: 11px;
+	}
+	.context-bar {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		padding: 56px 0 28px;
+	}
+	.context-bar h1 {
+		font-size: 36px;
+		margin: 0;
+		letter-spacing: -0.04em;
+	}
+	.context-picker {
+		width: min(410px, 100%);
+	}
+	.context-picker label,
+	label {
+		display: block;
+		color: #8e96a5;
+		font-size: 12px;
+		margin-bottom: 7px;
+	}
+	.context-picker > div {
+		display: flex;
+		gap: 8px;
+	}
+	.context-picker select {
+		flex: 1;
+	}
+	.context-picker button,
+	.secondary {
+		background: #252a34;
+		color: #fff;
+	}
+	.server-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		border-top: 1px solid #20242d;
 		padding: 28px 0;
 	}
-	.balance strong {
-		display: block;
-		font-size: 32px;
-		margin-top: 6px;
+	.server-identity {
+		display: flex;
+		align-items: center;
+		gap: 15px;
 	}
-	.balance small {
-		font-size: 14px;
-		color: #a8afbc;
+	.server-identity img,
+	.server-icon {
+		width: 52px;
+		height: 52px;
+		border-radius: 15px;
 	}
-	.panel {
+	.server-identity h2 {
+		margin: 0;
+		font-size: 24px;
+	}
+	.status {
+		font-size: 12px;
+		color: #8fd9bc;
+		background: #10291f;
+		border: 1px solid #1c4736;
+		padding: 8px 11px;
+		border-radius: 999px;
+	}
+	.status i {
+		display: inline-block;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: #54d49e;
+		margin-right: 5px;
+	}
+	.dashboard {
 		display: grid;
-		grid-template-columns: 1fr 110px;
-		gap: 10px;
+		grid-template-columns: 1.1fr 1fr;
+		gap: 16px;
 	}
-	.panel button {
+	.card {
+		background: #11141a;
+		border: 1px solid #222732;
+		border-radius: 18px;
+		padding: 24px;
+	}
+	.balance-card {
 		grid-column: 1/-1;
+		min-height: 220px;
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		background: linear-gradient(120deg, #17132b, #11141a 58%);
 	}
-	.panel label,
-	.settings label {
+	.balance-card strong {
+		display: block;
+		font-size: clamp(54px, 8vw, 86px);
+		line-height: 1;
+		letter-spacing: -0.06em;
+	}
+	.balance-card span {
+		color: #a697ff;
+		font-weight: 800;
+	}
+	.balance-card > p {
+		color: #7f8796;
+		font-size: 13px;
+		max-width: 240px;
+	}
+	.card-title {
+		display: flex;
+		gap: 13px;
+		margin-bottom: 28px;
+	}
+	.card-title > span {
+		color: #7862d8;
+		font-size: 12px;
+		font-weight: 800;
+	}
+	.card-title h3,
+	.card-title p {
+		margin: 0;
+	}
+	.card-title p {
+		color: #7f8796;
+		font-size: 13px;
+		margin-top: 5px;
+	}
+	.action-card form {
 		display: grid;
-		gap: 6px;
+		gap: 14px;
 	}
-	.settings {
-		margin-top: 18px;
-		padding-top: 18px;
-		border-top: 1px solid #242936;
-	}
-	.settings label {
-		flex: 1;
+	.action-card button {
+		margin-top: 3px;
 	}
 	input,
 	select {
 		width: 100%;
-		background: #0b0d12;
-		color: white;
-		border: 1px solid #303747;
+		background: #090b0f;
+		color: #eef0f4;
+		border: 1px solid #2c323e;
 		border-radius: 9px;
-		padding: 10px;
+		padding: 11px 12px;
 	}
-	.settings button {
-		margin-top: 19px;
-		background: #242936;
-		color: white;
+	.amount {
+		position: relative;
+	}
+	.amount input {
+		padding-right: 70px;
+	}
+	.amount span {
+		position: absolute;
+		right: 12px;
+		top: 11px;
+		color: #7f8796;
+		font-size: 13px;
+	}
+	.locked {
+		opacity: 0.82;
+	}
+	.permission {
+		min-height: 125px;
+		display: grid;
+		place-items: center;
+		text-align: center;
+		color: #858d9d;
+		font-size: 13px;
+	}
+	.permission p {
+		max-width: 250px;
 	}
 	.notice {
 		padding: 12px 16px;
 		background: #492029;
 		border-radius: 10px;
-		margin-bottom: 18px;
+		margin: 0 0 18px;
 	}
 	.notice.success {
 		background: #153c32;
 	}
 	.empty {
 		text-align: center;
-		padding: 50px;
+		padding: 18vh 20px;
+	}
+	.empty-icon {
+		display: grid;
+		place-items: center;
+		width: 60px;
+		height: 60px;
+		border-radius: 18px;
+		background: #7657ff;
+		margin: 0 auto 24px;
+		font-weight: 900;
+	}
+	.empty h1 {
+		font-size: 34px;
 	}
 	.empty p {
-		color: #8b95a7;
-		margin-top: 8px;
+		color: #858d9d;
 	}
-	@media (max-width: 600px) {
+	@media (max-width: 760px) {
 		main {
-			padding: 22px 16px;
+			padding: 0 16px 50px;
 		}
-		.welcome {
-			align-items: flex-end;
+		.context-bar {
+			align-items: stretch;
+			flex-direction: column;
+			gap: 24px;
 		}
-		.panel {
+		.context-picker {
+			width: 100%;
+		}
+		.dashboard {
 			grid-template-columns: 1fr;
 		}
-		.panel button {
-			grid-column: auto;
+		.balance-card {
+			align-items: start;
+			flex-direction: column;
+			min-height: 250px;
+		}
+		.server-heading {
+			align-items: flex-start;
+			gap: 18px;
+		}
+		.status {
+			white-space: nowrap;
+		}
+		.user > span {
+			display: none;
 		}
 	}
 </style>
