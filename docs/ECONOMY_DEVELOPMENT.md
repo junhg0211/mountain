@@ -72,6 +72,18 @@ Betting pool owners, winners, and participants must be displayed using their cur
 when available, then Discord global display name, then username. Keep the database username only as
 a fallback when Discord member lookup is unavailable.
 
+New pools use `betting_mode='team'` with options `A` and `B`; old pools remain `legacy`. A user may
+add stakes only to the first team they selected. Team settlement divides the complete escrow pot by
+each winning user's integer-cent share of the winning team's stake. Floor each payout first, then
+assign remaining cents in stable user-id order so payout ledger rows sum exactly to the pot. Reject
+settlement when the selected team has no stake. Store create, stake, settle, and refund activity in
+`betting_events` inside the same database transaction as the associated monetary operation.
+
+The pool detail response includes A/B totals, event feed, and authenticated-user statistics. The UI
+computes button-level estimated gross payout from the current pot, the selected team's total, the
+user's existing same-team stake, and the proposed additional stake using integer cents. Estimates
+are informational and the committed settlement remains authoritative.
+
 Attendance rewards are configured per guild. `0.00` disables attendance; a positive reward must
 be at least `0.01`. Claims use the `Asia/Seoul` calendar date and the composite primary key
 `(guild_id, user_id, attendance_date)`. Inserting the claim, crediting the account, and writing the

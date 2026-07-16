@@ -6,10 +6,14 @@ import {
 	BettingPoolNotFoundError,
 	BettingParticipantError,
 	BettingPermissionError,
+	BettingOptionError,
+	getBettingPoolExtras,
 	getBettingPool,
 	placeBet,
+	placeTeamBet,
 	refundBettingPool,
-	settleBettingPool
+	settleBettingPool,
+	settleTeamBettingPool
 } from '$lib/server/db/betting';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
@@ -49,10 +53,12 @@ export const load: PageServerLoad = async ({ cookies, params, url }) => {
 	if (!user) redirect(303, '/login');
 	const pool = await getBettingPool(guildId, params.poolId);
 	if (!pool) redirect(303, `/bets?guild=${encodeURIComponent(guildId)}`);
+	const extras = await getBettingPoolExtras(guildId, params.poolId, user.user.id);
 	return {
 		user: user.user,
 		guildId,
 		pool,
+		...extras,
 		currencyUnit: await getCurrencyUnit(guildId),
 		canManage: pool.ownerId === user.user.id || canManageGuild(user.permissions)
 	};
@@ -65,15 +71,23 @@ export const actions: Actions = {
 		const context = await requireContext(cookies, guildId);
 		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
 		const amount = parseMoney(String(form.get('amount') || ''));
+		const optionKey = String(form.get('optionKey') || '');
 		if (!amount || !ALLOWED_AMOUNTS.has(amount))
 			return fail(400, { message: '버튼에 표시된 금액 단위만 베팅할 수 있습니다.' });
 		try {
-			await placeBet(guildId, params.poolId, context.user.id, amount);
+			const currentPool = await getBettingPool(guildId, params.poolId);
+			if (currentPool?.bettingMode === 'team') {
+				if (optionKey !== 'A' && optionKey !== 'B')
+					return fail(400, { message: 'A팀 또는 B팀을 선택해 주세요.' });
+				await placeTeamBet(guildId, params.poolId, context.user.id, optionKey, amount);
+			} else {
+				await placeBet(guildId, params.poolId, context.user.id, amount);
+			}
 			const pool = await getBettingPool(guildId, params.poolId);
 			publishBettingUpdate(guildId, params.poolId);
 			await sendTransactionNotification(
 				guildId,
-				`🎟️ **베팅 참가**\n#${params.poolId} ${pool?.title || ''}\n참가자: <@${context.user.id}>\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
+				`🎟️ **베팅 참가**\n#${params.poolId} ${pool?.title || ''}\n참가자: <@${context.user.id}>${pool?.bettingMode === 'team' ? `\n선택: **${optionKey}팀**` : ''}\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
 			);
 			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}&bet=success`);
 		} catch (error) {
@@ -83,27 +97,48 @@ export const actions: Actions = {
 				return fail(409, { message: '이미 종료된 베팅 판입니다.' });
 			if (error instanceof BettingPoolNotFoundError)
 				return fail(404, { message: '베팅 판을 찾을 수 없습니다.' });
+			if (error instanceof BettingOptionError)
+				return fail(400, { message: '처음 선택한 팀에만 추가 베팅할 수 있습니다.' });
 			throw error;
 		}
 	},
 	settle: async ({ cookies, params, request }) => {
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
+		const winningOption = String(form.get('winningOption') || '');
 		const winnerId = String(form.get('winnerId') || '');
 		const context = await requireContext(cookies, guildId);
 		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
 		try {
-			const payout = await settleBettingPool(
+			const pool = await getBettingPool(guildId, params.poolId);
+			if (pool?.bettingMode !== 'team') {
+				const payout = await settleBettingPool(
+					guildId,
+					params.poolId,
+					context.user.id,
+					winnerId,
+					canManageGuild(context.permissions)
+				);
+				publishBettingUpdate(guildId, params.poolId);
+				await sendTransactionNotification(
+					guildId,
+					`🏆 **베팅 정산**\n#${params.poolId}\n승자: <@${winnerId}>\n지급액: **${payout}**`
+				);
+				redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
+			}
+			if (winningOption !== 'A' && winningOption !== 'B')
+				return fail(400, { message: '승리 팀을 선택해 주세요.' });
+			const result = await settleTeamBettingPool(
 				guildId,
 				params.poolId,
 				context.user.id,
-				winnerId,
+				winningOption,
 				canManageGuild(context.permissions)
 			);
 			publishBettingUpdate(guildId, params.poolId);
 			await sendTransactionNotification(
 				guildId,
-				`🏆 **베팅 정산**\n#${params.poolId}\n승자: <@${winnerId}>\n지급액: **${payout}**\n처리자: <@${context.user.id}>`
+				`🏆 **팀 베팅 정산**\n#${params.poolId}\n승리: **${winningOption}팀**\n총 지급액: **${result.total}** · ${result.winnerCount}명\n처리자: <@${context.user.id}>`
 			);
 			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
 		} catch (error) {

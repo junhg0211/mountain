@@ -1,6 +1,7 @@
 import { getSessionUser } from '$lib/server/auth';
 import { getDB } from '$lib/server/db';
 import { getBettingPool, getBettingPools } from '$lib/server/db/betting';
+import { getBettingPoolExtras } from '$lib/server/db/betting';
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 
 export const GET: RequestHandler = async ({ cookies, params, url }) => {
@@ -13,6 +14,13 @@ export const GET: RequestHandler = async ({ cookies, params, url }) => {
 	`;
 	if (membership.length !== 1) error(403, 'Guild access denied.');
 	const poolId = url.searchParams.get('pool');
-	if (poolId) return json({ pool: await getBettingPool(params.guildId, poolId) });
+	if (poolId) {
+		const pool = await getBettingPool(params.guildId, poolId);
+		if (!pool) error(404, 'Betting pool not found.');
+		return json({
+			pool,
+			...(await getBettingPoolExtras(params.guildId, poolId, user.id))
+		});
+	}
 	return json({ pools: await getBettingPools(params.guildId) });
 };

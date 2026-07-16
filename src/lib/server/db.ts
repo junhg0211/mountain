@@ -79,8 +79,10 @@ const TABLES = [
 		guild_id VARCHAR(255) NOT NULL,
 		owner_id VARCHAR(255) NOT NULL,
 		title VARCHAR(80) NOT NULL,
+		betting_mode VARCHAR(16) NOT NULL DEFAULT 'legacy',
 		status VARCHAR(16) NOT NULL DEFAULT 'open',
 		winner_id VARCHAR(255),
+		winning_option VARCHAR(1),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		closed_at TIMESTAMP NULL,
 		INDEX betting_pools_guild_status_idx (guild_id, status, created_at),
@@ -89,12 +91,25 @@ const TABLES = [
 	`CREATE TABLE IF NOT EXISTS betting_entries (
 		pool_id BIGINT NOT NULL,
 		user_id VARCHAR(255) NOT NULL,
+		option_key VARCHAR(1),
 		amount DECIMAL(15, 2) NOT NULL,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 		PRIMARY KEY (pool_id, user_id),
 		INDEX betting_entries_user_idx (user_id),
 		FOREIGN KEY (pool_id) REFERENCES betting_pools(id) ON DELETE CASCADE,
 		CHECK (amount >= 0.01)
+	)`,
+	`CREATE TABLE IF NOT EXISTS betting_events (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		pool_id BIGINT NOT NULL,
+		event_type VARCHAR(24) NOT NULL,
+		user_id VARCHAR(255),
+		option_key VARCHAR(1),
+		amount DECIMAL(15, 2),
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		INDEX betting_events_pool_created_idx (pool_id, created_at),
+		FOREIGN KEY (pool_id) REFERENCES betting_pools(id) ON DELETE CASCADE,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 	)`,
 	`CREATE TABLE IF NOT EXISTS transactions (
 		id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -141,7 +156,10 @@ const REPAIRS = [
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_guild_created_idx (guild_id, created_at)`,
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_sender_idx (sender_id)`,
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_recipient_idx (recipient_id)`,
-	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_betting_pool_idx (betting_pool_id)`
+	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_betting_pool_idx (betting_pool_id)`,
+	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS betting_mode VARCHAR(16) NOT NULL DEFAULT 'legacy'`,
+	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS winning_option VARCHAR(1)`,
+	`ALTER TABLE betting_entries ADD COLUMN IF NOT EXISTS option_key VARCHAR(1)`
 ] as const;
 
 function databaseUrl(databaseName?: string): string {

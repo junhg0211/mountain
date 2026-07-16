@@ -1,7 +1,7 @@
 import { getSessionUser } from '$lib/server/auth';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import { getDB } from '$lib/server/db';
-import { createBettingPool, getBettingPools } from '$lib/server/db/betting';
+import { createTeamBettingPool, getBettingPools } from '$lib/server/db/betting';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { fail, redirect } from '@sveltejs/kit';
@@ -56,7 +56,7 @@ export const actions: Actions = {
 		if (membership.length !== 1) return fail(403, { message: '서버 접근 권한이 없습니다.' });
 		if (!title || title.length > 80)
 			return fail(400, { message: '베팅 판 제목은 1~80자로 입력해 주세요.' });
-		const poolId = await createBettingPool(guildId, user.id, title);
+		const poolId = await createTeamBettingPool(guildId, user.id, title);
 		publishBettingUpdate(guildId, poolId);
 		await sendTransactionNotification(
 			guildId,

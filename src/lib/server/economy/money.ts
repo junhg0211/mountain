@@ -18,7 +18,9 @@ export function moneyToCents(value: string): bigint {
 }
 
 export function centsToMoney(value: bigint): string {
-	const integer = value / 100n;
-	const fraction = String(value % 100n).padStart(2, '0');
-	return `${integer}.${fraction}`;
+	const sign = value < 0n ? '-' : '';
+	const absolute = value < 0n ? -value : value;
+	const integer = absolute / 100n;
+	const fraction = String(absolute % 100n).padStart(2, '0');
+	return `${sign}${integer}.${fraction}`;
 }

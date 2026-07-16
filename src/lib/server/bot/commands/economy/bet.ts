@@ -3,15 +3,18 @@ import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import { InsufficientBalanceError } from '$lib/server/db/accounts';
 import {
 	BettingParticipantError,
+	BettingOptionError,
 	BettingPermissionError,
 	BettingPoolClosedError,
 	BettingPoolNotFoundError,
-	createBettingPool,
+	createTeamBettingPool,
 	getBettingPool,
 	getBettingPools,
 	placeBet,
+	placeTeamBet,
 	refundBettingPool,
-	settleBettingPool
+	settleBettingPool,
+	settleTeamBettingPool
 } from '$lib/server/db/betting';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
@@ -98,6 +101,7 @@ const data = new SlashCommandBuilder()
 					})
 					.setRequired(true)
 			)
+			.addStringOption(teamOption)
 	)
 	.addSubcommand((command) =>
 		command
@@ -118,8 +122,9 @@ const data = new SlashCommandBuilder()
 						[Locale.Korean]: '판돈 전부를 받을 참가자입니다.',
 						[Locale.Japanese]: '全額を受け取る参加者です。'
 					})
-					.setRequired(true)
+					.setRequired(false)
 			)
+			.addStringOption(teamOption)
 	)
 	.addSubcommand((command) =>
 		command
@@ -143,6 +148,19 @@ function poolIdOption(option: import('discord.js').SlashCommandStringOption) {
 			[Locale.Japanese]: 'ベット番号です。'
 		})
 		.setRequired(true);
+}
+
+function teamOption(option: import('discord.js').SlashCommandStringOption) {
+	return option
+		.setName('team')
+		.setNameLocalizations({ [Locale.Korean]: '팀', [Locale.Japanese]: 'チーム' })
+		.setDescription('Team A or B.')
+		.setDescriptionLocalizations({
+			[Locale.Korean]: '베팅하거나 정산할 A팀 또는 B팀입니다.',
+			[Locale.Japanese]: 'ベットまたは精算するAチームかBチームです。'
+		})
+		.addChoices({ name: 'A team', value: 'A' }, { name: 'B team', value: 'B' })
+		.setRequired(false);
 }
 
 async function execute(interaction: ChatInputCommandInteraction) {
@@ -171,7 +189,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 						'タイトルを入力してください。'
 					)
 				));
-			const id = await createBettingPool(interaction.guildId, interaction.user.id, title);
+			const id = await createTeamBettingPool(interaction.guildId, interaction.user.id, title);
 			publishBettingUpdate(interaction.guildId, id);
 			await sendTransactionNotification(
 				interaction.guildId,
@@ -213,8 +231,8 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			const pool = await getBettingPool(interaction.guildId, poolId);
 			if (!pool) throw new BettingPoolNotFoundError();
 			const participants = pool.participants.map(
-				(entry: { username: string; amount: string }, index: number) =>
-					`${index + 1}. **${entry.username}** — ${entry.amount} ${unit}`
+				(entry, index) =>
+					`${index + 1}. ${entry.optionKey ? `**${entry.optionKey}팀** · ` : ''}**${entry.username}** — ${entry.amount} ${unit}`
 			);
 			const visibleParticipants = participants.slice(0, 25);
 			if (participants.length > visibleParticipants.length)
@@ -238,7 +256,25 @@ async function execute(interaction: ChatInputCommandInteraction) {
 				);
 				return;
 			}
-			const remaining = await placeBet(interaction.guildId, poolId, interaction.user.id, amount);
+			const poolBefore = await getBettingPool(interaction.guildId, poolId);
+			const team = interaction.options.getString('team');
+			const remaining =
+				poolBefore?.bettingMode === 'team'
+					? team === 'A' || team === 'B'
+						? await placeTeamBet(interaction.guildId, poolId, interaction.user.id, team, amount)
+						: null
+					: await placeBet(interaction.guildId, poolId, interaction.user.id, amount);
+			if (remaining === null) {
+				await interaction.editReply(
+					localize(
+						language,
+						'Choose team A or B.',
+						'A팀 또는 B팀을 선택해 주세요.',
+						'AチームかBチームを選択してください。'
+					)
+				);
+				return;
+			}
 			const pool = await getBettingPool(interaction.guildId, poolId);
 			publishBettingUpdate(interaction.guildId, poolId);
 			await sendTransactionNotification(
@@ -260,7 +296,35 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)
 		);
 		if (subcommand === 'settle') {
-			const winner = interaction.options.getUser('winner', true);
+			const pool = await getBettingPool(interaction.guildId, poolId);
+			const team = interaction.options.getString('team');
+			if (pool?.bettingMode === 'team') {
+				if (team !== 'A' && team !== 'B') {
+					await interaction.editReply(
+						localize(
+							language,
+							'Choose the winning team.',
+							'승리 팀을 선택해 주세요.',
+							'勝利チームを選択してください。'
+						)
+					);
+					return;
+				}
+				const result = await settleTeamBettingPool(
+					interaction.guildId,
+					poolId,
+					interaction.user.id,
+					team,
+					canOverride
+				);
+				publishBettingUpdate(interaction.guildId, poolId);
+				await interaction.editReply(
+					`🏆 ${team}팀 승리 · ${result.winnerCount}명에게 **${result.total} ${unit}** 비례 지급`
+				);
+				return;
+			}
+			const winner = interaction.options.getUser('winner');
+			if (!winner) throw new BettingParticipantError();
 			const payout = await settleBettingPool(
 				interaction.guildId,
 				poolId,
@@ -330,6 +394,13 @@ function bettingError(error: unknown, language: SupportedLanguage) {
 			'This betting pool is already closed.',
 			'이미 종료된 베팅 판입니다.',
 			'このベットは終了しています。'
+		);
+	if (error instanceof BettingOptionError)
+		return localize(
+			language,
+			'Choose team A or B. You cannot switch teams after staking.',
+			'A팀 또는 B팀을 선택해 주세요. 한 번 베팅한 뒤에는 팀을 바꿀 수 없습니다.',
+			'AチームかBチームを選択してください。ベット後はチームを変更できません。'
 		);
 	if (error instanceof BettingPermissionError)
 		return localize(

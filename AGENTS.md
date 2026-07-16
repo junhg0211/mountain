@@ -24,6 +24,9 @@ These rules apply to every change in this repository.
   `bet_payout` (escrow to winner), and `bet_refund` (escrow back to participant), each linked by
   `betting_pool_id`. Attendance uses `attendance` with a null sender and the rewarded user as the
   recipient.
+- Team betting uses option `A` or `B`. Settle the full escrow pot among the winning option in
+  proportion to each winner's integer-cent stake, distribute remainder cents deterministically,
+  and write one `bet_payout` ledger row per recipient in the settlement transaction.
 - Lock affected accounts (`FOR UPDATE`) and check available balance before debits.
 - Discord transaction notifications are best-effort and happen only after the database transaction
   commits. Notification failure must not roll back a successful monetary operation.
