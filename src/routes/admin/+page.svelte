@@ -325,7 +325,6 @@
 	}
 	.channel-select select {
 		display: block;
-		min-height: 48px;
 		margin-top: 8px;
 	}
 	.visibility h3 {
@@ -364,6 +363,12 @@
 		border: 1px solid #303744;
 		border-radius: 9px;
 		padding: 11px 13px;
+	}
+	input:not([type='checkbox']):not([type='hidden']),
+	select,
+	button {
+		box-sizing: border-box;
+		height: 42px;
 	}
 	button:disabled {
 		opacity: 0.4;
