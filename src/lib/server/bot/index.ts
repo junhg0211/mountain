@@ -11,6 +11,7 @@ import {
 	type RESTPostAPIChatInputApplicationCommandsJSONBody
 } from 'discord.js';
 import settings from './commands/administration/settings';
+import attendance from './commands/economy/attendance';
 import balance from './commands/economy/balance';
 import bet from './commands/economy/bet';
 import pay from './commands/economy/pay';
@@ -81,6 +82,7 @@ interface Command {
 
 const commands = new Map<string, Command>([
 	[settings.data.name, settings],
+	[attendance.data.name, attendance],
 	[balance.data.name, balance],
 	[bet.data.name, bet],
 	[pay.data.name, pay],

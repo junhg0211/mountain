@@ -8,6 +8,7 @@ import {
 } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
 import {
+	setAttendanceReward,
 	setCurrencyUnit,
 	setNotificationChannel,
 	setVisibilitySettings
@@ -29,6 +30,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			COALESCE(gs.currency_unit, 'coin') AS currency_unit,
 			COALESCE(gs.public_balance_enabled, TRUE) AS public_balance_enabled,
 			COALESCE(gs.ranking_enabled, TRUE) AS ranking_enabled,
+			COALESCE(gs.attendance_reward, 0.00) AS attendance_reward,
 			gs.notification_channel_id
 		FROM user_guilds ug
 		LEFT JOIN guild_settings gs ON gs.guild_id = ug.guild_id
@@ -44,6 +46,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				currency_unit: unknown;
 				public_balance_enabled: unknown;
 				ranking_enabled: unknown;
+				attendance_reward: unknown;
 				notification_channel_id: unknown;
 			}) => ({
 				id: String(row.guild_id),
@@ -51,6 +54,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				currencyUnit: String(row.currency_unit),
 				publicBalanceEnabled: Boolean(row.public_balance_enabled),
 				rankingEnabled: Boolean(row.ranking_enabled),
+				attendanceReward: Number(row.attendance_reward).toFixed(2),
 				notificationChannelId: row.notification_channel_id
 					? String(row.notification_channel_id)
 					: null
@@ -121,6 +125,34 @@ export const actions: Actions = {
 			return fail(400, { message: '경제 단위는 1~16자로 입력해 주세요.' });
 		await setCurrencyUnit(guildId, unit);
 		return { success: true, message: `경제 단위를 ${unit}(으)로 변경했습니다.` };
+	},
+	attendance: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const rawAmount = String(form.get('amount') || '').trim();
+		const amount =
+			rawAmount === '0' || /^0\.0{1,2}$/.test(rawAmount) ? '0.00' : parseMoney(rawAmount);
+		if (!amount)
+			return fail(400, {
+				message: '0 또는 0.01 이상의 금액을 소수점 둘째 자리까지 입력해 주세요.'
+			});
+		const db = await getDB();
+		const rows = await db`
+			SELECT permissions FROM user_guilds
+			WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1
+		`;
+		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		await setAttendanceReward(guildId, amount);
+		return {
+			success: true,
+			message:
+				amount === '0.00'
+					? '출석 보상을 비활성화했습니다.'
+					: `일일 출석 보상을 ${amount}(으)로 설정했습니다.`
+		};
 	},
 	visibility: async ({ cookies, request }) => {
 		const user = await getSessionUser(cookies);

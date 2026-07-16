@@ -46,9 +46,22 @@ const TABLES = [
 		currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin',
 		public_balance_enabled BOOLEAN NOT NULL DEFAULT TRUE,
 		ranking_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+		attendance_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
 		notification_channel_id VARCHAR(255),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+	)`,
+	`CREATE TABLE IF NOT EXISTS attendance_claims (
+		guild_id VARCHAR(255) NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		attendance_date DATE NOT NULL,
+		reward_amount DECIMAL(15, 2) NOT NULL,
+		claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (guild_id, user_id, attendance_date),
+		INDEX attendance_claims_guild_date_idx (guild_id, attendance_date),
+		INDEX attendance_claims_user_idx (user_id),
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+		CHECK (reward_amount >= 0.01)
 	)`,
 	`CREATE TABLE IF NOT EXISTS betting_pools (
 		id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -107,6 +120,7 @@ const REPAIRS = [
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin'`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS public_balance_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS ranking_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
+	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS attendance_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS notification_channel_id VARCHAR(255)`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`,

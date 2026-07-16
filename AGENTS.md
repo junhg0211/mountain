@@ -22,7 +22,8 @@ These rules apply to every change in this repository.
 - Ledger direction is fixed: transfer = sender and recipient, mint = null sender and target
   recipient, burn = target sender and null recipient. Betting uses `bet_stake` (user to escrow),
   `bet_payout` (escrow to winner), and `bet_refund` (escrow back to participant), each linked by
-  `betting_pool_id`.
+  `betting_pool_id`. Attendance uses `attendance` with a null sender and the rewarded user as the
+  recipient.
 - Lock affected accounts (`FOR UPDATE`) and check available balance before debits.
 - Discord transaction notifications are best-effort and happen only after the database transaction
   commits. Notification failure must not roll back a successful monetary operation.
@@ -40,5 +41,7 @@ These rules apply to every change in this repository.
   shutdown behavior.
 - For schema changes, update both `database.sql` and the bootstrap/repair statements in
   `src/lib/server/db.ts`, then verify the migration against the configured database when possible.
+- Daily attendance is keyed by `(guild_id, user_id, attendance_date)` using the `Asia/Seoul`
+  calendar date. Web and Discord claims must share this same key and atomic claim service.
 
 See `docs/ECONOMY_DEVELOPMENT.md` for the detailed architecture and change checklist.

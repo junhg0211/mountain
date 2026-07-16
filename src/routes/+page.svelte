@@ -59,13 +59,14 @@
 		transferForm?.requestSubmit();
 	}
 	function transactionTitle(transaction: {
-		type: 'transfer' | 'mint' | 'burn' | 'bet_stake' | 'bet_payout' | 'bet_refund';
+		type: 'transfer' | 'mint' | 'burn' | 'bet_stake' | 'bet_payout' | 'bet_refund' | 'attendance';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
 	}) {
 		if (transaction.type === 'mint') return '관리자 발행';
 		if (transaction.type === 'burn') return '관리자 소각';
+		if (transaction.type === 'attendance') return '일일 출석 보상';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')
@@ -160,6 +161,31 @@
 					</div>
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
+
+				{#if data.attendance}
+					<section class="card attendance-card">
+						<div>
+							<p class="card-label">DAILY ATTENDANCE</p>
+							<h3>오늘의 출석</h3>
+							{#if data.attendance.reward === '0.00'}
+								<p>이 서버는 아직 출석 보상을 설정하지 않았습니다.</p>
+							{:else if data.attendance.claimed}
+								<p>오늘의 보상을 이미 받았습니다. 내일 다시 만나요!</p>
+							{:else}
+								<p>하루 한 번 출석하고 서버 보상을 받아보세요.</p>
+							{/if}
+						</div>
+						<div class="attendance-reward">
+							<strong>{data.attendance.reward}</strong><span>{selectedGuild.currencyUnit}</span>
+							<form method="POST" action={`?/attendance&guild=${selectedGuild.id}`}>
+								<input type="hidden" name="guildId" value={selectedGuild.id} />
+								<button disabled={data.attendance.claimed || data.attendance.reward === '0.00'}
+									>{data.attendance.claimed ? '출석 완료 ✓' : '출석하기'}</button
+								>
+							</form>
+						</div>
+					</section>
+				{/if}
 
 				<BettingBoard
 					initialPools={data.bettingPools}
@@ -527,6 +553,51 @@
 		font-size: 13px;
 		max-width: 240px;
 	}
+	.attendance-card {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 24px;
+		background: linear-gradient(120deg, #12251f, #11141a 58%);
+	}
+	.attendance-card h3,
+	.attendance-card p {
+		margin: 0;
+	}
+	.attendance-card h3 {
+		font-size: 22px;
+	}
+	.attendance-card p:not(.card-label) {
+		margin-top: 7px;
+		color: #83978f;
+		font-size: 12px;
+	}
+	.attendance-reward {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.attendance-reward strong {
+		font-size: 28px;
+	}
+	.attendance-reward > span {
+		color: #79dfb7;
+		font-size: 12px;
+		font-weight: 800;
+	}
+	.attendance-reward form {
+		margin-left: 8px;
+	}
+	.attendance-reward button {
+		background: #277456;
+		color: #fff;
+		font-weight: 800;
+	}
+	.attendance-reward button:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
 	.card-title {
 		display: flex;
 		gap: 13px;
@@ -841,6 +912,14 @@
 			align-items: start;
 			flex-direction: column;
 			min-height: 250px;
+		}
+		.attendance-card,
+		.attendance-reward {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+		.attendance-reward form {
+			margin-left: 0;
 		}
 		.server-heading {
 			align-items: flex-start;

@@ -75,6 +75,25 @@
 					/></label
 				><button>변경사항 저장</button>
 			</form>
+			<form
+				method="POST"
+				action={`?/attendance&guild=${selectedGuild.id}`}
+				class="attendance-settings"
+			>
+				<input type="hidden" name="guildId" value={selectedGuild.id} />
+				<h3>출석 보상</h3>
+				<p>한국 시간 기준으로 서버 구성원에게 하루 한 번 지급합니다. 0은 비활성화입니다.</p>
+				<label
+					>일일 지급액<input
+						name="amount"
+						inputmode="decimal"
+						value={selectedGuild.attendanceReward}
+						placeholder="0.00"
+						required
+					/></label
+				>
+				<button>출석 보상 저장</button>
+			</form>
 			<form method="POST" action={`?/visibility&guild=${selectedGuild.id}`} class="visibility">
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>공개 범위</h3>
@@ -105,7 +124,7 @@
 			>
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>거래 알림 채널</h3>
-				<p>송금, Mint, Burn이 완료되면 선택한 Discord 채널에 기록합니다.</p>
+				<p>송금, 발행·소각, 베팅, 출석 보상이 발생하면 선택한 Discord 채널에 기록합니다.</p>
 				<label class="channel-select"
 					>알림 채널<select name="channelId"
 						><option value="">알림 사용 안 함</option>{#each data.channels as channel}<option
@@ -341,6 +360,18 @@
 	.notifications {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
+	}
+	.attendance-settings {
+		border-top: 1px solid #292e39;
+		padding-top: 26px;
+	}
+	.attendance-settings h3,
+	.attendance-settings p {
+		margin: 0;
+	}
+	.attendance-settings p {
+		color: #747d8d;
+		font-size: 13px;
 	}
 	.notifications h3 {
 		margin: 0;

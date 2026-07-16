@@ -54,6 +54,15 @@ export async function getCurrencyUnit(guildId: string): Promise<string> {
 	return rows.length === 1 ? String(rows[0].currency_unit) : DEFAULT_CURRENCY_UNIT;
 }
 
+export async function setAttendanceReward(guildId: string, amount: string): Promise<void> {
+	const db = await getDB();
+	await db`
+		INSERT INTO guild_settings (guild_id, attendance_reward)
+		VALUES (${guildId}, ${amount})
+		ON DUPLICATE KEY UPDATE attendance_reward=VALUES(attendance_reward)
+	`;
+}
+
 export async function setNotificationChannel(guildId: string, channelId: string | null) {
 	const db = await getDB();
 	await db`

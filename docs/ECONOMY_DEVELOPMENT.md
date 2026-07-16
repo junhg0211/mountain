@@ -6,6 +6,7 @@ This document records the assumptions that must remain true as Mountain evolves.
 
 - `src/lib/server/db/accounts.ts`: balances, transfers, mint/burn, ranking, supply, and ledger reads.
 - `src/lib/server/db/betting.ts`: betting pool escrow, staking, settlement, refund, and live views.
+- `src/lib/server/db/attendance.ts`: Korean-date daily claims and atomic reward payments.
 - `src/lib/server/economy/money.ts`: canonical money parsing and integer-cent conversion.
 - `src/lib/server/db/guild-settings.ts`: per-server unit, visibility, and notification settings.
 - `src/lib/server/bot/commands/`: Discord slash command definitions and handlers.
@@ -50,12 +51,19 @@ must insert exactly one row in the same database transaction as its balance upda
 | Bet stake  | participant  | `NULL`         | `bet_stake`        |
 | Bet payout | `NULL`       | winner         | `bet_payout`       |
 | Bet refund | `NULL`       | participant    | `bet_refund`       |
+| Attendance | `NULL`       | rewarded user  | `attendance`       |
 
 Betting rows also carry `betting_pool_id`. Money staked in an open pool is escrow, not burned, so
 total supply is account balances plus stakes in open pools. Settlement and refund must lock the
 pool row first; only an `open` pool can move money. The host may settle or refund, and a user with
 manage-guild permission may override for recovery. Settlement requires the winner to be a current
 participant. Refund restores every participant's cumulative stake exactly once.
+
+Attendance rewards are configured per guild. `0.00` disables attendance; a positive reward must
+be at least `0.01`. Claims use the `Asia/Seoul` calendar date and the composite primary key
+`(guild_id, user_id, attendance_date)`. Inserting the claim, crediting the account, and writing the
+`attendance` ledger row must happen in one database transaction. This prevents duplicate rewards
+when web and Discord claims race each other.
 
 Use row locks for debit operations. A failed insufficient-balance check must change neither the
 balance nor the ledger. Discord notifications are sent after commit and intentionally swallow

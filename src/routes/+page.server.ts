@@ -8,6 +8,12 @@ import {
 } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
 import {
+	AttendanceAlreadyClaimedError,
+	AttendanceDisabledError,
+	claimAttendance,
+	getAttendanceStatus
+} from '$lib/server/db/attendance';
+import {
 	BettingParticipantError,
 	BettingPermissionError,
 	BettingPoolClosedError,
@@ -20,6 +26,7 @@ import {
 	settleBettingPool
 } from '$lib/server/db/betting';
 import { canManageGuild } from '$lib/server/db/user-guilds';
+import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
@@ -71,20 +78,22 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const rankingEnabled =
 		selectedGuildId &&
 		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled;
-	const [ranking, transactions, bettingPools] = selectedGuildId
+	const [ranking, transactions, bettingPools, attendance] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
 				getUserTransactions(selectedGuildId, user.id),
-				getBettingPools(selectedGuildId)
+				getBettingPools(selectedGuildId),
+				getAttendanceStatus(selectedGuildId, user.id)
 			])
-		: [[], [], []];
+		: [[], [], [], null];
 	return {
 		user,
 		guilds,
 		selectedGuildId,
 		ranking,
 		transactions,
-		bettingPools
+		bettingPools,
+		attendance
 	};
 };
 
@@ -138,6 +147,32 @@ export const actions: Actions = {
 		} catch (error) {
 			if (error instanceof InsufficientBalanceError)
 				return fail(400, { message: '소지금이 부족합니다.' });
+			throw error;
+		}
+	},
+	attendance: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership) return fail(401, { message: '서버 접근 권한이 없습니다.' });
+		try {
+			const [result, unit] = await Promise.all([
+				claimAttendance(guildId, membership.user.id),
+				getCurrencyUnit(guildId)
+			]);
+			await sendTransactionNotification(
+				guildId,
+				`📅 **출석 보상**\n사용자: <@${membership.user.id}>\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**`
+			);
+			return {
+				success: true,
+				message: `출석 완료! ${result.reward} ${unit}을(를) 받았습니다. 현재 소지금: ${result.balance} ${unit}`
+			};
+		} catch (error) {
+			if (error instanceof AttendanceAlreadyClaimedError)
+				return fail(409, { message: '오늘은 이미 출석 보상을 받았습니다.' });
+			if (error instanceof AttendanceDisabledError)
+				return fail(403, { message: '이 서버는 출석 보상을 사용하지 않습니다.' });
 			throw error;
 		}
 	},
