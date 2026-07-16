@@ -1,8 +1,9 @@
 import { deleteSession, getSessionUser } from '$lib/server/auth';
 import { InsufficientBalanceError, transferBalance } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
-import { setCurrencyUnit } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
+import { ensureUser } from '$lib/server/db/users';
+import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -16,15 +17,9 @@ interface GuildRow {
 	currency_unit: unknown;
 }
 
-interface MemberRow {
-	guild_id: unknown;
-	id: unknown;
-	username: unknown;
-}
-
 export const load: PageServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
-	if (!user) return { user, guilds: [], members: [], selectedGuildId: null };
+	if (!user) return { user, guilds: [], selectedGuildId: null };
 
 	const db = getDB();
 	const guildRows = await db`
@@ -37,15 +32,6 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		WHERE ug.user_id = ${user.id}
 		ORDER BY ug.guild_name
 	`;
-	const memberRows = await db`
-		SELECT ug.guild_id, u.id, u.username
-		FROM user_guilds ug
-		JOIN users u ON u.id = ug.user_id
-		WHERE ug.guild_id IN (SELECT guild_id FROM user_guilds WHERE user_id = ${user.id})
-			AND ug.user_id <> ${user.id}
-		ORDER BY u.username
-	`;
-
 	const guilds = guildRows.map((row: GuildRow) => ({
 		id: String(row.guild_id),
 		name: String(row.guild_name),
@@ -64,12 +50,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	return {
 		user,
 		guilds,
-		selectedGuildId,
-		members: memberRows.map((row: MemberRow) => ({
-			guildId: String(row.guild_id),
-			id: String(row.id),
-			username: String(row.username)
-		}))
+		selectedGuildId
 	};
 };
 
@@ -89,20 +70,6 @@ export const actions: Actions = {
 		await deleteSession(cookies);
 		redirect(303, '/');
 	},
-	settings: async ({ cookies, request }) => {
-		const form = await request.formData();
-		const guildId = String(form.get('guildId') || '');
-		const unit = String(form.get('unit') || '').trim();
-		const membership = await requireMembership(cookies, guildId);
-		if (!membership)
-			return fail(401, { message: '로그인이 필요하거나 서버 접근 권한이 없습니다.' });
-		if (!canManageGuild(membership.permissions))
-			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
-		if (!unit || unit.length > 16)
-			return fail(400, { message: '경제 단위는 1~16자로 입력해 주세요.' });
-		await setCurrencyUnit(guildId, unit);
-		return { success: true, message: `경제 단위를 ${unit}(으)로 변경했습니다.` };
-	},
 	transfer: async ({ cookies, request }) => {
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
@@ -115,13 +82,17 @@ export const actions: Actions = {
 			return fail(400, { message: '0.01 이상의 금액을 소수점 둘째 자리까지 입력해 주세요.' });
 		if (recipientId === membership.user.id)
 			return fail(400, { message: '자기 자신에게 송금할 수 없습니다.' });
+		if (!/^\d{17,20}$/.test(recipientId))
+			return fail(400, { message: '검색 결과에서 받는 사람을 선택해 주세요.' });
 
-		const db = getDB();
-		const recipient = await db`
-			SELECT 1 FROM user_guilds WHERE user_id = ${recipientId} AND guild_id = ${guildId} LIMIT 1
-		`;
-		if (recipient.length !== 1)
-			return fail(400, { message: '같은 서버의 웹 가입자를 선택해 주세요.' });
+		const recipient = await getGuildMember(guildId, recipientId);
+		if (!recipient || recipient.user.bot)
+			return fail(400, { message: '같은 서버의 사용자를 선택해 주세요.' });
+		await ensureUser(
+			recipient.user.id,
+			recipient.nick || recipient.user.global_name || recipient.user.username,
+			recipient.user.avatar || ''
+		);
 
 		try {
 			await transferBalance(guildId, membership.user.id, recipientId, amount);

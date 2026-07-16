@@ -14,6 +14,11 @@ export interface DiscordGuild {
 	permissions: string;
 }
 
+export interface DiscordGuildMember {
+	nick: string | null;
+	user: DiscordUser & { bot?: boolean };
+}
+
 export async function getMe(token: string): Promise<DiscordUser> {
 	if (!token) throw new Error('Discord access token is missing.');
 
@@ -58,4 +63,27 @@ export async function getBotGuildIds(): Promise<Set<string>> {
 	if (!token) throw new Error('BOT_TOKEN is not configured.');
 	const guilds = await fetchGuilds(`Bot ${token}`);
 	return new Set(guilds.map((guild) => guild.id));
+}
+
+function botAuthorization(): string {
+	if (!process.env.BOT_TOKEN) throw new Error('BOT_TOKEN is not configured.');
+	return `Bot ${process.env.BOT_TOKEN}`;
+}
+
+export async function searchGuildMembers(guildId: string, query: string) {
+	const params = new URLSearchParams({ query, limit: '20' });
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/members/search?${params}`, {
+		headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok) throw new Error(`Discord member search failed (${response.status}).`);
+	return (await response.json()) as DiscordGuildMember[];
+}
+
+export async function getGuildMember(guildId: string, userId: string) {
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/members/${userId}`, {
+		headers: { Authorization: botAuthorization() }
+	});
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`Discord member request failed (${response.status}).`);
+	return (await response.json()) as DiscordGuildMember;
 }

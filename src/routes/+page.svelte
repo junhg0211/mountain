@@ -3,9 +3,40 @@
 	const selectedGuild = $derived(
 		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
 	);
-	const contextMembers = $derived(
-		data.members.filter((member: { guildId: string }) => member.guildId === data.selectedGuildId)
-	);
+	type Member = { id: string; username: string; avatarUrl: string | null };
+	let memberQuery = $state('');
+	let memberResults = $state<Member[]>([]);
+	let selectedRecipient = $state<Member | null>(null);
+	let searching = $state(false);
+	let searchSequence = 0;
+	let searchTimer: ReturnType<typeof setTimeout>;
+	function scheduleMemberSearch() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(searchMembers, 250);
+	}
+	async function searchMembers() {
+		selectedRecipient = null;
+		const query = memberQuery.trim();
+		const sequence = ++searchSequence;
+		if (!selectedGuild || !query) {
+			memberResults = [];
+			return;
+		}
+		searching = true;
+		const response = await fetch(
+			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(query)}`
+		);
+		const body = response.ok ? await response.json() : { members: [] };
+		if (sequence === searchSequence) {
+			memberResults = body.members;
+			searching = false;
+		}
+	}
+	function chooseMember(member: Member) {
+		selectedRecipient = member;
+		memberQuery = member.username;
+		memberResults = [];
+	}
 </script>
 
 <svelte:head><title>Mountain Economy</title></svelte:head>
@@ -88,12 +119,26 @@
 					</div>
 					<form method="POST" action={`?/transfer&guild=${selectedGuild.id}`}>
 						<input type="hidden" name="guildId" value={selectedGuild.id} />
-						<label
-							>받는 사람<select name="recipientId" required
-								><option value="">사용자 선택</option>{#each contextMembers as member}<option
-										value={member.id}>{member.username}</option
-									>{/each}</select
-							></label
+						<label class="member-search"
+							>받는 사람<input
+								bind:value={memberQuery}
+								oninput={scheduleMemberSearch}
+								autocomplete="off"
+								placeholder="닉네임 또는 사용자 이름 검색"
+							/><input
+								type="hidden"
+								name="recipientId"
+								value={selectedRecipient?.id || ''}
+							/>{#if searching}<span class="search-state">검색 중…</span
+								>{/if}{#if memberResults.length}<div class="results">
+									{#each memberResults as member}<button
+											type="button"
+											onclick={() => chooseMember(member)}
+											>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i
+													>{member.username.slice(0, 1)}</i
+												>{/if}<span>{member.username}</span></button
+										>{/each}
+								</div>{/if}</label
 						>
 						<label
 							>금액
@@ -107,30 +152,23 @@
 					</form>
 				</section>
 
-				<section class="card action-card" class:locked={!selectedGuild.canManage}>
+				<section class="card action-card admin-card">
 					<div class="card-title">
 						<span>02</span>
 						<div>
-							<h3>경제 설정</h3>
-							<p>이 서버에서 사용할 단위를 관리합니다.</p>
+							<h3>서버 관리</h3>
+							<p>경제 정책과 서버 설정을 관리합니다.</p>
 						</div>
 					</div>
-					{#if selectedGuild.canManage}
-						<form method="POST" action={`?/settings&guild=${selectedGuild.id}`}>
-							<input type="hidden" name="guildId" value={selectedGuild.id} />
-							<label
-								>경제 단위<input
-									name="unit"
-									value={selectedGuild.currencyUnit}
-									maxlength="16"
-									required
-								/></label
+					{#if selectedGuild.canManage}<div class="admin-entry">
+							<span>관리 권한 확인됨</span>
+							<p>경제 단위와 관리자 기능은 별도 공간에서 관리합니다.</p>
+							<a class="secondary" href={`/admin?guild=${selectedGuild.id}`}
+								>관리자 대시보드 열기 →</a
 							>
-							<button class="secondary" type="submit">설정 저장</button>
-						</form>
-					{:else}<div class="permission">
+						</div>{:else}<div class="permission">
 							<span>🔒</span>
-							<p>서버 관리 권한이 있는 사용자만 변경할 수 있습니다.</p>
+							<p>서버 관리 권한이 있는 사용자만 관리자 대시보드에 접근할 수 있습니다.</p>
 						</div>{/if}
 				</section>
 			</div>
@@ -377,6 +415,7 @@
 	input,
 	select {
 		width: 100%;
+		height: 44px;
 		background: #090b0f;
 		color: #eef0f4;
 		border: 1px solid #2c323e;
@@ -396,9 +435,6 @@
 		color: #7f8796;
 		font-size: 13px;
 	}
-	.locked {
-		opacity: 0.82;
-	}
 	.permission {
 		min-height: 125px;
 		display: grid;
@@ -409,6 +445,75 @@
 	}
 	.permission p {
 		max-width: 250px;
+	}
+	.member-search {
+		position: relative;
+	}
+	.search-state {
+		position: absolute;
+		right: 12px;
+		top: 36px;
+		color: #7f8796;
+	}
+	.results {
+		position: absolute;
+		z-index: 5;
+		top: 68px;
+		left: 0;
+		right: 0;
+		background: #171a21;
+		border: 1px solid #303744;
+		border-radius: 10px;
+		padding: 5px;
+		box-shadow: 0 14px 35px #0008;
+	}
+	.results button {
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		background: transparent;
+		color: #fff;
+		text-align: left;
+	}
+	.results button:hover {
+		background: #252a34;
+	}
+	.results img,
+	.results i {
+		width: 30px;
+		height: 30px;
+		border-radius: 50%;
+	}
+	.results i {
+		display: grid;
+		place-items: center;
+		background: #7657ff;
+		font-style: normal;
+	}
+	.admin-entry {
+		display: grid;
+		gap: 12px;
+		color: #858d9d;
+		font-size: 13px;
+	}
+	.admin-entry > span {
+		color: #8fd9bc;
+	}
+	.admin-entry p {
+		margin: 0;
+	}
+	.admin-entry a {
+		text-align: center;
+		text-decoration: none;
+	}
+	.admin-card {
+		display: flex;
+		flex-direction: column;
+	}
+	.admin-entry,
+	.permission {
+		flex: 1;
 	}
 	.notice {
 		padding: 12px 16px;
