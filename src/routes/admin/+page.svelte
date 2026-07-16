@@ -26,7 +26,7 @@
 		}
 		searching = true;
 		const response = await fetch(
-			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(memberQuery)}`
+			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(memberQuery)}&includeSelf=true`
 		);
 		const body = response.ok ? await response.json() : { members: [] };
 		if (sequence === searchSequence) {
