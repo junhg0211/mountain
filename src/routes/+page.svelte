@@ -584,9 +584,11 @@
 	}
 	.attendance-card {
 		display: flex;
+		flex-direction: column;
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 24px;
+		min-width: 0;
 		background: linear-gradient(120deg, #12251f, #11141a 58%);
 	}
 	.attendance-grid {
@@ -613,6 +615,7 @@
 		align-items: center;
 		flex-wrap: wrap;
 		gap: 8px;
+		width: 100%;
 	}
 	.streak-summary {
 		display: grid;
@@ -639,6 +642,7 @@
 		background: #277456;
 		color: #fff;
 		font-weight: 800;
+		white-space: nowrap;
 	}
 	.attendance-reward button:disabled {
 		opacity: 0.5;
