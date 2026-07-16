@@ -51,6 +51,30 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS betting_pools (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    owner_id VARCHAR(255) NOT NULL,
+    title VARCHAR(80) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'open',
+    winner_id VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP NULL,
+    INDEX betting_pools_guild_status_idx (guild_id, status, created_at),
+    INDEX betting_pools_owner_idx (owner_id)
+);
+
+CREATE TABLE IF NOT EXISTS betting_entries (
+    pool_id BIGINT NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    amount DECIMAL(15, 2) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (pool_id, user_id),
+    INDEX betting_entries_user_idx (user_id),
+    FOREIGN KEY (pool_id) REFERENCES betting_pools(id) ON DELETE CASCADE,
+    CHECK (amount >= 0.01)
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     guild_id VARCHAR(255) NOT NULL,
@@ -58,11 +82,14 @@ CREATE TABLE IF NOT EXISTS transactions (
     recipient_id VARCHAR(255),
     amount DECIMAL(15, 2) NOT NULL,
     transaction_type VARCHAR(32) NOT NULL,
+    betting_pool_id BIGINT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX transactions_guild_created_idx (guild_id, created_at),
     INDEX transactions_sender_idx (sender_id),
     INDEX transactions_recipient_idx (recipient_id),
+    INDEX transactions_betting_pool_idx (betting_pool_id),
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (betting_pool_id) REFERENCES betting_pools(id) ON DELETE SET NULL,
     CHECK (amount >= 0.01)
 );

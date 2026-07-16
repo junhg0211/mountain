@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import BettingBoard from '$lib/components/BettingBoard.svelte';
 
 	const { data, form } = $props();
 	const selectedGuild = $derived(
@@ -58,12 +59,19 @@
 		transferForm?.requestSubmit();
 	}
 	function transactionTitle(transaction: {
-		type: 'transfer' | 'mint' | 'burn';
+		type: 'transfer' | 'mint' | 'burn' | 'bet_stake' | 'bet_payout' | 'bet_refund';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
+		bettingPool: { id: string; title: string } | null;
 	}) {
 		if (transaction.type === 'mint') return '관리자 발행';
 		if (transaction.type === 'burn') return '관리자 소각';
+		if (transaction.type === 'bet_stake')
+			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
+		if (transaction.type === 'bet_payout')
+			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 당첨금`;
+		if (transaction.type === 'bet_refund')
+			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 환불`;
 		return transaction.direction === 'credit'
 			? `${transaction.counterparty}님에게서 받음`
 			: `${transaction.counterparty}님에게 송금`;
@@ -152,6 +160,14 @@
 					</div>
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
+
+				<BettingBoard
+					initialPools={data.bettingPools}
+					guildId={selectedGuild.id}
+					currencyUnit={selectedGuild.currencyUnit}
+					userId={data.user.id}
+					canManage={selectedGuild.canManage}
+				/>
 
 				<section class="card action-card">
 					<div class="card-title">

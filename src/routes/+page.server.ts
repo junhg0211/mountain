@@ -7,6 +7,18 @@ import {
 	transferBalance
 } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
+import {
+	BettingParticipantError,
+	BettingPermissionError,
+	BettingPoolClosedError,
+	BettingPoolNotFoundError,
+	createBettingPool,
+	getBettingPool,
+	getBettingPools,
+	placeBet,
+	refundBettingPool,
+	settleBettingPool
+} from '$lib/server/db/betting';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
@@ -59,18 +71,20 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const rankingEnabled =
 		selectedGuildId &&
 		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled;
-	const [ranking, transactions] = selectedGuildId
+	const [ranking, transactions, bettingPools] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
-				getUserTransactions(selectedGuildId, user.id)
+				getUserTransactions(selectedGuildId, user.id),
+				getBettingPools(selectedGuildId)
 			])
-		: [[], []];
+		: [[], [], []];
 	return {
 		user,
 		guilds,
 		selectedGuildId,
 		ranking,
-		transactions
+		transactions,
+		bettingPools
 	};
 };
 
@@ -126,5 +140,109 @@ export const actions: Actions = {
 				return fail(400, { message: '소지금이 부족합니다.' });
 			throw error;
 		}
+	},
+	createBet: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const title = String(form.get('title') || '').trim();
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership) return fail(401, { message: '서버 접근 권한이 없습니다.' });
+		if (!title || title.length > 80)
+			return fail(400, { message: '베팅 판 제목은 1~80자로 입력해 주세요.' });
+		const poolId = await createBettingPool(guildId, membership.user.id, title);
+		await sendTransactionNotification(
+			guildId,
+			`🎲 **베팅 판 생성**\n#${poolId} ${title}\n판 주인: <@${membership.user.id}>`
+		);
+		return { success: true, message: `#${poolId} ${title} 베팅 판을 만들었습니다.` };
+	},
+	placeBet: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const poolId = String(form.get('poolId') || '');
+		const amount = parseMoney(String(form.get('amount') || '').trim());
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership) return fail(401, { message: '서버 접근 권한이 없습니다.' });
+		if (!/^\d+$/.test(poolId)) return fail(400, { message: '올바른 베팅 판을 선택해 주세요.' });
+		if (!amount) return fail(400, { message: '0.01 이상의 올바른 금액을 입력해 주세요.' });
+		try {
+			const remaining = await placeBet(guildId, poolId, membership.user.id, amount);
+			const pool = await getBettingPool(guildId, poolId);
+			await sendTransactionNotification(
+				guildId,
+				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: <@${membership.user.id}>\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
+			);
+			return { success: true, message: `${amount}을 베팅했습니다. 남은 소지금: ${remaining}` };
+		} catch (error) {
+			return bettingActionError(error);
+		}
+	},
+	settleBet: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const poolId = String(form.get('poolId') || '');
+		const winnerId = String(form.get('winnerId') || '');
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership) return fail(401, { message: '서버 접근 권한이 없습니다.' });
+		if (!/^\d+$/.test(poolId) || !/^\d{17,20}$/.test(winnerId))
+			return fail(400, { message: '정산할 판과 승자를 올바르게 선택해 주세요.' });
+		try {
+			const payout = await settleBettingPool(
+				guildId,
+				poolId,
+				membership.user.id,
+				winnerId,
+				canManageGuild(membership.permissions)
+			);
+			const pool = await getBettingPool(guildId, poolId);
+			await sendTransactionNotification(
+				guildId,
+				`🏆 **베팅 정산**\n#${poolId} ${pool?.title || ''}\n승자: <@${winnerId}>\n지급액: **${payout}**\n처리자: <@${membership.user.id}>`
+			);
+			return {
+				success: true,
+				message: `${pool?.winnerName || '승자'}님에게 ${payout}을 지급했습니다.`
+			};
+		} catch (error) {
+			return bettingActionError(error);
+		}
+	},
+	refundBet: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const poolId = String(form.get('poolId') || '');
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership) return fail(401, { message: '서버 접근 권한이 없습니다.' });
+		if (!/^\d+$/.test(poolId)) return fail(400, { message: '올바른 베팅 판을 선택해 주세요.' });
+		try {
+			const poolBefore = await getBettingPool(guildId, poolId);
+			const count = await refundBettingPool(
+				guildId,
+				poolId,
+				membership.user.id,
+				canManageGuild(membership.permissions)
+			);
+			await sendTransactionNotification(
+				guildId,
+				`↩️ **베팅 환불**\n#${poolId} ${poolBefore?.title || ''}\n${count}명에게 총 **${poolBefore?.totalAmount || '0.00'}** 환불\n처리자: <@${membership.user.id}>`
+			);
+			return { success: true, message: `${count}명의 베팅액을 모두 환불했습니다.` };
+		} catch (error) {
+			return bettingActionError(error);
+		}
 	}
 };
+
+function bettingActionError(error: unknown) {
+	if (error instanceof InsufficientBalanceError)
+		return fail(400, { message: '베팅할 소지금이 부족합니다.' });
+	if (error instanceof BettingPoolNotFoundError)
+		return fail(404, { message: '베팅 판을 찾을 수 없습니다.' });
+	if (error instanceof BettingPoolClosedError)
+		return fail(409, { message: '이미 종료된 베팅 판입니다.' });
+	if (error instanceof BettingPermissionError)
+		return fail(403, { message: '판 주인만 정산하거나 환불할 수 있습니다.' });
+	if (error instanceof BettingParticipantError)
+		return fail(400, { message: '베팅에 참가한 사용자 중 승자를 선택해 주세요.' });
+	throw error;
+}

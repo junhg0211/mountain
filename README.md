@@ -22,6 +22,8 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 - `/settings currency unit:<unit>` sets the server currency unit. It is localized as `/설정 통화`
   and `/設定 通貨`.
 - `/dashboard` opens the web dashboard. It is localized as `/대시보드` and `/ダッシュボード`.
+- `/bet` creates, joins, views, settles, or refunds server betting pools. It is localized as
+  `/베팅` and `/ベット`.
 
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
 Balances are isolated per Discord server.

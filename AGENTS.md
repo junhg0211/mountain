@@ -20,7 +20,9 @@ These rules apply to every change in this repository.
 - Every balance mutation must write its ledger row to `transactions` inside the same database
   transaction. A balance change without a ledger record is not allowed.
 - Ledger direction is fixed: transfer = sender and recipient, mint = null sender and target
-  recipient, burn = target sender and null recipient.
+  recipient, burn = target sender and null recipient. Betting uses `bet_stake` (user to escrow),
+  `bet_payout` (escrow to winner), and `bet_refund` (escrow back to participant), each linked by
+  `betting_pool_id`.
 - Lock affected accounts (`FOR UPDATE`) and check available balance before debits.
 - Discord transaction notifications are best-effort and happen only after the database transaction
   commits. Notification failure must not roll back a successful monetary operation.

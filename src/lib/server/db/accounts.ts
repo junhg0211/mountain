@@ -39,8 +39,14 @@ export async function getBalanceRanking(guildId: string, limit = 10) {
 
 export async function getTotalSupply(guildId: string): Promise<string> {
 	const db = await getDB();
-	const rows =
-		await db`SELECT COALESCE(SUM(balance), 0.00) AS total FROM accounts WHERE guild_id = ${guildId}`;
+	const rows = await db`
+		SELECT
+			(SELECT COALESCE(SUM(balance), 0.00) FROM accounts WHERE guild_id=${guildId}) +
+			(SELECT COALESCE(SUM(betting_entries.amount), 0.00)
+			 FROM betting_entries
+			 JOIN betting_pools ON betting_pools.id=betting_entries.pool_id
+			 WHERE betting_pools.guild_id=${guildId} AND betting_pools.status='open') AS total
+	`;
 	return formatBalance(rows[0]?.total || 0);
 }
 
@@ -49,10 +55,12 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 	const rows = await db`
 		SELECT transactions.id, transactions.sender_id, transactions.recipient_id,
 			transactions.amount, transactions.transaction_type, transactions.created_at,
+			transactions.betting_pool_id, betting_pools.title AS betting_pool_title,
 			sender.username AS sender_name, recipient.username AS recipient_name
 		FROM transactions
 		LEFT JOIN users sender ON sender.id = transactions.sender_id
 		LEFT JOIN users recipient ON recipient.id = transactions.recipient_id
+		LEFT JOIN betting_pools ON betting_pools.id = transactions.betting_pool_id
 		WHERE transactions.guild_id = ${guildId}
 			AND (transactions.sender_id = ${userId} OR transactions.recipient_id = ${userId})
 		ORDER BY transactions.created_at DESC, transactions.id DESC
@@ -60,12 +68,23 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 	`;
 
 	return rows.map((row: Record<string, unknown>) => {
-		const type = String(row.transaction_type) as 'transfer' | 'mint' | 'burn';
+		const type = String(row.transaction_type) as
+			| 'transfer'
+			| 'mint'
+			| 'burn'
+			| 'bet_stake'
+			| 'bet_payout'
+			| 'bet_refund';
 		const outgoing = String(row.sender_id || '') === userId;
+		const credit =
+			type === 'mint' ||
+			type === 'bet_payout' ||
+			type === 'bet_refund' ||
+			(!outgoing && type === 'transfer');
 		return {
 			id: String(row.id),
 			type,
-			direction: type === 'mint' || (!outgoing && type === 'transfer') ? 'credit' : 'debit',
+			direction: credit ? 'credit' : 'debit',
 			counterparty:
 				type === 'transfer'
 					? String(
@@ -75,6 +94,9 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 						)
 					: null,
 			amount: formatBalance(row.amount),
+			bettingPool: row.betting_pool_id
+				? { id: String(row.betting_pool_id), title: String(row.betting_pool_title || '베팅 판') }
+				: null,
 			createdAt: new Date(row.created_at as string | number | Date).toISOString()
 		};
 	});

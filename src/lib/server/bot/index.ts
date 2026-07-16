@@ -12,6 +12,7 @@ import {
 } from 'discord.js';
 import settings from './commands/administration/settings';
 import balance from './commands/economy/balance';
+import bet from './commands/economy/bet';
 import pay from './commands/economy/pay';
 import ranking from './commands/economy/ranking';
 import dashboard from './commands/utility/dashboard';
@@ -81,6 +82,7 @@ interface Command {
 const commands = new Map<string, Command>([
 	[settings.data.name, settings],
 	[balance.data.name, balance],
+	[bet.data.name, bet],
 	[pay.data.name, pay],
 	[ranking.data.name, ranking],
 	[dashboard.data.name, dashboard]
