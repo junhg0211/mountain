@@ -16,6 +16,7 @@ import {
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
 import { parseMoney } from '$lib/server/economy/money';
+import { publishBettingUpdate } from '$lib/server/realtime';
 import {
 	Locale,
 	MessageFlags,
@@ -171,6 +172,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 					)
 				));
 			const id = await createBettingPool(interaction.guildId, interaction.user.id, title);
+			publishBettingUpdate(interaction.guildId, id);
 			await sendTransactionNotification(
 				interaction.guildId,
 				`🎲 **베팅 판 생성**\n#${id} ${title}\n판 주인: ${interaction.user}`
@@ -238,6 +240,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			}
 			const remaining = await placeBet(interaction.guildId, poolId, interaction.user.id, amount);
 			const pool = await getBettingPool(interaction.guildId, poolId);
+			publishBettingUpdate(interaction.guildId, poolId);
 			await sendTransactionNotification(
 				interaction.guildId,
 				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: ${interaction.user}\n추가 베팅: **${amount} ${unit}**\n판돈: **${pool?.totalAmount || amount} ${unit}**`
@@ -265,6 +268,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 				winner.id,
 				canOverride
 			);
+			publishBettingUpdate(interaction.guildId, poolId);
 			await sendTransactionNotification(
 				interaction.guildId,
 				`🏆 **베팅 정산**\n#${poolId}\n승자: ${winner}\n지급액: **${payout} ${unit}**\n처리자: ${interaction.user}`
@@ -287,6 +291,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			interaction.user.id,
 			canOverride
 		);
+		publishBettingUpdate(interaction.guildId, poolId);
 		await sendTransactionNotification(
 			interaction.guildId,
 			`↩️ **베팅 환불**\n#${poolId} ${pool?.title || ''}\n${count}명에게 총 **${pool?.totalAmount || '0.00'} ${unit}** 환불\n처리자: ${interaction.user}`

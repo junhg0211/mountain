@@ -1,6 +1,5 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
-	import BettingBoard from '$lib/components/BettingBoard.svelte';
 
 	const { data, form } = $props();
 	const selectedGuild = $derived(
@@ -216,13 +215,14 @@
 					</div>
 				{/if}
 
-				<BettingBoard
-					initialPools={data.bettingPools}
-					guildId={selectedGuild.id}
-					currencyUnit={selectedGuild.currencyUnit}
-					userId={data.user.id}
-					canManage={selectedGuild.canManage}
-				/>
+				<a class="card betting-link" href={`/bets?guild=${selectedGuild.id}`}>
+					<div>
+						<p class="card-label">LIVE BETTING</p>
+						<h3>베팅 대시보드</h3>
+						<span>실시간 베팅 판을 확인하고 참가하세요.</span>
+					</div>
+					<strong>입장하기 →</strong>
+				</a>
 
 				<section class="card action-card">
 					<div class="card-title">
@@ -558,6 +558,27 @@
 		border: 1px solid #222732;
 		border-radius: 18px;
 		padding: 24px;
+	}
+	.betting-link {
+		grid-column: 1 / -1;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		color: inherit;
+		text-decoration: none;
+		background: linear-gradient(120deg, #211a46, #11141a 60%);
+	}
+	.betting-link h3 {
+		margin: 4px 0;
+		font-size: 22px;
+	}
+	.betting-link span {
+		color: #838b9b;
+		font-size: 12px;
+	}
+	.betting-link strong {
+		color: #a99bff;
+		font-size: 13px;
 	}
 	.balance-card {
 		grid-column: 1/-1;

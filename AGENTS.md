@@ -39,6 +39,8 @@ These rules apply to every change in this repository.
   Discord. Global command propagation may take time.
 - Only one Discord bot process may use a token at a time. Preserve graceful `SIGINT`/`SIGTERM`
   shutdown behavior.
+- Start production through `bun run start`/`server.ts` so authenticated betting WebSocket upgrades
+  remain available; do not run `build/index.js` directly.
 - For schema changes, update both `database.sql` and the bootstrap/repair statements in
   `src/lib/server/db.ts`, then verify the migration against the configured database when possible.
 - Daily attendance is keyed by `(guild_id, user_id, attendance_date)` using the `Asia/Seoul`

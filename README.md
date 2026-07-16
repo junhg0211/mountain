@@ -30,6 +30,15 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
 Balances are isolated per Discord server.
 
+## Betting dashboard
+
+`/bets` provides a dedicated betting dashboard with one detail page per pool, fixed quick-bet
+amounts, owner settlement/refund controls, and live participant updates over authenticated
+WebSockets.
+
+Production must be built with `bun run build` and started with `bun run start`. The custom
+`server.ts` entry serves SvelteKit and betting WebSocket upgrades on the same port.
+
 ## Contributor reference
 
 Read [`AGENTS.md`](./AGENTS.md) before making changes. Detailed economy, transaction ledger,

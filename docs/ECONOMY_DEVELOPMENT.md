@@ -59,6 +59,15 @@ pool row first; only an `open` pool can move money. The host may settle or refun
 manage-guild permission may override for recovery. Settlement requires the winner to be a current
 participant. Refund restores every participant's cumulative stake exactly once.
 
+The betting web UI lives at `/bets` with one `/bets/[poolId]` detail page per pool. Quick betting
+accepts only `0.01`, `0.05`, `0.10`, `0.50`, `1.00`, `5.00`, `10.00`, `50.00`, `100.00`, and
+`500.00`; the action validates this allowlist on the server. Clients obtain a 30-second,
+single-use ticket after session and guild membership checks, then connect to `/ws/betting`.
+WebSockets carry invalidation events only; the client reloads the pool through the authorized HTTP
+API. Publish an update after committed web or Discord create, stake, settle, and refund operations.
+Production must start with `bun run start`/`server.ts`, not `build/index.js` directly, so WebSocket
+upgrades are handled.
+
 Attendance rewards are configured per guild. `0.00` disables attendance; a positive reward must
 be at least `0.01`. Claims use the `Asia/Seoul` calendar date and the composite primary key
 `(guild_id, user_id, attendance_date)`. Inserting the claim, crediting the account, and writing the

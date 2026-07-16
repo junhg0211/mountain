@@ -21,7 +21,6 @@ import {
 	BettingPoolNotFoundError,
 	createBettingPool,
 	getBettingPool,
-	getBettingPools,
 	placeBet,
 	refundBettingPool,
 	settleBettingPool
@@ -31,6 +30,7 @@ import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
+import { publishBettingUpdate } from '$lib/server/realtime';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -83,22 +83,20 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const rankingEnabled =
 		selectedGuildId &&
 		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled;
-	const [ranking, transactions, bettingPools, attendance, attendanceLeaderboard] = selectedGuildId
+	const [ranking, transactions, attendance, attendanceLeaderboard] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
 				getUserTransactions(selectedGuildId, user.id),
-				getBettingPools(selectedGuildId),
 				getAttendanceStatus(selectedGuildId, user.id),
 				getAttendanceLeaderboard(selectedGuildId)
 			])
-		: [[], [], [], null, []];
+		: [[], [], null, []];
 	return {
 		user,
 		guilds,
 		selectedGuildId,
 		ranking,
 		transactions,
-		bettingPools,
 		attendance,
 		attendanceLeaderboard,
 		notice
@@ -210,6 +208,7 @@ export const actions: Actions = {
 		if (!title || title.length > 80)
 			return fail(400, { message: '베팅 판 제목은 1~80자로 입력해 주세요.' });
 		const poolId = await createBettingPool(guildId, membership.user.id, title);
+		publishBettingUpdate(guildId, poolId);
 		await sendTransactionNotification(
 			guildId,
 			`🎲 **베팅 판 생성**\n#${poolId} ${title}\n판 주인: <@${membership.user.id}>`
@@ -228,6 +227,7 @@ export const actions: Actions = {
 		try {
 			const remaining = await placeBet(guildId, poolId, membership.user.id, amount);
 			const pool = await getBettingPool(guildId, poolId);
+			publishBettingUpdate(guildId, poolId);
 			await sendTransactionNotification(
 				guildId,
 				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: <@${membership.user.id}>\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
@@ -255,6 +255,7 @@ export const actions: Actions = {
 				canManageGuild(membership.permissions)
 			);
 			const pool = await getBettingPool(guildId, poolId);
+			publishBettingUpdate(guildId, poolId);
 			await sendTransactionNotification(
 				guildId,
 				`🏆 **베팅 정산**\n#${poolId} ${pool?.title || ''}\n승자: <@${winnerId}>\n지급액: **${payout}**\n처리자: <@${membership.user.id}>`
@@ -283,6 +284,7 @@ export const actions: Actions = {
 				membership.user.id,
 				canManageGuild(membership.permissions)
 			);
+			publishBettingUpdate(guildId, poolId);
 			await sendTransactionNotification(
 				guildId,
 				`↩️ **베팅 환불**\n#${poolId} ${poolBefore?.title || ''}\n${count}명에게 총 **${poolBefore?.totalAmount || '0.00'}** 환불\n처리자: <@${membership.user.id}>`
