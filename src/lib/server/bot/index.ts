@@ -1,13 +1,18 @@
 import dotenv from 'dotenv';
 import { Client, Events, GatewayIntentBits, REST, Routes } from 'discord.js';
+import settings from './commands/administration/settings';
 import ping from './commands/utility/ping';
+import { getLanguage } from './i18n';
 
 dotenv.config();
 
 let client: Client | null = null;
 let startPromise: Promise<void> | null = null;
 
-const commands = new Map<string, any>([[ping.data.name, ping]]);
+const commands = new Map([
+	[ping.data.name, ping],
+	[settings.data.name, settings]
+]);
 
 async function reloadCommands() {
 	const rest = new REST().setToken(process.env.BOT_TOKEN!);
@@ -15,9 +20,9 @@ async function reloadCommands() {
 	try {
 		console.log(`Started refreshing ${commands.size} application (/) commands.`);
 
-		const data: any = await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), {
+		const data = (await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), {
 			body: [...commands.values()].map((command) => command.data.toJSON())
-		});
+		})) as unknown[];
 
 		console.log(`Successfully reloaded ${data.length} application (/) commands.`);
 	} catch (error) {
@@ -60,7 +65,22 @@ async function start() {
 				return;
 			}
 
-			await command.execute(interaction);
+			try {
+				await command.execute(interaction);
+			} catch (error) {
+				console.error(`Command ${interaction.commandName} failed:`, error);
+				const messages = {
+					en: 'The command could not be completed. Please try again later.',
+					ko: '명령을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+					ja: 'コマンドを完了できませんでした。しばらくしてからもう一度お試しください。'
+				};
+				const message = messages[getLanguage(interaction.locale)];
+				if (interaction.replied || interaction.deferred) {
+					await interaction.followUp({ content: message, ephemeral: true });
+				} else {
+					await interaction.reply({ content: message, ephemeral: true });
+				}
+			}
 		});
 
 		void client.login(process.env.BOT_TOKEN);
@@ -78,3 +98,5 @@ export function startBot(): Promise<void> {
 export function getClient() {
 	return client;
 }
+
+export { reloadCommands };

@@ -9,3 +9,10 @@ opensource discord economy bot with website and dashboard
 3. Run `bun install` and `bun run dev`.
 
 Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registered.
+
+## Commands
+
+- `/ping` checks the bot latency.
+- `/settings currency unit:<unit>` sets the server currency unit. It is shown as `/설정 통화` in Korean and `/設定 通貨` in Japanese.
+
+Money values use two decimal places, so the minimum transferable amount is `0.01`.

@@ -25,3 +25,10 @@ CREATE TABLE IF NOT EXISTS sessions (
     INDEX sessions_expires_at_idx (expires_at),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS guild_settings (
+    guild_id VARCHAR(255) PRIMARY KEY,
+    currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
