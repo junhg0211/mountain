@@ -179,25 +179,24 @@
 					</form>
 				</section>
 
-				<section class="card action-card ranking-card">
-					<div class="card-title">
-						<span>02</span>
-						<div>
-							<h3>소지금 순위</h3>
-							<p>현재 서버의 상위 계좌입니다.</p>
+				{#if selectedGuild.rankingEnabled}
+					<section class="card action-card ranking-card">
+						<div class="card-title">
+							<span>02</span>
+							<div>
+								<h3>소지금 순위</h3>
+								<p>현재 서버의 상위 계좌입니다.</p>
+							</div>
 						</div>
-					</div>
-					{#if selectedGuild.rankingEnabled}<ol class="ranking">
+						<ol class="ranking">
 							{#each data.ranking as entry}<li>
 									<b>{entry.rank}</b><span>{entry.username}</span><strong
 										>{entry.balance} {selectedGuild.currencyUnit}</strong
 									>
 								</li>{/each}
-						</ol>{:else}<div class="permission">
-							<span>🔒</span>
-							<p>관리자가 소지금 순위를 비활성화했습니다.</p>
-						</div>{/if}
-				</section>
+						</ol>
+					</section>
+				{/if}
 			</div>
 		{/if}
 	{/if}
@@ -507,17 +506,6 @@
 		color: #7f8796;
 		font-size: 13px;
 	}
-	.permission {
-		min-height: 125px;
-		display: grid;
-		place-items: center;
-		text-align: center;
-		color: #858d9d;
-		font-size: 13px;
-	}
-	.permission p {
-		max-width: 250px;
-	}
 	.member-search {
 		position: relative;
 	}
@@ -601,9 +589,6 @@
 		place-items: center;
 		background: #7657ff;
 		font-style: normal;
-	}
-	.permission {
-		flex: 1;
 	}
 	.notice {
 		padding: 12px 16px;
