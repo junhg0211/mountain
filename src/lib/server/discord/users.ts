@@ -1,12 +1,14 @@
-import { getDB } from '$lib/server/db';
-
 const API_BASE_URL = 'https://discord.com/api/v10';
 
-export async function getMe(token: string): Promise<any> {
-	if (token === 'undefined' || token === 'null' || !token) {
-		console.error('Invalid token provided');
-		return null;
-	}
+export interface DiscordUser {
+	id: string;
+	username: string;
+	global_name: string | null;
+	avatar: string | null;
+}
+
+export async function getMe(token: string): Promise<DiscordUser> {
+	if (!token) throw new Error('Discord access token is missing.');
 
 	const response = await fetch(`${API_BASE_URL}/users/@me`, {
 		headers: {
@@ -15,9 +17,8 @@ export async function getMe(token: string): Promise<any> {
 	});
 
 	if (!response.ok) {
-		console.error('Error fetching user data:', response.statusText);
-		return null;
+		throw new Error(`Discord user request failed (${response.status}).`);
 	}
 
-	return response.json();
+	return (await response.json()) as DiscordUser;
 }

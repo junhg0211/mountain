@@ -1,11 +1,13 @@
-import { plugin } from '$lib/server/bot';
+import { startBot } from '$lib/server/bot';
 import type { Handle } from '@sveltejs/kit';
 
-export const handle: Handle = async ({ event, resolve }) => {
-	const response = await resolve(event);
-	return response;
-};
+let botStartupRequested = false;
 
-if (typeof window === 'undefined') {
-	plugin.configureServer();
-}
+export const handle: Handle = async ({ event, resolve }) => {
+	if (!botStartupRequested) {
+		botStartupRequested = true;
+		void startBot().catch((error) => console.error('Discord bot startup failed:', error));
+	}
+
+	return resolve(event);
+};

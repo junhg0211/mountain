@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
-
 	const { data } = $props();
-	const { client_id } = $derived(data);
-
-	const origin = $page.url.origin;
-	const redirectUri = encodeURIComponent(origin + '/api/login');
+	const { client_id, redirect_uri, state } = $derived(data);
 
 	onMount(async () => {
-		window.location.href = `https://discord.com/oauth2/authorize?client_id=${client_id}&response_type=code&redirect_uri=${redirectUri}&scope=identify`;
+		const params = new URLSearchParams({
+			client_id,
+			response_type: 'code',
+			redirect_uri,
+			scope: 'identify',
+			state
+		});
+		window.location.replace(`https://discord.com/oauth2/authorize?${params}`);
 	});
 </script>
+
+<p>Discord 로그인 페이지로 이동하고 있습니다…</p>
