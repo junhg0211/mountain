@@ -44,6 +44,42 @@ export async function getTotalSupply(guildId: string): Promise<string> {
 	return formatBalance(rows[0]?.total || 0);
 }
 
+export async function getUserTransactions(guildId: string, userId: string, limit = 20) {
+	const db = await getDB();
+	const rows = await db`
+		SELECT transactions.id, transactions.sender_id, transactions.recipient_id,
+			transactions.amount, transactions.transaction_type, transactions.created_at,
+			sender.username AS sender_name, recipient.username AS recipient_name
+		FROM transactions
+		LEFT JOIN users sender ON sender.id = transactions.sender_id
+		LEFT JOIN users recipient ON recipient.id = transactions.recipient_id
+		WHERE transactions.guild_id = ${guildId}
+			AND (transactions.sender_id = ${userId} OR transactions.recipient_id = ${userId})
+		ORDER BY transactions.created_at DESC, transactions.id DESC
+		LIMIT ${limit}
+	`;
+
+	return rows.map((row: Record<string, unknown>) => {
+		const type = String(row.transaction_type) as 'transfer' | 'mint' | 'burn';
+		const outgoing = String(row.sender_id || '') === userId;
+		return {
+			id: String(row.id),
+			type,
+			direction: type === 'mint' || (!outgoing && type === 'transfer') ? 'credit' : 'debit',
+			counterparty:
+				type === 'transfer'
+					? String(
+							outgoing
+								? row.recipient_name || '알 수 없는 사용자'
+								: row.sender_name || '알 수 없는 사용자'
+						)
+					: null,
+			amount: formatBalance(row.amount),
+			createdAt: new Date(row.created_at as string | number | Date).toISOString()
+		};
+	});
+}
+
 export async function adjustBalance(
 	guildId: string,
 	userId: string,

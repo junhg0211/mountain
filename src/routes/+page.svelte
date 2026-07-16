@@ -57,6 +57,26 @@
 		transferConfirmed = true;
 		transferForm?.requestSubmit();
 	}
+	function transactionTitle(transaction: {
+		type: 'transfer' | 'mint' | 'burn';
+		direction: 'credit' | 'debit';
+		counterparty: string | null;
+	}) {
+		if (transaction.type === 'mint') return '관리자 발행';
+		if (transaction.type === 'burn') return '관리자 소각';
+		return transaction.direction === 'credit'
+			? `${transaction.counterparty}님에게서 받음`
+			: `${transaction.counterparty}님에게 송금`;
+	}
+	function formatTransactionTime(value: string) {
+		return new Intl.DateTimeFormat('ko-KR', {
+			timeZone: 'Asia/Seoul',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(new Date(value));
+	}
 </script>
 
 <svelte:head><title>Mountain Economy</title></svelte:head>
@@ -217,6 +237,39 @@
 						</ol>
 					</section>
 				{/if}
+
+				<section class="card history-card">
+					<div class="history-heading">
+						<div>
+							<p class="card-label">RECENT ACTIVITY</p>
+							<h3>내 거래 이력</h3>
+						</div>
+						<span>최근 20건</span>
+					</div>
+					{#if data.transactions.length}
+						<ul class="transactions">
+							{#each data.transactions as transaction}
+								<li>
+									<i class:credit={transaction.direction === 'credit'}
+										>{transaction.direction === 'credit' ? '↓' : '↑'}</i
+									>
+									<div>
+										<strong>{transactionTitle(transaction)}</strong>
+										<time datetime={transaction.createdAt}
+											>{formatTransactionTime(transaction.createdAt)}</time
+										>
+									</div>
+									<b class:credit={transaction.direction === 'credit'}
+										>{transaction.direction === 'credit' ? '+' : '-'}{transaction.amount}
+										{selectedGuild.currencyUnit}</b
+									>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="history-empty">아직 거래 이력이 없습니다.</p>
+					{/if}
+				</section>
 			</div>
 		{/if}
 	{/if}
@@ -518,6 +571,79 @@
 	}
 	.ranking-card {
 		min-height: 320px;
+	}
+	.history-card {
+		grid-column: 1 / -1;
+	}
+	.history-heading {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 20px;
+		margin-bottom: 20px;
+	}
+	.history-heading h3 {
+		margin: 0;
+		font-size: 20px;
+	}
+	.history-heading > span {
+		color: #717989;
+		font-size: 11px;
+	}
+	.transactions {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: grid;
+	}
+	.transactions li {
+		display: grid;
+		grid-template-columns: 38px 1fr auto;
+		align-items: center;
+		gap: 12px;
+		padding: 13px 0;
+		border-top: 1px solid #252a34;
+	}
+	.transactions i {
+		display: grid;
+		place-items: center;
+		width: 36px;
+		height: 36px;
+		color: #ff9fae;
+		background: #321923;
+		border-radius: 11px;
+		font-style: normal;
+		font-weight: 850;
+	}
+	.transactions i.credit {
+		color: #79dfb7;
+		background: #123126;
+	}
+	.transactions li > div {
+		display: grid;
+		gap: 3px;
+	}
+	.transactions strong {
+		font-size: 13px;
+	}
+	.transactions time {
+		color: #747d8d;
+		font-size: 11px;
+	}
+	.transactions b {
+		color: #ff9fae;
+		font-size: 13px;
+	}
+	.transactions b.credit {
+		color: #79dfb7;
+	}
+	.history-empty {
+		margin: 0;
+		padding: 34px 0;
+		color: #747d8d;
+		text-align: center;
+		font-size: 13px;
+		border-top: 1px solid #252a34;
 	}
 	input,
 	select {

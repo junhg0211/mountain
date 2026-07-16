@@ -2,6 +2,7 @@ import { deleteSession, getSessionUser } from '$lib/server/auth';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import {
 	getBalanceRanking,
+	getUserTransactions,
 	InsufficientBalanceError,
 	transferBalance
 } from '$lib/server/db/accounts';
@@ -55,16 +56,21 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		? requestedGuildId
 		: guilds[0]?.id || null;
 
-	const ranking =
+	const rankingEnabled =
 		selectedGuildId &&
-		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled
-			? await getBalanceRanking(selectedGuildId)
-			: [];
+		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled;
+	const [ranking, transactions] = selectedGuildId
+		? await Promise.all([
+				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
+				getUserTransactions(selectedGuildId, user.id)
+			])
+		: [[], []];
 	return {
 		user,
 		guilds,
 		selectedGuildId,
-		ranking
+		ranking,
+		transactions
 	};
 };
 
