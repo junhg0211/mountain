@@ -68,6 +68,10 @@ API. Publish an update after committed web or Discord create, stake, settle, and
 Production must start with `bun run start`/`server.ts`, not `build/index.js` directly, so WebSocket
 upgrades are handled.
 
+Betting pool owners, winners, and participants must be displayed using their current guild nickname
+when available, then Discord global display name, then username. Keep the database username only as
+a fallback when Discord member lookup is unavailable.
+
 Attendance rewards are configured per guild. `0.00` disables attendance; a positive reward must
 be at least `0.01`. Claims use the `Asia/Seoul` calendar date and the composite primary key
 `(guild_id, user_id, attendance_date)`. Inserting the claim, crediting the account, and writing the

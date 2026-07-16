@@ -28,6 +28,13 @@ export interface DiscordChannel {
 	categoryName?: string;
 }
 
+interface DisplayNameCacheEntry {
+	name: string | null;
+	expiresAt: number;
+}
+
+const displayNameCache = new Map<string, DisplayNameCacheEntry>();
+
 export async function getMe(token: string): Promise<DiscordUser> {
 	if (!token) throw new Error('Discord access token is missing.');
 
@@ -95,6 +102,30 @@ export async function getGuildMember(guildId: string, userId: string) {
 	if (response.status === 404) return null;
 	if (!response.ok) throw new Error(`Discord member request failed (${response.status}).`);
 	return (await response.json()) as DiscordGuildMember;
+}
+
+export async function getGuildDisplayNames(guildId: string, userIds: Iterable<string>) {
+	const names = new Map<string, string>();
+	const uniqueUserIds = [...new Set(userIds)];
+	await Promise.all(
+		uniqueUserIds.map(async (userId) => {
+			const key = `${guildId}:${userId}`;
+			const cached = displayNameCache.get(key);
+			if (cached && cached.expiresAt > Date.now()) {
+				if (cached.name) names.set(userId, cached.name);
+				return;
+			}
+			try {
+				const member = await getGuildMember(guildId, userId);
+				const name = member ? member.nick || member.user.global_name || member.user.username : null;
+				displayNameCache.set(key, { name, expiresAt: Date.now() + 30_000 });
+				if (name) names.set(userId, name);
+			} catch (error) {
+				console.error(`Discord display name lookup failed for ${guildId}/${userId}:`, error);
+			}
+		})
+	);
+	return names;
 }
 
 export async function getGuildTextChannels(guildId: string): Promise<DiscordChannel[]> {

@@ -1,8 +1,25 @@
 import { getDB } from '$lib/server/db';
+import { getGuildDisplayNames } from '$lib/server/discord/users';
 import { centsToMoney, moneyToCents } from '$lib/server/economy/money';
 import { InsufficientBalanceError } from './accounts';
 
 export type BettingPoolStatus = 'open' | 'settled' | 'refunded';
+
+export interface BettingPool {
+	id: string;
+	guildId: string;
+	ownerId: string;
+	ownerName: string;
+	title: string;
+	status: BettingPoolStatus;
+	winnerId: string | null;
+	winnerName: string | null;
+	totalAmount: string;
+	participantCount: number;
+	createdAt: string;
+	closedAt: string | null;
+	participants: Array<{ userId: string; username: string; amount: string }>;
+}
 
 export class BettingPoolNotFoundError extends Error {}
 export class BettingPoolClosedError extends Error {}
@@ -20,7 +37,7 @@ function iso(value: unknown): string {
 	return new Date(value as string | number | Date).toISOString();
 }
 
-async function mapPools(rows: PoolRow[]) {
+async function mapPools(rows: PoolRow[]): Promise<BettingPool[]> {
 	const db = await getDB();
 	return Promise.all(
 		rows.map(async (row) => {
@@ -54,6 +71,24 @@ async function mapPools(rows: PoolRow[]) {
 	);
 }
 
+async function applyGuildDisplayNames(guildId: string, pools: BettingPool[]) {
+	const userIds = pools.flatMap((pool) => [
+		pool.ownerId,
+		...(pool.winnerId ? [pool.winnerId] : []),
+		...pool.participants.map((participant) => participant.userId)
+	]);
+	const names = await getGuildDisplayNames(guildId, userIds);
+	return pools.map((pool) => ({
+		...pool,
+		ownerName: names.get(pool.ownerId) || pool.ownerName,
+		winnerName: pool.winnerId ? names.get(pool.winnerId) || pool.winnerName : null,
+		participants: pool.participants.map((participant) => ({
+			...participant,
+			username: names.get(participant.userId) || participant.username
+		}))
+	}));
+}
+
 const poolSelect = `
 	SELECT betting_pools.*,
 		owner.username AS owner_name, winner.username AS winner_name,
@@ -75,7 +110,7 @@ export async function getBettingPools(guildId: string, limit = 10) {
 		 LIMIT ?`,
 		[guildId, limit]
 	);
-	return mapPools(rows as PoolRow[]);
+	return applyGuildDisplayNames(guildId, await mapPools(rows as PoolRow[]));
 }
 
 export async function getBettingPool(guildId: string, poolId: string) {
@@ -86,7 +121,7 @@ export async function getBettingPool(guildId: string, poolId: string) {
 		 GROUP BY betting_pools.id LIMIT 1`,
 		[guildId, poolId]
 	);
-	const pools = await mapPools(rows as PoolRow[]);
+	const pools = await applyGuildDisplayNames(guildId, await mapPools(rows as PoolRow[]));
 	return pools[0] || null;
 }
 
