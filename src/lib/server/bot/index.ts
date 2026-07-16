@@ -1,7 +1,17 @@
 import dotenv from 'dotenv';
-import { Client, Events, GatewayIntentBits, REST, Routes } from 'discord.js';
+import {
+	Client,
+	Events,
+	GatewayIntentBits,
+	MessageFlags,
+	REST,
+	Routes,
+	type ChatInputCommandInteraction,
+	type RESTPostAPIChatInputApplicationCommandsJSONBody
+} from 'discord.js';
 import settings from './commands/administration/settings';
 import balance from './commands/economy/balance';
+import pay from './commands/economy/pay';
 import ping from './commands/utility/ping';
 import { getLanguage } from './i18n';
 
@@ -15,10 +25,19 @@ interface BotState {
 const globalState = globalThis as typeof globalThis & { __mountainBot?: BotState };
 const state = (globalState.__mountainBot ??= { client: null, startPromise: null });
 
-const commands = new Map([
+interface Command {
+	data: {
+		name: string;
+		toJSON(): RESTPostAPIChatInputApplicationCommandsJSONBody;
+	};
+	execute(interaction: ChatInputCommandInteraction): Promise<void>;
+}
+
+const commands = new Map<string, Command>([
 	[ping.data.name, ping],
 	[settings.data.name, settings],
-	[balance.data.name, balance]
+	[balance.data.name, balance],
+	[pay.data.name, pay]
 ]);
 
 async function reloadCommands() {
@@ -86,9 +105,9 @@ function bindInteractionHandler(client: Client) {
 			};
 			const message = messages[getLanguage(interaction.locale)];
 			if (interaction.replied || interaction.deferred) {
-				await interaction.followUp({ content: message, ephemeral: true });
+				await interaction.followUp({ content: message, flags: MessageFlags.Ephemeral });
 			} else {
-				await interaction.reply({ content: message, ephemeral: true });
+				await interaction.reply({ content: message, flags: MessageFlags.Ephemeral });
 			}
 		}
 	});

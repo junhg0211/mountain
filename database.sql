@@ -35,3 +35,19 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS transactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    sender_id VARCHAR(255),
+    recipient_id VARCHAR(255),
+    amount DECIMAL(15, 2) NOT NULL,
+    transaction_type VARCHAR(32) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX transactions_guild_created_idx (guild_id, created_at),
+    INDEX transactions_sender_idx (sender_id),
+    INDEX transactions_recipient_idx (recipient_id),
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE SET NULL,
+    CHECK (amount >= 0.01)
+);

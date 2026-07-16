@@ -2,6 +2,7 @@ import { setCurrencyUnit } from '$lib/server/db/guild-settings';
 import { getLanguage } from '$lib/server/bot/i18n';
 import {
 	Locale,
+	MessageFlags,
 	PermissionFlagsBits,
 	SlashCommandBuilder,
 	type ChatInputCommandInteraction
@@ -71,12 +72,15 @@ async function execute(interaction: ChatInputCommandInteraction) {
 	const unit = interaction.options.getString('unit', true).trim();
 	const language = getLanguage(interaction.locale);
 	if (!unit) {
-		await interaction.reply({ content: invalidUnitMessages[language], ephemeral: true });
+		await interaction.reply({
+			content: invalidUnitMessages[language],
+			flags: MessageFlags.Ephemeral
+		});
 		return;
 	}
 
 	await setCurrencyUnit(interaction.guildId, unit);
-	await interaction.reply({ content: messages[language](unit), ephemeral: true });
+	await interaction.reply({ content: messages[language](unit), flags: MessageFlags.Ephemeral });
 }
 
 export default { data, execute };

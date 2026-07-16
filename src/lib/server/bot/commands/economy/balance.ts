@@ -2,7 +2,12 @@ import { getLanguage } from '$lib/server/bot/i18n';
 import { ensureUser } from '$lib/server/db/users';
 import { getOrCreateBalance } from '$lib/server/db/accounts';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
-import { Locale, SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
+import {
+	Locale,
+	MessageFlags,
+	SlashCommandBuilder,
+	type ChatInputCommandInteraction
+} from 'discord.js';
 
 const data = new SlashCommandBuilder()
 	.setName('balance')
@@ -34,7 +39,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		ja: `現在の所持金は **${balance} ${currencyUnit}** です。`
 	};
 
-	await interaction.reply({ content: messages[language], ephemeral: true });
+	await interaction.reply({ content: messages[language], flags: MessageFlags.Ephemeral });
 }
 
 export default { data, execute };
