@@ -2,6 +2,7 @@ import { getDB } from '$lib/server/db';
 import { centsToMoney, moneyToCents } from '$lib/server/economy/money';
 
 export class InsufficientBalanceError extends Error {}
+export type BalanceAdjustmentType = 'mint' | 'burn';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = getDB();
@@ -34,6 +35,39 @@ export async function getBalanceRanking(guildId: string, limit = 10) {
 		username: String(row.username),
 		balance: formatBalance(row.balance)
 	}));
+}
+
+export async function getTotalSupply(guildId: string): Promise<string> {
+	const db = getDB();
+	const rows =
+		await db`SELECT COALESCE(SUM(balance), 0.00) AS total FROM accounts WHERE guild_id = ${guildId}`;
+	return formatBalance(rows[0]?.total || 0);
+}
+
+export async function adjustBalance(
+	guildId: string,
+	userId: string,
+	amount: string,
+	type: BalanceAdjustmentType
+): Promise<string> {
+	const db = getDB();
+	return db.begin(async (tx) => {
+		await tx`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${guildId}, ${userId})`;
+		const rows =
+			await tx`SELECT balance FROM accounts WHERE guild_id=${guildId} AND user_id=${userId} FOR UPDATE`;
+		if (rows.length !== 1) throw new Error('Account could not be loaded.');
+		const current = moneyToCents(formatBalance(rows[0].balance));
+		const adjustment = moneyToCents(amount);
+		if (type === 'burn' && current < adjustment) throw new InsufficientBalanceError();
+		const next = type === 'mint' ? current + adjustment : current - adjustment;
+		await tx`UPDATE accounts SET balance=${centsToMoney(next)} WHERE guild_id=${guildId} AND user_id=${userId}`;
+		if (type === 'mint') {
+			await tx`INSERT INTO transactions (guild_id, sender_id, recipient_id, amount, transaction_type) VALUES (${guildId}, ${null}, ${userId}, ${amount}, 'mint')`;
+		} else {
+			await tx`INSERT INTO transactions (guild_id, sender_id, recipient_id, amount, transaction_type) VALUES (${guildId}, ${userId}, ${null}, ${amount}, 'burn')`;
+		}
+		return centsToMoney(next);
+	});
 }
 
 export async function transferBalance(

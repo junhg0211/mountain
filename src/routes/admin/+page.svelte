@@ -3,6 +3,31 @@
 	const selectedGuild = $derived(
 		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
 	);
+	type Member = { id: string; username: string; avatarUrl: string | null };
+	let query = $state('');
+	let results = $state<Member[]>([]);
+	let target = $state<Member | null>(null);
+	let timer: ReturnType<typeof setTimeout>;
+	function schedule() {
+		clearTimeout(timer);
+		timer = setTimeout(search, 250);
+	}
+	async function search() {
+		target = null;
+		if (!selectedGuild || !query.trim()) {
+			results = [];
+			return;
+		}
+		const response = await fetch(
+			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(query.trim())}`
+		);
+		results = response.ok ? (await response.json()).members : [];
+	}
+	function choose(member: Member) {
+		target = member;
+		query = member.username;
+		results = [];
+	}
 </script>
 
 <svelte:head><title>Mountain Admin</title></svelte:head>
@@ -26,6 +51,9 @@
 	{#if selectedGuild}<section class="card">
 			<span>SERVER SETTINGS</span>
 			<h2>{selectedGuild.name}</h2>
+			<div class="supply">
+				<span>총 유통량</span><strong>{data.totalSupply} {selectedGuild.currencyUnit}</strong>
+			</div>
 			<form method="POST" action={`?/settings&guild=${selectedGuild.id}`}>
 				<input type="hidden" name="guildId" value={selectedGuild.id} /><label
 					>경제 단위<input
@@ -58,6 +86,34 @@
 					/><span><b>소지금 순위</b><small>서버의 상위 잔액 순위를 공개합니다.</small></span></label
 				>
 				<button>공개 설정 저장</button>
+			</form>
+			<form method="POST" action={`?/mint&guild=${selectedGuild.id}`} class="issuance">
+				<input type="hidden" name="guildId" value={selectedGuild.id} /><input
+					type="hidden"
+					name="targetId"
+					value={target?.id || ''}
+				/>
+				<h3>화폐 발행 및 소각</h3>
+				<label class="search"
+					>대상 사용자<input
+						bind:value={query}
+						oninput={schedule}
+						autocomplete="off"
+						placeholder="닉네임 또는 사용자 이름 검색"
+					/>{#if results.length}<div class="results">
+							{#each results as member}<button type="button" onclick={() => choose(member)}
+									>{member.username}</button
+								>{/each}
+						</div>{/if}</label
+				>
+				<label>금액<input name="amount" inputmode="decimal" placeholder="0.01" required /></label>
+				<div class="buttons">
+					<button type="submit">Mint · 발행</button><button
+						class="danger"
+						type="submit"
+						formaction={`?/burn&guild=${selectedGuild.id}`}>Burn · 소각</button
+					>
+				</div>
 			</form>
 		</section>{:else}<section class="empty">관리할 수 있는 서버가 없습니다.</section>{/if}
 </main>
@@ -119,6 +175,52 @@
 	}
 	.card h2 {
 		font-size: 28px;
+	}
+	.supply {
+		margin: 24px 0;
+		padding: 20px;
+		background: #17132b;
+		border-radius: 12px;
+	}
+	.supply span {
+		display: block;
+		color: #8f97a6;
+		font-size: 12px;
+	}
+	.supply strong {
+		display: block;
+		font-size: 34px;
+		margin-top: 6px;
+	}
+	.issuance {
+		border-top: 1px solid #292e39;
+		padding-top: 26px;
+	}
+	.search {
+		position: relative;
+	}
+	.results {
+		position: absolute;
+		z-index: 4;
+		left: 0;
+		right: 0;
+		background: #181c24;
+		border: 1px solid #303744;
+		border-radius: 9px;
+		padding: 5px;
+	}
+	.results button {
+		width: 100%;
+		text-align: left;
+		background: transparent;
+	}
+	.buttons {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.buttons .danger {
+		background: #842f43;
 	}
 	.card form {
 		display: grid;

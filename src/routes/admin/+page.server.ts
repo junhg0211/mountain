@@ -1,8 +1,18 @@
 import { getSessionUser } from '$lib/server/auth';
+import {
+	adjustBalance,
+	getTotalSupply,
+	InsufficientBalanceError,
+	type BalanceAdjustmentType
+} from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
 import { setCurrencyUnit, setVisibilitySettings } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
+import { ensureUser } from '$lib/server/db/users';
+import { getGuildMember } from '$lib/server/discord/users';
+import { parseMoney } from '$lib/server/economy/money';
 import { fail, redirect } from '@sveltejs/kit';
+import type { Cookies } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ cookies, url }) => {
@@ -40,8 +50,45 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requested)
 		? requested
 		: guilds[0]?.id || null;
-	return { user, guilds, selectedGuildId };
+	const totalSupply = selectedGuildId ? await getTotalSupply(selectedGuildId) : '0.00';
+	return { user, guilds, selectedGuildId, totalSupply };
 };
+
+async function handleAdjustment(cookies: Cookies, request: Request, type: BalanceAdjustmentType) {
+	const user = await getSessionUser(cookies);
+	if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+	const form = await request.formData();
+	const guildId = String(form.get('guildId') || '');
+	const targetId = String(form.get('targetId') || '');
+	const amount = parseMoney(String(form.get('amount') || '').trim());
+	if (!amount) return fail(400, { message: '0.01 이상의 올바른 금액을 입력해 주세요.' });
+	if (!/^\d{17,20}$/.test(targetId))
+		return fail(400, { message: '검색 결과에서 사용자를 선택해 주세요.' });
+	const db = getDB();
+	const permissions =
+		await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
+	if (permissions.length !== 1 || !canManageGuild(String(permissions[0].permissions)))
+		return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+	const member = await getGuildMember(guildId, targetId);
+	if (!member || member.user.bot)
+		return fail(400, { message: '같은 서버의 사용자를 선택해 주세요.' });
+	await ensureUser(
+		member.user.id,
+		member.nick || member.user.global_name || member.user.username,
+		member.user.avatar || ''
+	);
+	try {
+		const balance = await adjustBalance(guildId, targetId, amount, type);
+		return {
+			success: true,
+			message: `${member.nick || member.user.username}님에게 ${amount}을 ${type === 'mint' ? '발행' : '소각'}했습니다. 현재 소지금: ${balance}`
+		};
+	} catch (error) {
+		if (error instanceof InsufficientBalanceError)
+			return fail(400, { message: '대상 사용자의 소지금보다 많이 소각할 수 없습니다.' });
+		throw error;
+	}
+}
 
 export const actions: Actions = {
 	settings: async ({ cookies, request }) => {
@@ -75,5 +122,7 @@ export const actions: Actions = {
 			rankingEnabled: form.get('rankingEnabled') === 'on'
 		});
 		return { success: true, message: '공개 범위 설정을 저장했습니다.' };
-	}
+	},
+	mint: async ({ cookies, request }) => handleAdjustment(cookies, request, 'mint'),
+	burn: async ({ cookies, request }) => handleAdjustment(cookies, request, 'burn')
 };
