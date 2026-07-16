@@ -13,6 +13,7 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 ## Commands
 
 - `/ping` checks the bot latency.
+- `/balance` shows your current balance. It is shown as `/잔액` in Korean and `/残高` in Japanese.
 - `/settings currency unit:<unit>` sets the server currency unit. It is shown as `/설정 통화` in Korean and `/設定 通貨` in Japanese.
 
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
