@@ -18,6 +18,24 @@ export async function getOrCreateBalance(guildId: string, userId: string): Promi
 	return formatBalance(rows[0].balance);
 }
 
+export async function getBalanceRanking(guildId: string, limit = 10) {
+	const db = getDB();
+	const rows = await db`
+		SELECT users.id, users.username, accounts.balance
+		FROM accounts
+		JOIN users ON users.id = accounts.user_id
+		WHERE accounts.guild_id = ${guildId}
+		ORDER BY accounts.balance DESC, accounts.created_at ASC
+		LIMIT ${limit}
+	`;
+	return rows.map((row: { id: unknown; username: unknown; balance: unknown }, index: number) => ({
+		rank: index + 1,
+		userId: String(row.id),
+		username: String(row.username),
+		balance: formatBalance(row.balance)
+	}));
+}
+
 export async function transferBalance(
 	guildId: string,
 	senderId: string,

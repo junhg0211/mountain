@@ -36,6 +36,29 @@
 					/></label
 				><button>변경사항 저장</button>
 			</form>
+			<form method="POST" action={`?/visibility&guild=${selectedGuild.id}`} class="visibility">
+				<input type="hidden" name="guildId" value={selectedGuild.id} />
+				<h3>공개 범위</h3>
+				<label class="toggle"
+					><input
+						type="checkbox"
+						name="publicBalanceEnabled"
+						checked={selectedGuild.publicBalanceEnabled}
+					/><span
+						><b>다른 사용자 소지금 조회</b><small
+							>사용자가 서로의 소지금을 확인할 수 있습니다.</small
+						></span
+					></label
+				>
+				<label class="toggle"
+					><input
+						type="checkbox"
+						name="rankingEnabled"
+						checked={selectedGuild.rankingEnabled}
+					/><span><b>소지금 순위</b><small>서버의 상위 잔액 순위를 공개합니다.</small></span></label
+				>
+				<button>공개 설정 저장</button>
+			</form>
 		</section>{:else}<section class="empty">관리할 수 있는 서버가 없습니다.</section>{/if}
 </main>
 
@@ -102,6 +125,35 @@
 		gap: 14px;
 		max-width: 480px;
 		margin-top: 32px;
+	}
+	.visibility {
+		border-top: 1px solid #292e39;
+		padding-top: 26px;
+	}
+	.visibility h3 {
+		margin: 0 0 6px;
+	}
+	.toggle {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		background: #0b0d12;
+		padding: 14px;
+		border-radius: 10px;
+	}
+	.toggle input {
+		width: 18px;
+		margin: 2px 0;
+	}
+	.toggle span {
+		display: grid;
+		gap: 4px;
+	}
+	.toggle b {
+		color: #f2f3f5;
+	}
+	.toggle small {
+		color: #747d8d;
 	}
 	label {
 		color: #8f97a6;

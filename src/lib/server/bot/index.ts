@@ -12,6 +12,7 @@ import {
 import settings from './commands/administration/settings';
 import balance from './commands/economy/balance';
 import pay from './commands/economy/pay';
+import ranking from './commands/economy/ranking';
 import ping from './commands/utility/ping';
 import { getLanguage } from './i18n';
 
@@ -37,7 +38,8 @@ const commands = new Map<string, Command>([
 	[ping.data.name, ping],
 	[settings.data.name, settings],
 	[balance.data.name, balance],
-	[pay.data.name, pay]
+	[pay.data.name, pay],
+	[ranking.data.name, ranking]
 ]);
 
 async function reloadCommands() {

@@ -47,6 +47,10 @@
 		{#if data.user}
 			<div class="user">
 				<span>{data.user.username}</span>
+				{#if selectedGuild?.canManage}<a
+						class="admin-button"
+						href={`/admin?guild=${selectedGuild.id}`}>서버 관리</a
+					>{/if}
 				<form method="POST" action="?/logout"><button class="ghost">로그아웃</button></form>
 			</div>
 		{/if}
@@ -125,9 +129,9 @@
 								oninput={scheduleMemberSearch}
 								autocomplete="off"
 								placeholder="닉네임 또는 사용자 이름 검색"
-							/><input
+							/><input type="hidden" name="recipientId" value={selectedRecipient?.id || ''} /><input
 								type="hidden"
-								name="recipientId"
+								name="targetId"
 								value={selectedRecipient?.id || ''}
 							/>{#if searching}<span class="search-state">검색 중…</span
 								>{/if}{#if memberResults.length}<div class="results">
@@ -148,27 +152,34 @@
 								>
 							</div></label
 						>
-						<button class="primary" type="submit">송금하기</button>
+						<div class="button-row">
+							{#if selectedGuild.publicBalanceEnabled}<button
+									class="secondary"
+									type="submit"
+									formnovalidate
+									formaction={`?/lookup&guild=${selectedGuild.id}`}>소지금 보기</button
+								>{/if}<button class="primary" type="submit">송금하기</button>
+						</div>
 					</form>
 				</section>
 
-				<section class="card action-card admin-card">
+				<section class="card action-card ranking-card">
 					<div class="card-title">
 						<span>02</span>
 						<div>
-							<h3>서버 관리</h3>
-							<p>경제 정책과 서버 설정을 관리합니다.</p>
+							<h3>소지금 순위</h3>
+							<p>현재 서버의 상위 계좌입니다.</p>
 						</div>
 					</div>
-					{#if selectedGuild.canManage}<div class="admin-entry">
-							<span>관리 권한 확인됨</span>
-							<p>경제 단위와 관리자 기능은 별도 공간에서 관리합니다.</p>
-							<a class="secondary" href={`/admin?guild=${selectedGuild.id}`}
-								>관리자 대시보드 열기 →</a
-							>
-						</div>{:else}<div class="permission">
+					{#if selectedGuild.rankingEnabled}<ol class="ranking">
+							{#each data.ranking as entry}<li>
+									<b>{entry.rank}</b><span>{entry.username}</span><strong
+										>{entry.balance} {selectedGuild.currencyUnit}</strong
+									>
+								</li>{/each}
+						</ol>{:else}<div class="permission">
 							<span>🔒</span>
-							<p>서버 관리 권한이 있는 사용자만 관리자 대시보드에 접근할 수 있습니다.</p>
+							<p>관리자가 소지금 순위를 비활성화했습니다.</p>
 						</div>{/if}
 				</section>
 			</div>
@@ -241,6 +252,16 @@
 	.ghost {
 		background: #171a21;
 		color: #cbd0da;
+	}
+	.admin-button {
+		color: #c8beff;
+		background: #211b3a;
+		border: 1px solid #3b3068;
+		border-radius: 8px;
+		padding: 8px 11px;
+		text-decoration: none;
+		font-size: 12px;
+		font-weight: 750;
 	}
 	.hero {
 		padding: 15vh 0 8vh;
@@ -412,6 +433,37 @@
 	.action-card button {
 		margin-top: 3px;
 	}
+	.button-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.ranking {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: grid;
+		gap: 8px;
+	}
+	.ranking li {
+		display: grid;
+		grid-template-columns: 25px 1fr auto;
+		gap: 8px;
+		align-items: center;
+		padding: 10px;
+		background: #0c0e13;
+		border-radius: 8px;
+		font-size: 13px;
+	}
+	.ranking b {
+		color: #8f79ff;
+	}
+	.ranking strong {
+		font-size: 12px;
+	}
+	.ranking-card {
+		min-height: 320px;
+	}
 	input,
 	select {
 		width: 100%;
@@ -491,27 +543,6 @@
 		background: #7657ff;
 		font-style: normal;
 	}
-	.admin-entry {
-		display: grid;
-		gap: 12px;
-		color: #858d9d;
-		font-size: 13px;
-	}
-	.admin-entry > span {
-		color: #8fd9bc;
-	}
-	.admin-entry p {
-		margin: 0;
-	}
-	.admin-entry a {
-		text-align: center;
-		text-decoration: none;
-	}
-	.admin-card {
-		display: flex;
-		flex-direction: column;
-	}
-	.admin-entry,
 	.permission {
 		flex: 1;
 	}
