@@ -137,7 +137,8 @@
 			</form>
 		</section>
 
-		{#if form?.message}<p class:success={form.success} class="notice">{form.message}</p>{/if}
+		{#if data.notice}<p class="notice success">{data.notice}</p>{/if}
+		{#if form?.message}<p class="notice">{form.message}</p>{/if}
 
 		{#if selectedGuild}
 			<section class="server-heading">

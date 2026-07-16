@@ -32,7 +32,10 @@ import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
 import { fail, redirect } from '@sveltejs/kit';
+import type { Cookies } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
+
+const DASHBOARD_NOTICE_COOKIE = 'mountain_dashboard_notice';
 
 interface GuildRow {
 	guild_id: unknown;
@@ -45,8 +48,9 @@ interface GuildRow {
 }
 
 export const load: PageServerLoad = async ({ cookies, url }) => {
+	const notice = readDashboardNotice(cookies);
 	const user = await getSessionUser(cookies);
-	if (!user) return { user, guilds: [], selectedGuildId: null };
+	if (!user) return { user, guilds: [], selectedGuildId: null, notice };
 
 	const db = await getDB();
 	const guildRows = await db`
@@ -96,9 +100,26 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		transactions,
 		bettingPools,
 		attendance,
-		attendanceLeaderboard
+		attendanceLeaderboard,
+		notice
 	};
 };
+
+function readDashboardNotice(cookies: Cookies) {
+	const message = cookies.get(DASHBOARD_NOTICE_COOKIE) || null;
+	if (message) cookies.delete(DASHBOARD_NOTICE_COOKIE, { path: '/' });
+	return message;
+}
+
+function redirectToDashboard(cookies: Cookies, guildId: string, message: string): never {
+	cookies.set(DASHBOARD_NOTICE_COOKIE, message, {
+		path: '/',
+		httpOnly: true,
+		sameSite: 'lax',
+		maxAge: 60
+	});
+	redirect(303, `/?guild=${encodeURIComponent(guildId)}`);
+}
 
 async function requireMembership(cookies: Parameters<typeof getSessionUser>[0], guildId: string) {
 	const user = await getSessionUser(cookies);
@@ -146,7 +167,7 @@ export const actions: Actions = {
 				guildId,
 				`💸 **송금**\n보낸 사용자: <@${membership.user.id}>\n받는 사용자: <@${recipientId}>\n금액: **${amount}**`
 			);
-			return { success: true, message: `${amount} 송금이 완료됐습니다.` };
+			redirectToDashboard(cookies, guildId, `${amount} 송금이 완료됐습니다.`);
 		} catch (error) {
 			if (error instanceof InsufficientBalanceError)
 				return fail(400, { message: '소지금이 부족합니다.' });
@@ -167,10 +188,11 @@ export const actions: Actions = {
 				guildId,
 				`📅 **출석 보상**\n사용자: <@${membership.user.id}>\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
 			);
-			return {
-				success: true,
-				message: `출석 완료! ${result.reward} ${unit}을(를) 받았습니다. 현재 ${result.currentStreak}일 연속, 최장 ${result.longestStreak}일입니다.`
-			};
+			redirectToDashboard(
+				cookies,
+				guildId,
+				`출석 완료! ${result.reward} ${unit}을(를) 받았습니다. 현재 ${result.currentStreak}일 연속, 최장 ${result.longestStreak}일입니다.`
+			);
 		} catch (error) {
 			if (error instanceof AttendanceAlreadyClaimedError)
 				return fail(409, { message: '오늘은 이미 출석 보상을 받았습니다.' });
@@ -192,7 +214,7 @@ export const actions: Actions = {
 			guildId,
 			`🎲 **베팅 판 생성**\n#${poolId} ${title}\n판 주인: <@${membership.user.id}>`
 		);
-		return { success: true, message: `#${poolId} ${title} 베팅 판을 만들었습니다.` };
+		redirectToDashboard(cookies, guildId, `#${poolId} ${title} 베팅 판을 만들었습니다.`);
 	},
 	placeBet: async ({ cookies, request }) => {
 		const form = await request.formData();
@@ -210,7 +232,7 @@ export const actions: Actions = {
 				guildId,
 				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: <@${membership.user.id}>\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
 			);
-			return { success: true, message: `${amount}을 베팅했습니다. 남은 소지금: ${remaining}` };
+			redirectToDashboard(cookies, guildId, `${amount}을 베팅했습니다. 남은 소지금: ${remaining}`);
 		} catch (error) {
 			return bettingActionError(error);
 		}
@@ -237,10 +259,11 @@ export const actions: Actions = {
 				guildId,
 				`🏆 **베팅 정산**\n#${poolId} ${pool?.title || ''}\n승자: <@${winnerId}>\n지급액: **${payout}**\n처리자: <@${membership.user.id}>`
 			);
-			return {
-				success: true,
-				message: `${pool?.winnerName || '승자'}님에게 ${payout}을 지급했습니다.`
-			};
+			redirectToDashboard(
+				cookies,
+				guildId,
+				`${pool?.winnerName || '승자'}님에게 ${payout}을 지급했습니다.`
+			);
 		} catch (error) {
 			return bettingActionError(error);
 		}
@@ -264,7 +287,7 @@ export const actions: Actions = {
 				guildId,
 				`↩️ **베팅 환불**\n#${poolId} ${poolBefore?.title || ''}\n${count}명에게 총 **${poolBefore?.totalAmount || '0.00'}** 환불\n처리자: <@${membership.user.id}>`
 			);
-			return { success: true, message: `${count}명의 베팅액을 모두 환불했습니다.` };
+			redirectToDashboard(cookies, guildId, `${count}명의 베팅액을 모두 환불했습니다.`);
 		} catch (error) {
 			return bettingActionError(error);
 		}
