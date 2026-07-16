@@ -28,15 +28,15 @@
 				<p class="eyebrow">SIGNED IN</p>
 				<h2>{data.user.username}님의 서버</h2>
 			</div>
-			<p>{data.guilds.length}개 서버가 연결됨</p>
+			<p>봇이 참여한 서버 {data.guilds.length}개</p>
 		</section>
 
 		{#if form?.message}<p class:success={form.success} class="notice">{form.message}</p>{/if}
 
 		{#if data.guilds.length === 0}
 			<section class="empty">
-				<h3>연결된 서버가 없습니다.</h3>
-				<p>서버 목록 권한을 반영하려면 다시 로그인해 주세요.</p>
+				<h3>함께 참여 중인 서버가 없습니다.</h3>
+				<p>Mountain 봇을 서버에 추가한 뒤 다시 로그인해 주세요.</p>
 			</section>
 		{:else}
 			<div class="grid">

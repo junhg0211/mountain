@@ -30,10 +30,32 @@ export async function getMe(token: string): Promise<DiscordUser> {
 	return (await response.json()) as DiscordUser;
 }
 
-export async function getGuilds(token: string): Promise<DiscordGuild[]> {
-	const response = await fetch(`${API_BASE_URL}/users/@me/guilds`, {
-		headers: { Authorization: `Bearer ${token}` }
-	});
-	if (!response.ok) throw new Error(`Discord guild request failed (${response.status}).`);
-	return (await response.json()) as DiscordGuild[];
+async function fetchGuilds(authorization: string): Promise<DiscordGuild[]> {
+	const guilds: DiscordGuild[] = [];
+	let after: string | undefined;
+
+	do {
+		const query = new URLSearchParams({ limit: '200' });
+		if (after) query.set('after', after);
+		const response = await fetch(`${API_BASE_URL}/users/@me/guilds?${query}`, {
+			headers: { Authorization: authorization }
+		});
+		if (!response.ok) throw new Error(`Discord guild request failed (${response.status}).`);
+		const page = (await response.json()) as DiscordGuild[];
+		guilds.push(...page);
+		after = page.length === 200 ? page.at(-1)?.id : undefined;
+	} while (after);
+
+	return guilds;
+}
+
+export function getGuilds(token: string): Promise<DiscordGuild[]> {
+	return fetchGuilds(`Bearer ${token}`);
+}
+
+export async function getBotGuildIds(): Promise<Set<string>> {
+	const token = process.env.BOT_TOKEN;
+	if (!token) throw new Error('BOT_TOKEN is not configured.');
+	const guilds = await fetchGuilds(`Bot ${token}`);
+	return new Set(guilds.map((guild) => guild.id));
 }

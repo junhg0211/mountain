@@ -1,7 +1,7 @@
 import { createSession } from '$lib/server/auth';
 import { ensureUser } from '$lib/server/db/users';
 import { syncUserGuilds } from '$lib/server/db/user-guilds';
-import { getGuilds, getMe } from '$lib/server/discord/users';
+import { getBotGuildIds, getGuilds, getMe } from '$lib/server/discord/users';
 import { error, redirect, type RequestHandler } from '@sveltejs/kit';
 
 export const GET: RequestHandler = async ({ cookies, fetch, request }) => {
@@ -38,9 +38,16 @@ export const GET: RequestHandler = async ({ cookies, fetch, request }) => {
 	const data = (await response.json()) as { access_token?: string };
 	if (!data.access_token) error(502, 'Discord did not return an access token.');
 
-	const [me, guilds] = await Promise.all([getMe(data.access_token), getGuilds(data.access_token)]);
+	const [me, guilds, botGuildIds] = await Promise.all([
+		getMe(data.access_token),
+		getGuilds(data.access_token),
+		getBotGuildIds()
+	]);
 	await ensureUser(me.id, me.global_name || me.username, me.avatar || '');
-	await syncUserGuilds(me.id, guilds);
+	await syncUserGuilds(
+		me.id,
+		guilds.filter((guild) => botGuildIds.has(guild.id))
+	);
 	await createSession(cookies, me.id, url.protocol === 'https:');
 
 	return redirect(303, '/');
