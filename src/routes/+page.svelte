@@ -162,15 +162,13 @@
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
 
-				<div class="attendance-grid">
-					{#if data.attendance}
+				{#if data.attendance && data.attendance.reward !== '0.00'}
+					<div class="attendance-grid">
 						<section class="card attendance-card">
 							<div>
 								<p class="card-label">DAILY ATTENDANCE</p>
 								<h3>오늘의 출석</h3>
-								{#if data.attendance.reward === '0.00'}
-									<p>이 서버는 아직 출석 보상을 설정하지 않았습니다.</p>
-								{:else if data.attendance.claimed}
+								{#if data.attendance.claimed}
 									<p>오늘의 보상을 이미 받았습니다. 내일 다시 만나요!</p>
 								{:else}
 									<p>하루 한 번 출석하고 서버 보상을 받아보세요.</p>
@@ -184,38 +182,38 @@
 								<strong>{data.attendance.reward}</strong><span>{selectedGuild.currencyUnit}</span>
 								<form method="POST" action={`?/attendance&guild=${selectedGuild.id}`}>
 									<input type="hidden" name="guildId" value={selectedGuild.id} />
-									<button disabled={data.attendance.claimed || data.attendance.reward === '0.00'}
+									<button disabled={data.attendance.claimed}
 										>{data.attendance.claimed ? '출석 완료 ✓' : '출석하기'}</button
 									>
 								</form>
 							</div>
 						</section>
-					{/if}
 
-					<section class="card attendance-ranking-card">
-						<div class="history-heading">
-							<div>
-								<p class="card-label">ATTENDANCE STREAK</p>
-								<h3>연속 출석 리더보드</h3>
+						<section class="card attendance-ranking-card">
+							<div class="history-heading">
+								<div>
+									<p class="card-label">ATTENDANCE STREAK</p>
+									<h3>연속 출석 리더보드</h3>
+								</div>
+								<span>최장 기록 기준</span>
 							</div>
-							<span>최장 기록 기준</span>
-						</div>
-						{#if data.attendanceLeaderboard.length}
-							<ol class="attendance-ranking">
-								{#each data.attendanceLeaderboard as entry}
-									<li>
-										<b>{entry.rank}</b><span>{entry.username}</span>
-										<small>현재 {entry.currentStreak}일</small><strong
-											>최장 {entry.longestStreak}일</strong
-										>
-									</li>
-								{/each}
-							</ol>
-						{:else}
-							<p class="history-empty">아직 연속 출석 기록이 없습니다.</p>
-						{/if}
-					</section>
-				</div>
+							{#if data.attendanceLeaderboard.length}
+								<ol class="attendance-ranking">
+									{#each data.attendanceLeaderboard as entry}
+										<li>
+											<b>{entry.rank}</b><span>{entry.username}</span>
+											<small>현재 {entry.currentStreak}일</small><strong
+												>최장 {entry.longestStreak}일</strong
+											>
+										</li>
+									{/each}
+								</ol>
+							{:else}
+								<p class="history-empty">아직 연속 출석 기록이 없습니다.</p>
+							{/if}
+						</section>
+					</div>
+				{/if}
 
 				<BettingBoard
 					initialPools={data.bettingPools}
