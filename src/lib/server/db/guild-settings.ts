@@ -8,7 +8,7 @@ export interface EconomyVisibilitySettings {
 }
 
 export async function setCurrencyUnit(guildId: string, unit: string): Promise<void> {
-	const db = getDB();
+	const db = await getDB();
 	await db`
 		INSERT INTO guild_settings (guild_id, currency_unit)
 		VALUES (${guildId}, ${unit})
@@ -20,7 +20,7 @@ export async function setVisibilitySettings(
 	guildId: string,
 	settings: EconomyVisibilitySettings
 ): Promise<void> {
-	const db = getDB();
+	const db = await getDB();
 	await db`
 		INSERT INTO guild_settings (guild_id, public_balance_enabled, ranking_enabled)
 		VALUES (${guildId}, ${settings.publicBalanceEnabled}, ${settings.rankingEnabled})
@@ -31,7 +31,7 @@ export async function setVisibilitySettings(
 }
 
 export async function getVisibilitySettings(guildId: string): Promise<EconomyVisibilitySettings> {
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT public_balance_enabled, ranking_enabled FROM guild_settings
 		WHERE guild_id = ${guildId} LIMIT 1
@@ -43,7 +43,7 @@ export async function getVisibilitySettings(guildId: string): Promise<EconomyVis
 }
 
 export async function getCurrencyUnit(guildId: string): Promise<string> {
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT currency_unit
 		FROM guild_settings
@@ -55,7 +55,7 @@ export async function getCurrencyUnit(guildId: string): Promise<string> {
 }
 
 export async function setNotificationChannel(guildId: string, channelId: string | null) {
-	const db = getDB();
+	const db = await getDB();
 	await db`
 		INSERT INTO guild_settings (guild_id, notification_channel_id)
 		VALUES (${guildId}, ${channelId})
@@ -64,7 +64,7 @@ export async function setNotificationChannel(guildId: string, channelId: string 
 }
 
 export async function getNotificationChannel(guildId: string): Promise<string | null> {
-	const db = getDB();
+	const db = await getDB();
 	const rows =
 		await db`SELECT notification_channel_id FROM guild_settings WHERE guild_id=${guildId} LIMIT 1`;
 	return rows[0]?.notification_channel_id ? String(rows[0].notification_channel_id) : null;

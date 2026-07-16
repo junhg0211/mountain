@@ -5,8 +5,12 @@ opensource discord economy bot with website and dashboard
 ## Development
 
 1. Copy `.env.example` to `.env` and fill in the Discord and MariaDB values.
-2. Apply `database.sql` to MariaDB.
-3. Run `bun install` and `bun run dev`.
+2. Run `bun install` and `bun run dev`.
+
+The app creates the configured database, missing tables, columns, and indexes automatically on
+its first database access. The configured MariaDB user therefore needs permission to create the
+database. `database.sql` remains available for manual provisioning if your deployment uses a
+restricted database user.
 
 Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registered.
 

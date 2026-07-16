@@ -5,7 +5,7 @@ export class InsufficientBalanceError extends Error {}
 export type BalanceAdjustmentType = 'mint' | 'burn';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
-	const db = getDB();
+	const db = await getDB();
 	await db`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${guildId}, ${userId})`;
 
 	const rows = await db`
@@ -20,7 +20,7 @@ export async function getOrCreateBalance(guildId: string, userId: string): Promi
 }
 
 export async function getBalanceRanking(guildId: string, limit = 10) {
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT users.id, users.username, accounts.balance
 		FROM accounts
@@ -38,7 +38,7 @@ export async function getBalanceRanking(guildId: string, limit = 10) {
 }
 
 export async function getTotalSupply(guildId: string): Promise<string> {
-	const db = getDB();
+	const db = await getDB();
 	const rows =
 		await db`SELECT COALESCE(SUM(balance), 0.00) AS total FROM accounts WHERE guild_id = ${guildId}`;
 	return formatBalance(rows[0]?.total || 0);
@@ -50,7 +50,7 @@ export async function adjustBalance(
 	amount: string,
 	type: BalanceAdjustmentType
 ): Promise<string> {
-	const db = getDB();
+	const db = await getDB();
 	return db.begin(async (tx) => {
 		await tx`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${guildId}, ${userId})`;
 		const rows =
@@ -76,7 +76,7 @@ export async function transferBalance(
 	recipientId: string,
 	amount: string
 ): Promise<string> {
-	const db = getDB();
+	const db = await getDB();
 
 	return db.begin(async (tx) => {
 		await tx`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${guildId}, ${senderId})`;

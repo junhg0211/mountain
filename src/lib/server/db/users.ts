@@ -1,7 +1,7 @@
 import { getDB } from '../db';
 
 export async function ensureUser(id: string, username: string, avatar_url: string): Promise<void> {
-	const db = getDB();
+	const db = await getDB();
 
 	await db`
 		INSERT INTO users (id, username, avatar_url)

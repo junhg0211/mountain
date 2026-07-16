@@ -2,7 +2,7 @@ import { getDB } from '$lib/server/db';
 import type { DiscordGuild } from '$lib/server/discord/users';
 
 export async function syncUserGuilds(userId: string, guilds: DiscordGuild[]): Promise<void> {
-	const db = getDB();
+	const db = await getDB();
 	await db.begin(async (tx) => {
 		await tx`DELETE FROM user_guilds WHERE user_id = ${userId}`;
 		for (const guild of guilds) {

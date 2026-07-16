@@ -23,7 +23,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
 	if (!user) redirect(303, '/login');
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT ug.guild_id, ug.guild_name, ug.permissions,
 			COALESCE(gs.currency_unit, 'coin') AS currency_unit,
@@ -75,7 +75,7 @@ async function handleAdjustment(cookies: Cookies, request: Request, type: Balanc
 	if (!amount) return fail(400, { message: '0.01 이상의 올바른 금액을 입력해 주세요.' });
 	if (!/^\d{17,20}$/.test(targetId))
 		return fail(400, { message: '검색 결과에서 사용자를 선택해 주세요.' });
-	const db = getDB();
+	const db = await getDB();
 	const permissions =
 		await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
 	if (permissions.length !== 1 || !canManageGuild(String(permissions[0].permissions)))
@@ -112,7 +112,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
 		const unit = String(form.get('unit') || '').trim();
-		const db = getDB();
+		const db = await getDB();
 		const rows =
 			await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
 		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
@@ -127,7 +127,7 @@ export const actions: Actions = {
 		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
-		const db = getDB();
+		const db = await getDB();
 		const rows =
 			await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
 		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
@@ -144,7 +144,7 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
 		const channelId = String(form.get('channelId') || '') || null;
-		const db = getDB();
+		const db = await getDB();
 		const rows =
 			await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
 		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))

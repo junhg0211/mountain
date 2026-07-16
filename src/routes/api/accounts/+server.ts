@@ -7,7 +7,7 @@ export const GET: RequestHandler = async ({ cookies }) => {
 	const userId = await getSessionUserId(cookies);
 	if (!userId) error(401, 'Authentication required.');
 
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT
 			accounts.id,

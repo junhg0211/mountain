@@ -11,7 +11,7 @@ export interface SessionUser {
 }
 
 export async function createSession(cookies: Cookies, userId: string, secure: boolean) {
-	const db = getDB();
+	const db = await getDB();
 	const id = crypto.randomUUID();
 	const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
 
@@ -33,7 +33,7 @@ export async function getSessionUserId(cookies: Cookies): Promise<string | null>
 	const id = cookies.get(SESSION_COOKIE);
 	if (!id) return null;
 
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT user_id
 		FROM sessions
@@ -48,7 +48,7 @@ export async function getSessionUser(cookies: Cookies): Promise<SessionUser | nu
 	const id = cookies.get(SESSION_COOKIE);
 	if (!id) return null;
 
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT users.id, users.username, users.avatar_url
 		FROM sessions
@@ -72,7 +72,7 @@ export async function getSessionUser(cookies: Cookies): Promise<SessionUser | nu
 export async function deleteSession(cookies: Cookies): Promise<void> {
 	const id = cookies.get(SESSION_COOKIE);
 	if (id) {
-		const db = getDB();
+		const db = await getDB();
 		await db`DELETE FROM sessions WHERE id = ${id}`;
 	}
 

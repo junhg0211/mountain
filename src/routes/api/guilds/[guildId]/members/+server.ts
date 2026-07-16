@@ -10,7 +10,7 @@ export const GET: RequestHandler = async ({ cookies, params, url }) => {
 	const query = (url.searchParams.get('q') || '').trim();
 	if (query.length < 1 || query.length > 32) return json({ members: [] });
 
-	const db = getDB();
+	const db = await getDB();
 	const membership = await db`
 		SELECT 1 FROM user_guilds WHERE user_id = ${user.id} AND guild_id = ${params.guildId} LIMIT 1
 	`;

@@ -30,7 +30,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
 	if (!user) return { user, guilds: [], selectedGuildId: null };
 
-	const db = getDB();
+	const db = await getDB();
 	const guildRows = await db`
 		SELECT ug.guild_id, ug.guild_name, ug.icon_hash, ug.permissions,
 			COALESCE(a.balance, 0.00) AS balance,
@@ -76,7 +76,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 async function requireMembership(cookies: Parameters<typeof getSessionUser>[0], guildId: string) {
 	const user = await getSessionUser(cookies);
 	if (!user) return null;
-	const db = getDB();
+	const db = await getDB();
 	const rows = await db`
 		SELECT permissions FROM user_guilds
 		WHERE user_id = ${user.id} AND guild_id = ${guildId} LIMIT 1
