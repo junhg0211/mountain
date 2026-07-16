@@ -1,4 +1,6 @@
 <script lang="ts">
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+
 	const { data, form } = $props();
 	const selectedGuild = $derived(
 		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
@@ -8,6 +10,9 @@
 	let memberResults = $state<Member[]>([]);
 	let selectedRecipient = $state<Member | null>(null);
 	let transferAmount = $state('');
+	let transferConfirmationOpen = $state(false);
+	let transferForm = $state<HTMLFormElement>();
+	let transferConfirmed = false;
 	let searching = $state(false);
 	let searchSequence = 0;
 	let searchTimer: ReturnType<typeof setTimeout>;
@@ -40,11 +45,17 @@
 		memberResults = [];
 	}
 	function confirmTransfer(event: SubmitEvent) {
-		if (!selectedRecipient || !selectedGuild) return;
-		const confirmed = window.confirm(
-			`${selectedRecipient.username}님에게 ${transferAmount.trim()} ${selectedGuild.currencyUnit}만큼을 송금합니다.\n계속하시겠습니까?`
-		);
-		if (!confirmed) event.preventDefault();
+		if (transferConfirmed) {
+			transferConfirmed = false;
+			return;
+		}
+		event.preventDefault();
+		if (selectedRecipient && selectedGuild) transferConfirmationOpen = true;
+	}
+	function submitConfirmedTransfer() {
+		transferConfirmationOpen = false;
+		transferConfirmed = true;
+		transferForm?.requestSubmit();
 	}
 </script>
 
@@ -131,6 +142,7 @@
 						</div>
 					</div>
 					<form
+						bind:this={transferForm}
 						method="POST"
 						action={`?/transfer&guild=${selectedGuild.id}`}
 						onsubmit={confirmTransfer}
@@ -209,6 +221,24 @@
 		{/if}
 	{/if}
 </main>
+
+<ConfirmDialog
+	open={transferConfirmationOpen}
+	title="송금을 진행할까요?"
+	description="송금이 완료되면 바로 상대방의 소지금에 반영됩니다."
+	confirmLabel="송금하기"
+	onconfirm={submitConfirmedTransfer}
+	oncancel={() => (transferConfirmationOpen = false)}
+>
+	{#if selectedRecipient && selectedGuild}
+		<div class="transfer-summary">
+			<div><span>받는 사람</span><strong>{selectedRecipient.username}</strong></div>
+			<div>
+				<span>송금 금액</span><strong>{transferAmount.trim()} {selectedGuild.currencyUnit}</strong>
+			</div>
+		</div>
+	{/if}
+</ConfirmDialog>
 
 <style>
 	:global(*) {
@@ -604,6 +634,31 @@
 	}
 	.notice.success {
 		background: #153c32;
+	}
+	.transfer-summary {
+		display: grid;
+		gap: 1px;
+		padding: 1px;
+		background: #292e3a;
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.transfer-summary div {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		padding: 13px 14px;
+		background: #0d1016;
+	}
+	.transfer-summary span {
+		color: #858d9d;
+		font-size: 12px;
+	}
+	.transfer-summary strong {
+		color: #f3f1ff;
+		font-size: 13px;
+		text-align: right;
 	}
 	.empty {
 		text-align: center;
