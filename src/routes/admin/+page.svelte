@@ -142,9 +142,9 @@
 		font-family: Inter, system-ui, sans-serif;
 	}
 	main {
-		max-width: 920px;
+		max-width: 1180px;
 		margin: auto;
-		padding: 0 24px 80px;
+		padding: 0 28px 80px;
 	}
 	header {
 		height: 80px;
@@ -359,6 +359,9 @@
 		background: #153c32;
 	}
 	@media (max-width: 650px) {
+		main {
+			padding: 0 16px 50px;
+		}
 		.heading {
 			align-items: stretch;
 			flex-direction: column;
