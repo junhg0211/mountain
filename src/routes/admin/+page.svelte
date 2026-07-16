@@ -88,6 +88,25 @@
 				>
 				<button>공개 설정 저장</button>
 			</form>
+			<form
+				method="POST"
+				action={`?/notifications&guild=${selectedGuild.id}`}
+				class="notifications"
+			>
+				<input type="hidden" name="guildId" value={selectedGuild.id} />
+				<h3>거래 알림 채널</h3>
+				<p>송금, Mint, Burn이 완료되면 선택한 Discord 채널에 기록합니다.</p>
+				<label
+					>알림 채널<select name="channelId"
+						><option value="">알림 사용 안 함</option>{#each data.channels as channel}<option
+								value={channel.id}
+								selected={channel.id === selectedGuild.notificationChannelId}
+								># {channel.name}</option
+							>{/each}</select
+					></label
+				>
+				<button>알림 채널 저장</button>
+			</form>
 			<form method="POST" action={`?/mint&guild=${selectedGuild.id}`} class="issuance">
 				<input type="hidden" name="guildId" value={selectedGuild.id} /><input
 					type="hidden"
@@ -291,6 +310,18 @@
 	.visibility {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
+	}
+	.notifications {
+		border-top: 1px solid #292e39;
+		padding-top: 26px;
+	}
+	.notifications h3 {
+		margin: 0;
+	}
+	.notifications > p {
+		color: #747d8d;
+		font-size: 13px;
+		margin: 0;
 	}
 	.visibility h3 {
 		margin: 0 0 6px;

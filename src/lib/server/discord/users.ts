@@ -19,6 +19,13 @@ export interface DiscordGuildMember {
 	user: DiscordUser & { bot?: boolean };
 }
 
+export interface DiscordChannel {
+	id: string;
+	name: string;
+	type: number;
+	position: number;
+}
+
 export async function getMe(token: string): Promise<DiscordUser> {
 	if (!token) throw new Error('Discord access token is missing.');
 
@@ -86,4 +93,15 @@ export async function getGuildMember(guildId: string, userId: string) {
 	if (response.status === 404) return null;
 	if (!response.ok) throw new Error(`Discord member request failed (${response.status}).`);
 	return (await response.json()) as DiscordGuildMember;
+}
+
+export async function getGuildTextChannels(guildId: string): Promise<DiscordChannel[]> {
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/channels`, {
+		headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok) throw new Error(`Discord channel request failed (${response.status}).`);
+	const channels = (await response.json()) as DiscordChannel[];
+	return channels
+		.filter((channel) => channel.type === 0 || channel.type === 5)
+		.sort((a, b) => a.position - b.position);
 }

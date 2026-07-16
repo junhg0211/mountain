@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin',
     public_balance_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     ranking_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    notification_channel_id VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

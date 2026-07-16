@@ -53,3 +53,19 @@ export async function getCurrencyUnit(guildId: string): Promise<string> {
 
 	return rows.length === 1 ? String(rows[0].currency_unit) : DEFAULT_CURRENCY_UNIT;
 }
+
+export async function setNotificationChannel(guildId: string, channelId: string | null) {
+	const db = getDB();
+	await db`
+		INSERT INTO guild_settings (guild_id, notification_channel_id)
+		VALUES (${guildId}, ${channelId})
+		ON DUPLICATE KEY UPDATE notification_channel_id = VALUES(notification_channel_id)
+	`;
+}
+
+export async function getNotificationChannel(guildId: string): Promise<string | null> {
+	const db = getDB();
+	const rows =
+		await db`SELECT notification_channel_id FROM guild_settings WHERE guild_id=${guildId} LIMIT 1`;
+	return rows[0]?.notification_channel_id ? String(rows[0].notification_channel_id) : null;
+}

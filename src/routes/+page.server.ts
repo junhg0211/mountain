@@ -1,4 +1,5 @@
 import { deleteSession, getSessionUser } from '$lib/server/auth';
+import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import {
 	getBalanceRanking,
 	getOrCreateBalance,
@@ -114,6 +115,10 @@ export const actions: Actions = {
 
 		try {
 			await transferBalance(guildId, membership.user.id, recipientId, amount);
+			await sendTransactionNotification(
+				guildId,
+				`💸 **송금**\n보낸 사용자: <@${membership.user.id}>\n받는 사용자: <@${recipientId}>\n금액: **${amount}**`
+			);
 			return { success: true, message: `${amount} 송금이 완료됐습니다.` };
 		} catch (error) {
 			if (error instanceof InsufficientBalanceError)
