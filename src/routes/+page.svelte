@@ -68,7 +68,9 @@
 			| 'bet_refund'
 			| 'attendance'
 			| 'voice_activity'
-			| 'monthly_burn';
+			| 'monthly_burn'
+			| 'role_subscription'
+			| 'scheduled_transfer';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
@@ -78,6 +80,7 @@
 		if (transaction.type === 'attendance') return '일일 출석 보상';
 		if (transaction.type === 'voice_activity') return '음성 활동 보상';
 		if (transaction.type === 'monthly_burn') return '월간 보유금 소각';
+		if (transaction.type === 'role_subscription') return '역할 구독 결제';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')
@@ -107,6 +110,7 @@
 		{#if data.user}
 			<div class="user">
 				<span>{data.user.username}</span>
+				{#if selectedGuild}<a class="admin-button" href={`/payments?guild=${selectedGuild.id}`}>자동 결제</a>{/if}
 				{#if selectedGuild?.canManage}<a
 						class="admin-button"
 						href={`/admin?guild=${selectedGuild.id}`}>서버 관리</a

@@ -70,6 +70,74 @@ CREATE TABLE IF NOT EXISTS monthly_burn_runs (
     INDEX monthly_burn_runs_executed_idx (executed_at)
 );
 
+CREATE TABLE IF NOT EXISTS role_subscription_plans (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    role_id VARCHAR(255) NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    monthly_price DECIMAL(15, 2) NOT NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY role_subscription_plans_guild_role (guild_id, role_id),
+    INDEX role_subscription_plans_guild_active (guild_id, active),
+    CHECK (monthly_price >= 0.01)
+);
+
+CREATE TABLE IF NOT EXISTS role_subscriptions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    plan_id BIGINT NOT NULL,
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    next_charge_at BIGINT,
+    last_error VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY role_subscriptions_plan_user (plan_id, user_id),
+    INDEX role_subscriptions_due (status, next_charge_at),
+    FOREIGN KEY (plan_id) REFERENCES role_subscription_plans(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS scheduled_transfers (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    sender_id VARCHAR(255) NOT NULL,
+    recipient_id VARCHAR(255) NOT NULL,
+    amount DECIMAL(15, 2) NOT NULL,
+    schedule_type VARCHAR(16) NOT NULL,
+    interval_days INT,
+    weekday TINYINT,
+    month_day TINYINT,
+    run_hour TINYINT NOT NULL,
+    run_minute TINYINT NOT NULL,
+    next_run_at BIGINT NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    last_error VARCHAR(255),
+    total_transferred DECIMAL(30, 2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX scheduled_transfers_sender (guild_id, sender_id, status),
+    INDEX scheduled_transfers_due (status, next_run_at),
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE,
+    CHECK (amount >= 0.01)
+);
+
+CREATE TABLE IF NOT EXISTS automatic_payment_runs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    payment_type VARCHAR(24) NOT NULL,
+    reference_id BIGINT NOT NULL,
+    run_key VARCHAR(32) NOT NULL,
+    guild_id VARCHAR(255) NOT NULL,
+    amount DECIMAL(15, 2) NOT NULL,
+    status VARCHAR(16) NOT NULL,
+    error_message VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY automatic_payment_runs_once (payment_type, reference_id, run_key),
+    INDEX automatic_payment_runs_guild_created (guild_id, created_at)
+);
+
 CREATE TABLE IF NOT EXISTS voice_activity_rewards (
     guild_id VARCHAR(255) NOT NULL,
     user_id VARCHAR(255) NOT NULL,

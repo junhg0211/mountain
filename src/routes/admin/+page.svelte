@@ -51,6 +51,8 @@
 		attendance: '출석 보상',
 		voice_activity: '음성 활동 보상',
 		monthly_burn: '월간 소각'
+		,role_subscription: '역할 구독'
+		,scheduled_transfer: '자동 송금'
 	};
 	function transactionRoute(transaction: Transaction) {
 		const sender = transaction.sender?.name || '시스템';
@@ -94,6 +96,16 @@
 				<span>총 유통량</span><strong
 					>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong
 				>
+			</div>
+			<div class="role-plans">
+				<h3>색상 역할 구독</h3>
+				<p>기존 Discord 역할을 월 구독 상품으로 등록합니다. 가입 즉시 결제되며 이후 매월 1일 12:00(KST)에 전액 결제됩니다.</p>
+				<form method="POST" action={`?/rolePlan&guild=${selectedGuild.id}`}>
+					<input type="hidden" name="guildId" value={selectedGuild.id}>
+					<label>역할<select name="roleId" required><option value="">선택</option>{#each data.roles as role}<option value={role.id}>{role.name}</option>{/each}</select></label>
+					<label>월 요금<input name="amount" inputmode="decimal" placeholder="100.00" required></label><button>상품 저장</button>
+				</form>
+				{#each data.rolePlans as plan}<div class="plan-row"><span>{plan.name} · {formatMoneyDisplay(plan.monthlyPrice)} · {plan.active ? '활성' : '비활성'}</span>{#if plan.active}<form method="POST" action={`?/disableRolePlan&guild=${selectedGuild.id}`}><input type="hidden" name="guildId" value={selectedGuild.id}><input type="hidden" name="planId" value={plan.id}><button>비활성화</button></form>{/if}</div>{/each}
 			</div>
 			<form method="POST" action={`?/settings&guild=${selectedGuild.id}`}>
 				<input type="hidden" name="guildId" value={selectedGuild.id} /><label

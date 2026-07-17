@@ -16,6 +16,7 @@ export interface DiscordGuild {
 
 export interface DiscordGuildMember {
 	nick: string | null;
+	roles?: string[];
 	user: DiscordUser & { bot?: boolean };
 }
 
@@ -26,6 +27,14 @@ export interface DiscordChannel {
 	position: number;
 	parent_id: string | null;
 	categoryName?: string;
+}
+
+export interface DiscordRole {
+	id: string;
+	name: string;
+	color: number;
+	position: number;
+	managed: boolean;
 }
 
 interface DisplayNameCacheEntry {
@@ -102,6 +111,29 @@ export async function getGuildMember(guildId: string, userId: string) {
 	if (response.status === 404) return null;
 	if (!response.ok) throw new Error(`Discord member request failed (${response.status}).`);
 	return (await response.json()) as DiscordGuildMember;
+}
+
+export async function getGuildRoles(guildId: string): Promise<DiscordRole[]> {
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/roles`, {
+		headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok) throw new Error(`Discord roles request failed (${response.status}).`);
+	return ((await response.json()) as DiscordRole[]).sort((a, b) => b.position - a.position);
+}
+
+export async function addGuildMemberRole(guildId: string, userId: string, roleId: string) {
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/members/${userId}/roles/${roleId}`, {
+		method: 'PUT', headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok) throw new Error(`Discord role assignment failed (${response.status}).`);
+}
+
+export async function removeGuildMemberRole(guildId: string, userId: string, roleId: string) {
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/members/${userId}/roles/${roleId}`, {
+		method: 'DELETE', headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok && response.status !== 404)
+		throw new Error(`Discord role removal failed (${response.status}).`);
 }
 
 export async function getGuildDisplayNames(guildId: string, userIds: Iterable<string>) {

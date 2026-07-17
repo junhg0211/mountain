@@ -57,6 +57,23 @@ must insert exactly one row in the same database transaction as its balance upda
 | Attendance     | `NULL`       | rewarded user  | `attendance`       |
 | Voice activity | `NULL`       | rewarded user  | `voice_activity`   |
 | Monthly burn   | debited user | `NULL`         | `monthly_burn`     |
+| Role renewal   | subscriber   | `NULL`         | `role_subscription` |
+| Scheduled pay  | sender       | recipient      | `scheduled_transfer` |
+
+## Automatic payments and role subscriptions
+
+`scheduled_transfers` stores only same-guild transfers. Creation does not debit the sender. The
+scheduler executes at the displayed KST time, locks both accounts, and writes the balance movement
+and `scheduled_transfer` ledger row in one transaction. A unique `automatic_payment_runs` key makes
+each scheduled occurrence idempotent. Insufficient balance records a failed run, advances to the
+next occurrence, and keeps the instruction active. If the recipient leaves the guild, cancel it.
+
+Role products refer to existing Discord roles; Mountain never creates a role. Signup charges the
+full monthly price immediately, then renews on the first day of each month at 12:00 KST. There is no
+proration or refund, and both web and Discord surfaces must display that warning before signup.
+Insufficient renewal balance cancels the subscription and removes the role. A missing, managed, or
+disabled role product cancels its active subscriptions. Discord role changes happen outside the
+database transaction and failures must never leave an unrecorded balance mutation.
 
 Betting rows also carry `betting_pool_id`. Money staked in an open pool is escrow, not burned, so
 total supply is account balances plus stakes in open pools. Settlement and refund must lock the

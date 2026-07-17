@@ -12,7 +12,9 @@ export type TransactionType =
 	| 'bet_refund'
 	| 'attendance'
 	| 'voice_activity'
-	| 'monthly_burn';
+	| 'monthly_burn'
+	| 'role_subscription'
+	| 'scheduled_transfer';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = await getDB();
@@ -91,7 +93,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'bet_refund' ||
 			type === 'attendance' ||
 			type === 'voice_activity' ||
-			(!outgoing && type === 'transfer');
+			(!outgoing && (type === 'transfer' || type === 'scheduled_transfer'));
 		const balanceAfter = centsToMoney(runningBalance);
 		const amount = moneyToCents(formatBalance(row.amount));
 		runningBalance = credit ? runningBalance - amount : runningBalance + amount;
@@ -100,7 +102,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type,
 			direction: credit ? 'credit' : 'debit',
 			counterparty:
-				type === 'transfer'
+				type === 'transfer' || type === 'scheduled_transfer'
 					? String(
 							outgoing
 								? row.recipient_name || '알 수 없는 사용자'

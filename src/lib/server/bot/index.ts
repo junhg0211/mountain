@@ -18,11 +18,14 @@ import attendance from './commands/economy/attendance';
 import balance from './commands/economy/balance';
 import bet from './commands/economy/bet';
 import pay from './commands/economy/pay';
+import autopay from './commands/economy/autopay';
+import subscription from './commands/economy/subscription';
 import ranking from './commands/economy/ranking';
 import dashboard from './commands/utility/dashboard';
 import { getLanguage } from './i18n';
 import { startMonthlyBurnScheduler, stopMonthlyBurnScheduler } from './monthly-burn';
 import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
+import { startAutomaticPaymentScheduler, stopAutomaticPaymentScheduler } from './automatic-payments';
 
 dotenv.config();
 
@@ -55,6 +58,7 @@ async function shutdown(signal: NodeJS.Signals) {
 	try {
 		stopVoiceActivityRewards();
 		stopMonthlyBurnScheduler();
+		stopAutomaticPaymentScheduler();
 		state.client?.removeAllListeners();
 		state.client?.destroy();
 		state.client = null;
@@ -93,6 +97,8 @@ const commands = new Map<string, Command>([
 	[balance.data.name, balance],
 	[bet.data.name, bet],
 	[pay.data.name, pay],
+	[autopay.data.name, autopay],
+	[subscription.data.name, subscription],
 	[ranking.data.name, ranking],
 	[dashboard.data.name, dashboard]
 ]);
@@ -139,6 +145,7 @@ async function reloadCommands() {
 
 async function start() {
 	startMonthlyBurnScheduler();
+	startAutomaticPaymentScheduler();
 	if (!process.env.BOT_TOKEN) {
 		console.warn('BOT_TOKEN is not configured; Discord bot startup skipped.');
 		return;

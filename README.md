@@ -27,6 +27,11 @@ preserves Discord's Activity Entry Point command when bulk-reloading slash comma
 
 ## Commands
 
+- `/autopay list|create|cancel` (`/자동송금`, `/自動送金`) manages recurring transfers. A new
+  transfer does not charge immediately; supported schedules are every N days, weekly, and monthly.
+- `/subscription list|join|cancel` (`/구독`, `/サブスク`) manages existing-role subscriptions.
+  Joining charges the full monthly price immediately and renewals run on the 1st at 12:00 KST.
+
 - `/balance [user]` shows a balance. It is localized as `/잔액` and `/残高`.
 - `/pay user:<user> amount:<amount>` transfers money. It is localized as `/송금` and `/送金`.
 - `/ranking` shows the server balance ranking. It is localized as `/순위` and `/ランキング`.

@@ -18,7 +18,9 @@ import {
 } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { ensureUser } from '$lib/server/db/users';
-import { getGuildMember, getGuildTextChannels } from '$lib/server/discord/users';
+import { getGuildMember, getGuildTextChannels, removeGuildMemberRole } from '$lib/server/discord/users';
+import { getGuildRoles } from '$lib/server/discord/users';
+import { disableRolePlan, listRolePlans, saveRolePlan } from '$lib/server/db/automatic-payments';
 import { moneyToCents, parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { fail, redirect } from '@sveltejs/kit';
@@ -92,7 +94,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const totalSupply = selectedGuildId ? await getTotalSupply(selectedGuildId) : '0.00';
 	const channels = selectedGuildId ? await getGuildTextChannels(selectedGuildId) : [];
 	const transactions = selectedGuildId ? await getGuildTransactions(selectedGuildId) : [];
-	return { user, guilds, selectedGuildId, totalSupply, channels, transactions };
+	const [roles, rolePlans] = selectedGuildId
+		? await Promise.all([getGuildRoles(selectedGuildId), listRolePlans(selectedGuildId, true)])
+		: [[], []];
+	return { user, guilds, selectedGuildId, totalSupply, channels, transactions,
+		roles: roles.filter((role) => !role.managed && role.name !== '@everyone'), rolePlans };
 };
 
 async function handleAdjustment(cookies: Cookies, request: Request, type: BalanceAdjustmentType) {
@@ -288,6 +294,35 @@ export const actions: Actions = {
 			success: true,
 			message: channelId ? '거래 알림 채널을 저장했습니다.' : '거래 알림을 비활성화했습니다.'
 		};
+	},
+	rolePlan: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || ''), roleId = String(form.get('roleId') || '');
+		const amount = parseMoney(String(form.get('amount') || '').trim());
+		const db = await getDB();
+		const permission = await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId}`;
+		if (!permission.length || !canManageGuild(String(permission[0].permissions))) return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		if (!amount) return fail(400, { message: '월 요금은 0.01 이상이어야 합니다.' });
+		const role = (await getGuildRoles(guildId)).find((item) => item.id === roleId && !item.managed && item.name !== '@everyone');
+		if (!role) return fail(400, { message: '등록할 수 있는 역할을 선택해 주세요.' });
+		await saveRolePlan(guildId, role.id, role.name, amount);
+		return { success: true, message: `${role.name} 역할 구독 상품을 저장했습니다.` };
+	},
+	disableRolePlan: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies); if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData(); const guildId = String(form.get('guildId') || '');
+		const db = await getDB(); const permission = await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId}`;
+		if (!permission.length || !canManageGuild(String(permission[0].permissions))) return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		const planId = String(form.get('planId') || '');
+		const subscriptions = await db`SELECT rs.user_id,rp.role_id FROM role_subscriptions rs
+			JOIN role_subscription_plans rp ON rp.id=rs.plan_id
+			WHERE rs.plan_id=${planId} AND rs.guild_id=${guildId} AND rs.status='active'`;
+		await disableRolePlan(guildId, planId);
+		await Promise.all(subscriptions.map((row: Record<string, unknown>) =>
+			removeGuildMemberRole(guildId, String(row.user_id), String(row.role_id)).catch(console.error)));
+		return { success: true, message: '역할 상품과 연결된 자동 결제를 비활성화했습니다.' };
 	},
 	mint: async ({ cookies, request }) => handleAdjustment(cookies, request, 'mint'),
 	burn: async ({ cookies, request }) => handleAdjustment(cookies, request, 'burn')
