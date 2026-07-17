@@ -59,7 +59,15 @@
 		transferForm?.requestSubmit();
 	}
 	function transactionTitle(transaction: {
-		type: 'transfer' | 'mint' | 'burn' | 'bet_stake' | 'bet_payout' | 'bet_refund' | 'attendance';
+		type:
+			| 'transfer'
+			| 'mint'
+			| 'burn'
+			| 'bet_stake'
+			| 'bet_payout'
+			| 'bet_refund'
+			| 'attendance'
+			| 'voice_activity';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
@@ -67,6 +75,7 @@
 		if (transaction.type === 'mint') return '관리자 발행';
 		if (transaction.type === 'burn') return '관리자 소각';
 		if (transaction.type === 'attendance') return '일일 출석 보상';
+		if (transaction.type === 'voice_activity') return '음성 활동 보상';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')

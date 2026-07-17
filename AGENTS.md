@@ -24,6 +24,9 @@ These rules apply to every change in this repository.
   `bet_payout` (escrow to winner), and `bet_refund` (escrow back to participant), each linked by
   `betting_pool_id`. Attendance uses `attendance` with a null sender and the rewarded user as the
   recipient.
+- Voice activity rewards use `voice_activity` with a null sender and the rewarded user as the
+  recipient. They are limited by a per-user Korean-calendar daily cap and a unique five-minute
+  reward bucket; never award message activity.
 - Team betting uses option `A` or `B`. Settle the full escrow pot among the winning option in
   proportion to each winner's integer-cent stake, distribute remainder cents deterministically,
   and write one `bet_payout` ledger row per recipient in the settlement transaction.
@@ -50,5 +53,9 @@ These rules apply to every change in this repository.
   calendar date. Web and Discord claims must share this same key and atomic claim service. Update
   current and longest streaks in that same transaction; skipping a Korean calendar day resets only
   the current streak.
+
+- Voice rewards require at least two eligible humans in the same voice channel. Bots and deafened
+  members are excluded. Reset the five-minute presence timer when a member leaves, moves channels,
+  or becomes ineligible.
 
 See `docs/ECONOMY_DEVELOPMENT.md` for the detailed architecture and change checklist.

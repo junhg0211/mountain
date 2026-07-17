@@ -18,6 +18,7 @@ import pay from './commands/economy/pay';
 import ranking from './commands/economy/ranking';
 import dashboard from './commands/utility/dashboard';
 import { getLanguage } from './i18n';
+import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
 
 dotenv.config();
 
@@ -48,6 +49,7 @@ async function shutdown(signal: NodeJS.Signals) {
 	forceExit.unref();
 
 	try {
+		stopVoiceActivityRewards();
 		state.client?.removeAllListeners();
 		state.client?.destroy();
 		state.client = null;
@@ -118,15 +120,12 @@ async function start() {
 
 	await new Promise<void>((resolve, reject) => {
 		state.client = new Client({
-			intents: [
-				GatewayIntentBits.Guilds,
-				GatewayIntentBits.GuildMessages,
-				GatewayIntentBits.MessageContent
-			]
+			intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
 		});
 
 		state.client.once(Events.ClientReady, () => {
 			console.log(`Logged in as ${state.client?.user?.tag}!`);
+			startVoiceActivityRewards(state.client!);
 			resolve();
 		});
 		state.client.once(Events.Error, reject);

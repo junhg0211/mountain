@@ -7,6 +7,7 @@ This document records the assumptions that must remain true as Mountain evolves.
 - `src/lib/server/db/accounts.ts`: balances, transfers, mint/burn, ranking, supply, and ledger reads.
 - `src/lib/server/db/betting.ts`: betting pool escrow, staking, settlement, refund, and live views.
 - `src/lib/server/db/attendance.ts`: Korean-date daily claims and atomic reward payments.
+- `src/lib/server/db/voice-activity.ts`: bucketed voice rewards and per-user daily caps.
 - `src/lib/server/economy/money.ts`: canonical money parsing and integer-cent conversion.
 - `src/lib/server/db/guild-settings.ts`: per-server unit, visibility, and notification settings.
 - `src/lib/server/bot/commands/`: Discord slash command definitions and handlers.
@@ -43,15 +44,16 @@ remain exact.
 The `transactions` table is the source of transaction history. Every successful balance mutation
 must insert exactly one row in the same database transaction as its balance update.
 
-| Operation  | `sender_id`  | `recipient_id` | `transaction_type` |
-| ---------- | ------------ | -------------- | ------------------ |
-| Transfer   | sender       | recipient      | `transfer`         |
-| Mint       | `NULL`       | credited user  | `mint`             |
-| Burn       | debited user | `NULL`         | `burn`             |
-| Bet stake  | participant  | `NULL`         | `bet_stake`        |
-| Bet payout | `NULL`       | winner         | `bet_payout`       |
-| Bet refund | `NULL`       | participant    | `bet_refund`       |
-| Attendance | `NULL`       | rewarded user  | `attendance`       |
+| Operation      | `sender_id`  | `recipient_id` | `transaction_type` |
+| -------------- | ------------ | -------------- | ------------------ |
+| Transfer       | sender       | recipient      | `transfer`         |
+| Mint           | `NULL`       | credited user  | `mint`             |
+| Burn           | debited user | `NULL`         | `burn`             |
+| Bet stake      | participant  | `NULL`         | `bet_stake`        |
+| Bet payout     | `NULL`       | winner         | `bet_payout`       |
+| Bet refund     | `NULL`       | participant    | `bet_refund`       |
+| Attendance     | `NULL`       | rewarded user  | `attendance`       |
+| Voice activity | `NULL`       | rewarded user  | `voice_activity`   |
 
 Betting rows also carry `betting_pool_id`. Money staked in an open pool is escrow, not burned, so
 total supply is account balances plus stakes in open pools. Settlement and refund must lock the
@@ -98,6 +100,16 @@ part of the claim transaction. If a streak row is missing for an existing user, 
 Display the current streak as zero after a missed Korean calendar day, while preserving the stored
 longest streak. Read SQL `DATE` values with `DATE_FORMAT(..., '%Y-%m-%d')` to avoid driver timezone
 shifts.
+
+Voice activity rewards are configured per guild with a base amount per five minutes and a per-user
+daily cap. Both `0.00` values disable the feature. A reward requires at least two eligible humans
+in one voice channel; bots and deafened members are excluded, and leaving, moving, or becoming
+ineligible resets continuous presence. The participant multiplier is 2x for two people, 1.5x for
+three, 1.25x for four, and 1x for five or more. Solo activity and message activity never earn
+currency. Use `(guild_id, user_id, reward_bucket)` to deduplicate five-minute intervals and the
+`Asia/Seoul` date for the cap. Insert the reward record, credit the balance, and write the
+`voice_activity` ledger row in one database transaction. Notifications are intentionally omitted
+for these frequent automatic credits to avoid channel spam.
 
 Use row locks for debit operations. A failed insufficient-balance check must change neither the
 balance nor the ledger. Discord notifications are sent after commit and intentionally swallow

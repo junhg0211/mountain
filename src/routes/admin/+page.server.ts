@@ -11,12 +11,13 @@ import {
 	setAttendanceReward,
 	setCurrencyUnit,
 	setNotificationChannel,
+	setVoiceActivitySettings,
 	setVisibilitySettings
 } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember, getGuildTextChannels } from '$lib/server/discord/users';
-import { parseMoney } from '$lib/server/economy/money';
+import { moneyToCents, parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
@@ -32,6 +33,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			COALESCE(gs.public_balance_enabled, TRUE) AS public_balance_enabled,
 			COALESCE(gs.ranking_enabled, TRUE) AS ranking_enabled,
 			COALESCE(gs.attendance_reward, 0.00) AS attendance_reward,
+			COALESCE(gs.voice_activity_reward, 0.00) AS voice_activity_reward,
+			COALESCE(gs.voice_activity_daily_cap, 0.00) AS voice_activity_daily_cap,
 			gs.notification_channel_id
 		FROM user_guilds ug
 		LEFT JOIN guild_settings gs ON gs.guild_id = ug.guild_id
@@ -48,6 +51,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				public_balance_enabled: unknown;
 				ranking_enabled: unknown;
 				attendance_reward: unknown;
+				voice_activity_reward: unknown;
+				voice_activity_daily_cap: unknown;
 				notification_channel_id: unknown;
 			}) => ({
 				id: String(row.guild_id),
@@ -56,6 +61,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				publicBalanceEnabled: Boolean(row.public_balance_enabled),
 				rankingEnabled: Boolean(row.ranking_enabled),
 				attendanceReward: Number(row.attendance_reward).toFixed(2),
+				voiceActivityReward: Number(row.voice_activity_reward).toFixed(2),
+				voiceActivityDailyCap: Number(row.voice_activity_daily_cap).toFixed(2),
 				notificationChannelId: row.notification_channel_id
 					? String(row.notification_channel_id)
 					: null
@@ -153,6 +160,35 @@ export const actions: Actions = {
 				amount === '0.00'
 					? '출석 보상을 비활성화했습니다.'
 					: `일일 출석 보상을 ${amount}(으)로 설정했습니다.`
+		};
+	},
+	voiceActivity: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const rawReward = String(form.get('reward') || '').trim();
+		const rawDailyCap = String(form.get('dailyCap') || '').trim();
+		const db = await getDB();
+		const permissionRows = await db`
+			SELECT permissions FROM user_guilds
+			WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1
+		`;
+		if (permissionRows.length !== 1 || !canManageGuild(String(permissionRows[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 없습니다.' });
+		const disabled = /^0(?:\.0{1,2})?$/.test(rawReward) && /^0(?:\.0{1,2})?$/.test(rawDailyCap);
+		const reward = disabled ? '0.00' : parseMoney(rawReward);
+		const dailyCap = disabled ? '0.00' : parseMoney(rawDailyCap);
+		if (!reward || !dailyCap)
+			return fail(400, { message: '보상과 일일 한도는 0.01 이상의 금액으로 입력해 주세요.' });
+		if (!disabled && moneyToCents(dailyCap) < moneyToCents(reward) * 2n)
+			return fail(400, { message: '일일 한도는 2인 채널 1회 보상보다 작을 수 없습니다.' });
+		await setVoiceActivitySettings(guildId, { reward, dailyCap });
+		return {
+			success: true,
+			message: disabled
+				? '음성 활동 보상을 비활성화했습니다.'
+				: `음성 활동 기본 보상을 ${formatMoneyDisplay(reward)}, 일일 한도를 ${formatMoneyDisplay(dailyCap)}(으)로 설정했습니다.`
 		};
 	},
 	visibility: async ({ cookies, request }) => {

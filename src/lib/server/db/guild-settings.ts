@@ -63,6 +63,37 @@ export async function setAttendanceReward(guildId: string, amount: string): Prom
 	`;
 }
 
+export interface VoiceActivitySettings {
+	reward: string;
+	dailyCap: string;
+}
+
+export async function setVoiceActivitySettings(
+	guildId: string,
+	settings: VoiceActivitySettings
+): Promise<void> {
+	const db = await getDB();
+	await db`
+		INSERT INTO guild_settings (guild_id, voice_activity_reward, voice_activity_daily_cap)
+		VALUES (${guildId}, ${settings.reward}, ${settings.dailyCap})
+		ON DUPLICATE KEY UPDATE
+			voice_activity_reward=VALUES(voice_activity_reward),
+			voice_activity_daily_cap=VALUES(voice_activity_daily_cap)
+	`;
+}
+
+export async function getVoiceActivitySettings(guildId: string): Promise<VoiceActivitySettings> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT voice_activity_reward, voice_activity_daily_cap
+		FROM guild_settings WHERE guild_id=${guildId} LIMIT 1
+	`;
+	return {
+		reward: Number(rows[0]?.voice_activity_reward || 0).toFixed(2),
+		dailyCap: Number(rows[0]?.voice_activity_daily_cap || 0).toFixed(2)
+	};
+}
+
 export async function setNotificationChannel(guildId: string, channelId: string | null) {
 	const db = await getDB();
 	await db`

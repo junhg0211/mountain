@@ -75,13 +75,15 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			| 'bet_stake'
 			| 'bet_payout'
 			| 'bet_refund'
-			| 'attendance';
+			| 'attendance'
+			| 'voice_activity';
 		const outgoing = String(row.sender_id || '') === userId;
 		const credit =
 			type === 'mint' ||
 			type === 'bet_payout' ||
 			type === 'bet_refund' ||
 			type === 'attendance' ||
+			type === 'voice_activity' ||
 			(!outgoing && type === 'transfer');
 		return {
 			id: String(row.id),

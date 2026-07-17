@@ -21,6 +21,8 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 - `/ranking` shows the server balance ranking. It is localized as `/순위` and `/ランキング`.
 - `/settings currency unit:<unit>` sets the server currency unit. It is localized as `/설정 통화`
   and `/設定 通貨`.
+- `/settings voice-reward reward:<amount> daily-cap:<amount>` configures voice activity rewards.
+  It is localized as `/설정 음성보상` and `/設定 ボイス報酬`.
 - `/dashboard` opens the web dashboard. It is localized as `/대시보드` and `/ダッシュボード`.
 - `/bet` creates, joins, views, settles, or refunds server betting pools. It is localized as
   `/베팅` and `/ベット`.
@@ -29,6 +31,12 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
 Balances are isolated per Discord server.
+
+Voice activity rewards are paid every five continuous eligible minutes. Two-person channels pay
+2x the base reward, three-person channels 1.5x, four-person channels 1.25x, and larger channels 1x.
+Bots, deafened users, solo users, and message activity receive no reward. Administrators can set
+the base reward and per-user daily cap from Discord or the web admin dashboard; setting both to
+`0.00` disables the feature.
 
 ## Betting dashboard
 

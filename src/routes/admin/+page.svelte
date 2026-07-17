@@ -97,6 +97,35 @@
 				>
 				<button>출석 보상 저장</button>
 			</form>
+			<form
+				method="POST"
+				action={`?/voiceActivity&guild=${selectedGuild.id}`}
+				class="voice-settings"
+			>
+				<input type="hidden" name="guildId" value={selectedGuild.id} />
+				<h3>음성 활동 보상</h3>
+				<p>5분마다 지급하며 같은 채널의 사람이 적을수록 더 많이 받습니다. 0, 0은 비활성화입니다.</p>
+				<div class="settings-grid">
+					<label
+						>5분당 기본 보상<input
+							name="reward"
+							inputmode="decimal"
+							value={selectedGuild.voiceActivityReward}
+							required
+						/></label
+					>
+					<label
+						>사용자별 일일 한도<input
+							name="dailyCap"
+							inputmode="decimal"
+							value={selectedGuild.voiceActivityDailyCap}
+							required
+						/></label
+					>
+				</div>
+				<small>2명 2배 · 3명 1.5배 · 4명 1.25배 · 5명 이상 기본 보상</small>
+				<button>음성 활동 보상 저장</button>
+			</form>
 			<form method="POST" action={`?/visibility&guild=${selectedGuild.id}`} class="visibility">
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>공개 범위</h3>
@@ -364,17 +393,32 @@
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
 	}
-	.attendance-settings {
+	.attendance-settings,
+	.voice-settings {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
 	}
 	.attendance-settings h3,
-	.attendance-settings p {
+	.attendance-settings p,
+	.voice-settings h3,
+	.voice-settings p {
 		margin: 0;
 	}
-	.attendance-settings p {
+	.attendance-settings p,
+	.voice-settings p,
+	.voice-settings > small {
 		color: #747d8d;
 		font-size: 13px;
+	}
+	.settings-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+	}
+	@media (max-width: 720px) {
+		.settings-grid {
+			grid-template-columns: 1fr;
+		}
 	}
 	.notifications h3 {
 		margin: 0;
