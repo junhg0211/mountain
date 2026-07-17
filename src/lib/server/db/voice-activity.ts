@@ -12,6 +12,25 @@ function koreanDate(now: Date) {
 	}).format(now);
 }
 
+export async function getVoiceActivityRemaining(guildId: string, userId: string, now = new Date()) {
+	const db = await getDB();
+	const rewardDate = koreanDate(now);
+	const rows = await db`
+		SELECT COALESCE(gs.voice_activity_daily_cap, 0.00) AS daily_cap,
+			COALESCE(SUM(rewards.amount), 0.00) AS received
+		FROM guild_settings gs
+		LEFT JOIN voice_activity_rewards rewards
+			ON rewards.guild_id=gs.guild_id AND rewards.user_id=${userId}
+			AND rewards.reward_date=${rewardDate}
+		WHERE gs.guild_id=${guildId}
+		GROUP BY gs.guild_id, gs.voice_activity_daily_cap
+	`;
+	if (!rows.length) return '0.00';
+	const cap = moneyToCents(String(rows[0].daily_cap));
+	const received = moneyToCents(String(rows[0].received));
+	return centsToMoney(cap > received ? cap - received : 0n);
+}
+
 export function voiceRewardBucket(now = new Date()) {
 	return Math.floor(now.getTime() / INTERVAL_MS);
 }

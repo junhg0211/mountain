@@ -187,8 +187,8 @@
 								<p>청각 차단을 해제하고 음성 채널에 5분간 머무르면 자동으로 지급됩니다.</p>
 							</div>
 							<div class="reward-cap">
-								<span>사용자별 일일 한도</span><strong
-									>{formatMoneyDisplay(selectedGuild.voiceActivity.dailyCap)}</strong
+								<span>오늘 남은 보상</span><strong
+									>{formatMoneyDisplay(data.voiceRewardRemaining)}</strong
 								><small>{selectedGuild.currencyUnit}</small>
 							</div>
 						</div>

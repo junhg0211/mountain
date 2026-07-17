@@ -32,7 +32,7 @@ import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
-import { calculateVoiceReward } from '$lib/server/db/voice-activity';
+import { calculateVoiceReward, getVoiceActivityRemaining } from '$lib/server/db/voice-activity';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
@@ -110,14 +110,16 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const botConnected = Boolean(
 		selectedGuildId && botClient?.isReady() && botClient.guilds.cache.has(selectedGuildId)
 	);
-	const [ranking, transactions, attendance, attendanceLeaderboard] = selectedGuildId
-		? await Promise.all([
-				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
-				getUserTransactions(selectedGuildId, user.id),
-				getAttendanceStatus(selectedGuildId, user.id),
-				getAttendanceLeaderboard(selectedGuildId)
-			])
-		: [[], [], null, []];
+	const [ranking, transactions, attendance, attendanceLeaderboard, voiceRewardRemaining] =
+		selectedGuildId
+			? await Promise.all([
+					rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
+					getUserTransactions(selectedGuildId, user.id),
+					getAttendanceStatus(selectedGuildId, user.id),
+					getAttendanceLeaderboard(selectedGuildId),
+					getVoiceActivityRemaining(selectedGuildId, user.id)
+				])
+			: [[], [], null, [], '0.00'];
 	return {
 		user,
 		guilds,
@@ -127,6 +129,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		transactions,
 		attendance,
 		attendanceLeaderboard,
+		voiceRewardRemaining,
 		notice
 	};
 };

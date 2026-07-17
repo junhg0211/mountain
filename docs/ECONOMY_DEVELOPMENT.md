@@ -117,7 +117,9 @@ for these frequent automatic credits to avoid channel spam.
 
 The ordinary web dashboard may expose configured reward amounts to guild members. Calculate every
 displayed participant tier through the same integer-cent reward function used by the award service,
-and hide the reward card when either the base reward or daily cap is `0.00`.
+subtract today's `voice_activity_rewards` from the daily cap to show the authenticated user's
+remaining Korean-calendar allowance, and hide the reward card when either the base reward or daily
+cap is `0.00`.
 
 Monthly balance burn settings are stored per guild as an enabled flag, integer basis points
 (`1000` = `10.00%`), Korean-calendar day 1-28, hour, minute, and the next UTC epoch timestamp. New

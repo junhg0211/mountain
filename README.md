@@ -58,7 +58,7 @@ nearest cent, recorded in the ledger, and processed at most once per Korean cale
 
 When voice rewards are enabled, the main web dashboard shows the exact five-minute reward for
 solo, two-person, three-person, four-person, and larger channels together with the per-user daily
-cap. Disabled rewards remain hidden.
+reward remaining after today's payments. Disabled rewards remain hidden.
 
 ## Betting dashboard
 
