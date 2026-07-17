@@ -350,6 +350,8 @@
 		color: #f4f5f8;
 		font-family: Inter, system-ui, sans-serif;
 	}
+	button:not(:disabled) { cursor: pointer; }
+	button:disabled { cursor: not-allowed; }
 	main {
 		max-width: 1180px;
 		margin: auto;
