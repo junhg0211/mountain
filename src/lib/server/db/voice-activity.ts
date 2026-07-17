@@ -18,7 +18,8 @@ export function voiceRewardBucket(now = new Date()) {
 
 export function calculateVoiceReward(baseReward: string, participantCount: number) {
 	const base = moneyToCents(baseReward);
-	if (participantCount < 2 || base <= 0n) return '0.00';
+	if (participantCount < 1 || base <= 0n) return '0.00';
+	if (participantCount === 1) return centsToMoney(base * 3n);
 	if (participantCount === 2) return centsToMoney(base * 2n);
 	if (participantCount === 3) return centsToMoney((base * 3n) / 2n);
 	if (participantCount === 4) return centsToMoney((base * 5n) / 4n);

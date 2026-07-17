@@ -31,7 +31,6 @@ async function scan(client: Client) {
 			for (const channel of guild.channels.cache.values()) {
 				if (!channel.isVoiceBased()) continue;
 				const members = [...channel.members.values()].filter(eligible);
-				if (members.length < 2) continue;
 				for (const member of members) {
 					const key = `${guild.id}:${member.id}`;
 					seen.add(key);

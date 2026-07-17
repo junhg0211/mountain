@@ -32,11 +32,11 @@ Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registe
 Money values use two decimal places, so the minimum transferable amount is `0.01`.
 Balances are isolated per Discord server.
 
-Voice activity rewards are paid every five continuous eligible minutes. Two-person channels pay
-2x the base reward, three-person channels 1.5x, four-person channels 1.25x, and larger channels 1x.
-Bots, deafened users, solo users, and message activity receive no reward. Administrators can set
-the base reward and per-user daily cap from Discord or the web admin dashboard; setting both to
-`0.00` disables the feature.
+Voice activity rewards are paid every five continuous eligible minutes. Solo channels pay 3x the
+base reward, two-person channels 2x, three-person channels 1.5x, four-person channels 1.25x, and
+larger channels 1x. Bots, deafened users, and message activity receive no reward. Administrators
+can set the base reward and per-user daily cap from Discord or the web admin dashboard; setting
+both to `0.00` disables the feature.
 
 ## Betting dashboard
 

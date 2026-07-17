@@ -54,8 +54,8 @@ These rules apply to every change in this repository.
   current and longest streaks in that same transaction; skipping a Korean calendar day resets only
   the current streak.
 
-- Voice rewards require at least two eligible humans in the same voice channel. Bots and deafened
-  members are excluded. Reset the five-minute presence timer when a member leaves, moves channels,
-  or becomes ineligible.
+- Voice rewards allow one or more eligible humans in a voice channel. A solo non-deafened member
+  earns the highest multiplier for starting the room. Bots and deafened members are excluded.
+  Reset the five-minute presence timer when a member leaves, moves channels, or becomes ineligible.
 
 See `docs/ECONOMY_DEVELOPMENT.md` for the detailed architecture and change checklist.

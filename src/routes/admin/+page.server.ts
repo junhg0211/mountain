@@ -183,8 +183,8 @@ export const actions: Actions = {
 		const dailyCap = disabled ? '0.00' : parseMoney(rawDailyCap);
 		if (!reward || !dailyCap)
 			return fail(400, { message: '보상과 일일 한도는 0.01 이상의 금액으로 입력해 주세요.' });
-		if (!disabled && moneyToCents(dailyCap) < moneyToCents(reward) * 2n)
-			return fail(400, { message: '일일 한도는 2인 채널 1회 보상보다 작을 수 없습니다.' });
+		if (!disabled && moneyToCents(dailyCap) < moneyToCents(reward) * 3n)
+			return fail(400, { message: '일일 한도는 1인 채널 1회 보상보다 작을 수 없습니다.' });
 		await setVoiceActivitySettings(guildId, { reward, dailyCap });
 		return {
 			success: true,

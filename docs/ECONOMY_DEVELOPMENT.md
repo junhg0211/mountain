@@ -102,11 +102,12 @@ longest streak. Read SQL `DATE` values with `DATE_FORMAT(..., '%Y-%m-%d')` to av
 shifts.
 
 Voice activity rewards are configured per guild with a base amount per five minutes and a per-user
-daily cap. Both `0.00` values disable the feature. A reward requires at least two eligible humans
-in one voice channel; bots and deafened members are excluded, and leaving, moving, or becoming
+daily cap. Both `0.00` values disable the feature. A reward requires at least one eligible human
+in a voice channel; bots and deafened members are excluded, and leaving, moving, or becoming
 ineligible resets continuous presence. The participant multiplier is 2x for two people, 1.5x for
-three, 1.25x for four, and 1x for five or more. Solo activity and message activity never earn
-currency. Use `(guild_id, user_id, reward_bucket)` to deduplicate five-minute intervals and the
+three, 1.25x for four, and 1x for five or more. A solo non-deafened member receives 3x so the user
+who starts a voice room is rewarded. Message activity never earns currency. Use
+`(guild_id, user_id, reward_bucket)` to deduplicate five-minute intervals and the
 `Asia/Seoul` date for the cap. Insert the reward record, credit the balance, and write the
 `voice_activity` ledger row in one database transaction. Notifications are intentionally omitted
 for these frequent automatic credits to avoid channel spam.

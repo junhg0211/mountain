@@ -130,7 +130,10 @@
 			>
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>음성 활동 보상</h3>
-				<p>5분마다 지급하며 같은 채널의 사람이 적을수록 더 많이 받습니다. 0, 0은 비활성화입니다.</p>
+				<p>
+					혼자 통화방을 연 사람도 청각 차단 상태가 아니면 5분마다 보상받습니다. 0, 0은
+					비활성화입니다.
+				</p>
 				<div class="settings-grid">
 					<label
 						>5분당 기본 보상<input
@@ -149,7 +152,7 @@
 						/></label
 					>
 				</div>
-				<small>2명 2배 · 3명 1.5배 · 4명 1.25배 · 5명 이상 기본 보상</small>
+				<small>1명 3배 · 2명 2배 · 3명 1.5배 · 4명 1.25배 · 5명 이상 기본 보상</small>
 				<button>음성 활동 보상 저장</button>
 			</form>
 			<form method="POST" action={`?/visibility&guild=${selectedGuild.id}`} class="visibility">

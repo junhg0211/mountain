@@ -115,14 +115,14 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		const disabled = isZeroMoney(rawReward) && isZeroMoney(rawDailyCap);
 		const reward = disabled ? '0.00' : parseMoney(rawReward);
 		const dailyCap = disabled ? '0.00' : parseMoney(rawDailyCap);
-		if (!reward || !dailyCap || (!disabled && moneyToCents(dailyCap) < moneyToCents(reward) * 2n)) {
+		if (!reward || !dailyCap || (!disabled && moneyToCents(dailyCap) < moneyToCents(reward) * 3n)) {
 			await interaction.reply({
 				content:
 					language === 'ko'
-						? '보상과 한도는 0.01 이상이어야 하며, 일일 한도는 2인 채널 1회 보상 이상이어야 합니다.'
+						? '보상과 한도는 0.01 이상이어야 하며, 일일 한도는 1인 채널 1회 보상 이상이어야 합니다.'
 						: language === 'ja'
-							? '報酬と上限は0.01以上で、日次上限は2人チャンネルの1回分以上にしてください。'
-							: 'Reward and cap must be at least 0.01, and the daily cap must cover one two-person reward.',
+							? '報酬と上限は0.01以上で、日次上限は1人チャンネルの1回分以上にしてください。'
+							: 'Reward and cap must be at least 0.01, and the daily cap must cover one solo-channel reward.',
 				flags: MessageFlags.Ephemeral
 			});
 			return;
