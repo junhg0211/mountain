@@ -13,6 +13,7 @@ export type TransactionType =
 	| 'bet_fund'
 	| 'bet_house_cover'
 	| 'bet_house_refund'
+	| 'bet_weighted'
 	| 'attendance'
 	| 'voice_activity'
 	| 'monthly_burn'
@@ -99,7 +100,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'attendance' ||
 			type === 'voice_activity' ||
 			type === 'bet_house_refund' ||
-			(!outgoing && (type === 'transfer' || type === 'scheduled_transfer'));
+			(!outgoing && (type === 'transfer' || type === 'scheduled_transfer' || type === 'bet_weighted'));
 		const balanceAfter = centsToMoney(runningBalance);
 		const amount = moneyToCents(formatBalance(row.amount));
 		runningBalance = credit ? runningBalance - amount : runningBalance + amount;
@@ -108,7 +109,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type,
 			direction: credit ? 'credit' : 'debit',
 			counterparty:
-				type === 'transfer' || type === 'scheduled_transfer'
+				type === 'transfer' || type === 'scheduled_transfer' || type === 'bet_weighted'
 					? String(
 							outgoing
 								? row.recipient_name || '알 수 없는 사용자'

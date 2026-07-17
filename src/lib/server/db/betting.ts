@@ -35,6 +35,7 @@ export class BettingPoolClosedError extends Error {}
 export class BettingPermissionError extends Error {}
 export class BettingParticipantError extends Error {}
 export class BettingOptionError extends Error {}
+export class BettingWeightError extends Error {}
 
 type PoolRow = Record<string, unknown>;
 
@@ -391,6 +392,8 @@ export async function getBettingPoolExtras(guildId: string, poolId: string, user
 				COALESCE(SUM(CASE WHEN transaction_type='bet_stake' THEN amount ELSE 0 END), 0) AS total_staked,
 				COALESCE(SUM(CASE WHEN transaction_type='bet_payout' THEN amount ELSE 0 END), 0) AS total_payout,
 				COALESCE(SUM(CASE WHEN transaction_type='bet_refund' THEN amount ELSE 0 END), 0) AS total_refund,
+				COALESCE(SUM(CASE WHEN transaction_type='bet_weighted' AND recipient_id=${userId} THEN amount ELSE 0 END), 0) AS weighted_received,
+				COALESCE(SUM(CASE WHEN transaction_type='bet_weighted' AND sender_id=${userId} THEN amount ELSE 0 END), 0) AS weighted_paid,
 				COUNT(DISTINCT CASE WHEN transaction_type='bet_stake' THEN betting_pool_id END) AS pools_joined,
 				COUNT(DISTINCT CASE WHEN transaction_type='bet_payout' THEN betting_pool_id END) AS pools_won
 			FROM transactions
@@ -403,6 +406,8 @@ export async function getBettingPoolExtras(guildId: string, poolId: string, user
 	const staked = moneyToCents(formatMoney(stats.total_staked || 0));
 	const payout = moneyToCents(formatMoney(stats.total_payout || 0));
 	const refund = moneyToCents(formatMoney(stats.total_refund || 0));
+	const weightedReceived = moneyToCents(formatMoney(stats.weighted_received || 0));
+	const weightedPaid = moneyToCents(formatMoney(stats.weighted_paid || 0));
 	return {
 		events: eventRows.map((row: PoolRow) => ({
 			id: String(row.id),
@@ -417,9 +422,9 @@ export async function getBettingPoolExtras(guildId: string, poolId: string, user
 		})),
 		stats: {
 			totalStaked: centsToMoney(staked),
-			totalPayout: centsToMoney(payout),
-			totalReturned: centsToMoney(payout + refund),
-			netProfit: centsToMoney(payout + refund - staked),
+			totalPayout: centsToMoney(payout + weightedReceived),
+			totalReturned: centsToMoney(payout + refund + weightedReceived),
+			netProfit: centsToMoney(payout + refund + weightedReceived - weightedPaid - staked),
 			poolsJoined: Number(stats.pools_joined || 0),
 			poolsWon: Number(stats.pools_won || 0)
 		}
@@ -543,6 +548,77 @@ export async function payDoubleBettingParticipant(guildId: string, poolId: strin
 		await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${null},${userId},${payoutText},'bet_payout',${poolId})`;
 		await tx`INSERT INTO betting_events (pool_id,event_type,user_id,amount) VALUES (${poolId},'double_payout',${userId},${payoutText})`;
 		return { payout: payoutText, ownerCover: centsToMoney(cover), houseBalance: centsToMoney(house-houseUsed) };
+	});
+}
+
+export async function settleWeightedBettingPool(
+	guildId: string,
+	poolId: string,
+	actorId: string,
+	unitAmount: string,
+	weights: Array<{ userId: string; weight: number }>
+) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const pools = await tx`SELECT owner_id,status FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
+		if (pools.length !== 1) throw new BettingPoolNotFoundError();
+		if (String(pools[0].owner_id) !== actorId) throw new BettingPermissionError();
+		if (String(pools[0].status) !== 'open') throw new BettingPoolClosedError();
+		const roster = await tx`
+			SELECT user_id FROM betting_pool_members WHERE pool_id=${poolId}
+			UNION SELECT user_id FROM betting_entries WHERE pool_id=${poolId}
+		`;
+		const rosterIds = new Set<string>(roster.map((row: PoolRow) => String(row.user_id)));
+		const unique = new Set(weights.map((item) => item.userId));
+		if (rosterIds.size < 2 || unique.size !== weights.length || weights.some((item) =>
+			!rosterIds.has(item.userId) || !Number.isInteger(item.weight) || Math.abs(item.weight) > 10_000
+		)) throw new BettingWeightError();
+		const normalized = [...rosterIds].map((userId) => ({
+			userId,
+			weight: weights.find((item) => item.userId === userId)?.weight || 0
+		}));
+		if (normalized.reduce((sum, item) => sum + item.weight, 0) !== 0 ||
+			!normalized.some((item) => item.weight > 0) || !normalized.some((item) => item.weight < 0))
+			throw new BettingWeightError();
+		const unit = moneyToCents(unitAmount);
+		const maxMoney = 999_999_999_999_999n;
+		const deltas = normalized.map((item) => ({ ...item, amount: BigInt(Math.abs(item.weight)) * unit }));
+		if (deltas.some((item) => item.amount > maxMoney)) throw new BettingWeightError();
+		const entries = await tx`SELECT user_id,amount FROM betting_entries WHERE pool_id=${poolId} ORDER BY user_id FOR UPDATE`;
+		const balances = new Map<string, bigint>();
+		for (const userId of [...rosterIds].sort()) {
+			await tx`INSERT IGNORE INTO accounts (guild_id,user_id) VALUES (${guildId},${userId})`;
+			const account = await tx`SELECT balance FROM accounts WHERE guild_id=${guildId} AND user_id=${userId} FOR UPDATE`;
+			balances.set(userId, moneyToCents(formatMoney(account[0]?.balance || 0)));
+		}
+		for (const entry of entries as PoolRow[]) {
+			const userId = String(entry.user_id), amount = formatMoney(entry.amount);
+			balances.set(userId, (balances.get(userId) || 0n) + moneyToCents(amount));
+			await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${userId}`;
+			await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${null},${userId},${amount},'bet_refund',${poolId})`;
+		}
+		for (const item of deltas.filter((entry) => entry.weight < 0))
+			if ((balances.get(item.userId) || 0n) < item.amount) throw new InsufficientBalanceError();
+		for (const item of deltas) {
+			const amount = centsToMoney(item.amount);
+			if (item.weight < 0) await tx`UPDATE accounts SET balance=balance-${amount} WHERE guild_id=${guildId} AND user_id=${item.userId}`;
+			if (item.weight > 0) await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${item.userId}`;
+		}
+		const losers = deltas.filter((item) => item.weight < 0).map((item) => ({ ...item, remaining: item.amount }));
+		const winners = deltas.filter((item) => item.weight > 0).map((item) => ({ ...item, remaining: item.amount }));
+		for (const loser of losers) for (const winner of winners) {
+			const amount = loser.remaining < winner.remaining ? loser.remaining : winner.remaining;
+			if (amount <= 0n) continue;
+			await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${loser.userId},${winner.userId},${centsToMoney(amount)},'bet_weighted',${poolId})`;
+			loser.remaining -= amount;
+			winner.remaining -= amount;
+		}
+		await tx`DELETE FROM betting_entries WHERE pool_id=${poolId}`;
+		const event = await tx`INSERT INTO betting_events (pool_id,event_type,user_id,amount) VALUES (${poolId},'weighted_settled',${actorId},${unitAmount})`;
+		const eventId = String(event.lastInsertRowid);
+		for (const item of deltas) await tx`INSERT INTO betting_weighted_results (event_id,user_id,weight,amount) VALUES (${eventId},${item.userId},${item.weight},${centsToMoney(item.amount)})`;
+		await tx`UPDATE betting_pools SET status='settled',winner_id=NULL,winning_option=NULL,closed_at=CURRENT_TIMESTAMP WHERE id=${poolId}`;
+		return { participantCount: normalized.length, totalTransferred: centsToMoney(winners.reduce((sum,item) => sum+item.amount,0n)) };
 	});
 }
 

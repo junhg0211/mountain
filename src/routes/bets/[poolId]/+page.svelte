@@ -89,6 +89,7 @@
 		if (event.type === 'funded') return `${event.username}님이 판 자금 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}을 충전했습니다.`;
 		if (event.type === 'user_refund') return `${event.username}님의 베팅액 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}이 개별 환불됐습니다.`;
 		if (event.type === 'double_payout') return `${event.username}님에게 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}이 2배 당첨금으로 지급됐습니다.`;
+		if (event.type === 'weighted_settled') return `가중치 1당 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}으로 정산됐습니다.`;
 		return '베팅 상태가 변경됐습니다.';
 	}
 
@@ -250,6 +251,16 @@
 					{#each pool.participants.filter((participant) => Number(participant.amount) > 0) as participant}
 						<article class="participant-action"><div><strong>{participant.username}</strong><span>{formatMoneyDisplay(participant.amount)} {data.currencyUnit} 베팅</span></div><form method="POST" action="?/refundParticipant"><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="single-refund">개별 환불</button></form><form method="POST" action="?/doublePayout"><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="double-payout">2배 지급</button></form></article>
 					{:else}<p class="no-current-bets">현재 처리할 베팅이 없습니다.</p>{/each}
+				</div>
+				<div class="weighted-management">
+					<div class="weighted-heading"><div><p>WEIGHTED SETTLEMENT</p><h3>음수 포함 가중치 정산</h3></div><span>가중치 합계 0</span></div>
+					<p>리치 마작처럼 참가자별 가중치에 단위 금액을 곱해 패자에게서 승자에게 직접 이동합니다. 현재 베팅액은 먼저 전액 환불됩니다.</p>
+					<form method="POST" action="?/weightedSettlement">
+						<input type="hidden" name="guildId" value={data.guildId}>
+						<label class="weighted-unit">가중치 1당 금액 ({data.currencyUnit})<input name="unitAmount" inputmode="decimal" placeholder="100.00" required></label>
+						<div class="weight-list">{#each pool.participants as participant}<label><span>{participant.username}</span><input name={`weight_${participant.userId}`} type="number" min="-10000" max="10000" step="1" value="0" required></label>{/each}</div>
+						<button disabled={pool.participants.length < 2}>가중치로 회차 정산</button>
+					</form>
 				</div>
 			{/if}
 			{#if data.canManage && (pool.status === 'settled' || pool.status === 'refunded')}
@@ -593,6 +604,20 @@
 	.single-refund { color: #f3c08e; background: #3b2a18; }
 	.double-payout { color: #9ff2cf; background: #1b4939; }
 	.no-current-bets { margin: 14px 0 0; color: #737c8c; font-size: 11px; }
+	.weighted-management { margin-top: 12px; padding: 16px; border: 1px solid #343044; border-radius: 13px; background: #12101a; }
+	.weighted-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; }
+	.weighted-heading p { margin: 0; color: #a68cff; font-size: 9px; font-weight: 900; letter-spacing: .14em; }
+	.weighted-heading h3 { margin: 4px 0 0; font-size: 16px; }
+	.weighted-heading > span { color: #a99cff; font-size: 10px; font-weight: 800; }
+	.weighted-management > p { color: #7f788d; font-size: 11px; line-height: 1.5; }
+	.weighted-management form { display: grid; gap: 12px; }
+	.weighted-management label { color: #8e879a; font-size: 11px; }
+	.weighted-unit { display: grid; gap: 5px; }
+	.weighted-management input { height: 38px; min-width: 0; padding: 0 10px; color: #fff; background: #0c0a12; border: 1px solid #393344; border-radius: 8px; }
+	.weight-list { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+	.weight-list label { display: grid; grid-template-columns: minmax(0, 1fr) 90px; align-items: center; gap: 8px; padding: 7px 9px; background: #191620; border-radius: 8px; }
+	.weight-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.weighted-management form > button { min-height: 40px; border: 0; border-radius: 9px; color: #fff; background: #745ce8; font-weight: 850; }
 	.error {
 		color: #ff8d8d;
 		background: #32191d;
@@ -691,5 +716,6 @@
 		.participant-action { grid-template-columns: 1fr 1fr; }
 		.participant-action > div { grid-column: 1 / -1; }
 		.participant-action form button { width: 100%; }
+		.weight-list { grid-template-columns: 1fr; }
 	}
 </style>

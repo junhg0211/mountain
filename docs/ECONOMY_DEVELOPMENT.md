@@ -57,11 +57,20 @@ must insert exactly one row in the same database transaction as its balance upda
 | Table funding  | owner        | `NULL`         | `bet_fund`         |
 | House fallback | owner        | `NULL`         | `bet_house_cover`  |
 | House return   | `NULL`       | owner          | `bet_house_refund` |
+| Weighted settle| losing user  | winning user   | `bet_weighted`     |
 | Attendance     | `NULL`       | rewarded user  | `attendance`       |
 | Voice activity | `NULL`       | rewarded user  | `voice_activity`   |
 | Monthly burn   | debited user | `NULL`         | `monthly_burn`     |
 | Role renewal   | subscriber   | `NULL`         | `role_subscription` |
 | Scheduled pay  | sender       | recipient      | `scheduled_transfer` |
+
+Signed weighted settlement is owner-only and uses an integer weight for every pool member. The
+weights must sum to zero and include at least one positive and one negative value. The service
+refunds any current stakes first, locks participant accounts in stable user-ID order, verifies all
+negative-weight balances, and then transfers `abs(weight) * unit amount` from negative to positive
+participants. Each paired movement writes a `bet_weighted` ledger row, while
+`betting_weighted_results` preserves the complete per-user result for the settlement event. Any
+validation or balance failure rolls back the refunds and the entire settlement together.
 
 ## Automatic payments and role subscriptions
 

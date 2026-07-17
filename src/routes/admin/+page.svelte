@@ -51,6 +51,7 @@
 		bet_fund: '판 자금 충전',
 		bet_house_cover: '판 자금 보충',
 		bet_house_refund: '판 자금 반환',
+		bet_weighted: '가중치 정산',
 		attendance: '출석 보상',
 		voice_activity: '음성 활동 보상',
 		monthly_burn: '월간 소각'

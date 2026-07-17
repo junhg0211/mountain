@@ -7,6 +7,7 @@ import {
 	BettingParticipantError,
 	BettingPermissionError,
 	BettingOptionError,
+	BettingWeightError,
 	archiveBettingPool,
 	fundBettingPool,
 	getBettingPoolExtras,
@@ -18,7 +19,8 @@ import {
 	refundBettingParticipant,
 	reopenBettingPool,
 	settleBettingPool,
-	settleTeamBettingPool
+	settleTeamBettingPool,
+	settleWeightedBettingPool
 } from '$lib/server/db/betting';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
@@ -212,6 +214,27 @@ export const actions: Actions = {
 			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
 		} catch (error) { return managementError(error); }
 	},
+	weightedSettlement: async ({ cookies, params, request }) => {
+		const form = await request.formData(), guildId = String(form.get('guildId') || '');
+		const context = await requireContext(cookies, guildId);
+		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
+		const unitAmount = parseMoney(String(form.get('unitAmount') || '').trim());
+		if (!unitAmount) return fail(400, { message: '가중치 1당 금액은 0.01 이상이어야 합니다.' });
+		const weights: Array<{ userId: string; weight: number }> = [];
+		for (const [key, value] of form.entries()) {
+			if (!key.startsWith('weight_')) continue;
+			const userId = key.slice(7), raw = String(value).trim();
+			if (!/^\d{17,20}$/.test(userId) || !/^-?\d{1,5}$/.test(raw))
+				return fail(400, { message: '모든 참가자의 가중치를 정수로 입력해 주세요.' });
+			weights.push({ userId, weight: Number(raw) });
+		}
+		try {
+			const result = await settleWeightedBettingPool(guildId, params.poolId, context.user.id, unitAmount, weights);
+			publishBettingUpdate(guildId, params.poolId);
+			await sendTransactionNotification(guildId, `🀄 **가중치 정산**\n#${params.poolId}\n참가자: ${result.participantCount}명\n가중치 1당: **${formatMoneyDisplay(unitAmount)}**\n총 이동액: **${formatMoneyDisplay(result.totalTransferred)}**\n처리자: <@${context.user.id}>`);
+			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
+		} catch (error) { return managementError(error); }
+	},
 	reopen: async ({ cookies, params, request }) => {
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
@@ -249,5 +272,7 @@ function managementError(error: unknown) {
 		return fail(403, { message: '판 주인만 처리할 수 있습니다.' });
 	if (error instanceof BettingParticipantError)
 		return fail(400, { message: '참가자 중 승자를 선택해 주세요.' });
+	if (error instanceof BettingWeightError)
+		return fail(400, { message: '가중치 합계는 0이어야 하며 양수와 음수가 각각 하나 이상 필요합니다.' });
 	throw error;
 }

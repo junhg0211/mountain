@@ -7,6 +7,7 @@ import {
 	BettingPermissionError,
 	BettingPoolClosedError,
 	BettingPoolNotFoundError,
+	BettingWeightError,
 	archiveBettingPool,
 	fundBettingPool,
 	createTeamBettingPool,
@@ -19,7 +20,8 @@ import {
 	refundBettingParticipant,
 	reopenBettingPool,
 	settleBettingPool,
-	settleTeamBettingPool
+	settleTeamBettingPool,
+	settleWeightedBettingPool
 } from '$lib/server/db/betting';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
@@ -164,7 +166,13 @@ const data = new SlashCommandBuilder()
 	.addSubcommand((command) => command.setName('double')
 		.setNameLocalizations({ [Locale.Korean]: '두배지급', [Locale.Japanese]: '二倍支給' })
 		.setDescription('Pay twice a participant’s stake.').setDescriptionLocalizations({ [Locale.Korean]: '참가자의 베팅액 두 배를 지급합니다.', [Locale.Japanese]: '参加者のベット額の2倍を支給します。' })
-		.addStringOption(poolIdOption).addUserOption((option) => option.setName('user').setNameLocalizations({ [Locale.Korean]: '사용자', [Locale.Japanese]: 'ユーザー' }).setDescription('Winning participant.').setRequired(true)));
+		.addStringOption(poolIdOption).addUserOption((option) => option.setName('user').setNameLocalizations({ [Locale.Korean]: '사용자', [Locale.Japanese]: 'ユーザー' }).setDescription('Winning participant.').setRequired(true)))
+	.addSubcommand((command) => command.setName('weighted')
+		.setNameLocalizations({ [Locale.Korean]: '가중치정산', [Locale.Japanese]: '重み精算' })
+		.setDescription('Settle signed participant weights.').setDescriptionLocalizations({ [Locale.Korean]: '참가자의 양수·음수 가중치로 정산합니다.', [Locale.Japanese]: '参加者の正負の重みで精算します。' })
+		.addStringOption(poolIdOption)
+		.addStringOption((option) => option.setName('unit').setNameLocalizations({ [Locale.Korean]: '단위금액', [Locale.Japanese]: '単位金額' }).setDescription('Money per weight point.').setRequired(true))
+		.addStringOption((option) => option.setName('weights').setNameLocalizations({ [Locale.Korean]: '가중치', [Locale.Japanese]: '重み' }).setDescription('userId:+3,userId:-3').setRequired(true)));
 
 function poolIdOption(option: import('discord.js').SlashCommandStringOption) {
 	return option
@@ -348,6 +356,22 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			await interaction.editReply(`🃏 ${user}님에게 **${formatMoneyDisplay(result.payout)} ${unit}** 지급${result.ownerCover !== '0.00' ? ` · 판 주인 자동 보충 ${formatMoneyDisplay(result.ownerCover)} ${unit}` : ''}`);
 			return;
 		}
+		if (subcommand === 'weighted') {
+			const unitAmount = parseMoney(interaction.options.getString('unit', true));
+			const rawWeights = interaction.options.getString('weights', true).split(',').map((value) => value.trim());
+			const weights: Array<{ userId: string; weight: number }> = [];
+			for (const raw of rawWeights) {
+				const match = /^(?:<@!?(\d{17,20})>|(\d{17,20})):(-?\d{1,5})$/.exec(raw);
+				if (!match) { await interaction.editReply(localize(language, 'Use userId:+3,userId:-3 format.', '`사용자ID:+3,사용자ID:-3` 형식으로 입력해 주세요.', '`ユーザーID:+3,ユーザーID:-3` の形式で入力してください。')); return; }
+				weights.push({ userId: match[1] || match[2], weight: Number(match[3]) });
+			}
+			if (!unitAmount) { await interaction.editReply(localize(language, 'Enter a valid unit amount.', '0.01 이상의 단위 금액을 입력해 주세요.', '0.01以上の単位金額を入力してください。')); return; }
+			const result = await settleWeightedBettingPool(interaction.guildId, poolId, interaction.user.id, unitAmount, weights);
+			publishBettingUpdate(interaction.guildId, poolId);
+			await sendTransactionNotification(interaction.guildId, `🀄 **가중치 정산**\n#${poolId}\n참가자: ${result.participantCount}명\n가중치 1당: **${formatMoneyDisplay(unitAmount)} ${unit}**\n총 이동액: **${formatMoneyDisplay(result.totalTransferred)} ${unit}**\n처리자: ${interaction.user}`);
+			await interaction.editReply(`🀄 ${result.participantCount}명 가중치 정산 완료 · 총 **${formatMoneyDisplay(result.totalTransferred)} ${unit}** 이동`);
+			return;
+		}
 		if (subcommand === 'settle') {
 			const pool = await getBettingPool(interaction.guildId, poolId);
 			const team = interaction.options.getString('team');
@@ -484,6 +508,13 @@ function bettingError(error: unknown, language: SupportedLanguage) {
 			'Choose a participant as the winner.',
 			'참가자 중에서 승자를 선택해 주세요.',
 			'参加者から勝者を選んでください。'
+		);
+	if (error instanceof BettingWeightError)
+		return localize(
+			language,
+			'Weights must sum to zero and include at least one positive and negative value.',
+			'가중치 합계는 0이어야 하며 양수와 음수가 각각 하나 이상 필요합니다.',
+			'重みの合計は0で、正と負の値がそれぞれ1つ以上必要です。'
 		);
 	throw error;
 }

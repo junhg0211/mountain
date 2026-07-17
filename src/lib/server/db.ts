@@ -192,6 +192,15 @@ const TABLES = [
 		FOREIGN KEY (pool_id) REFERENCES betting_pools(id) ON DELETE CASCADE,
 		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 	)`,
+	`CREATE TABLE IF NOT EXISTS betting_weighted_results (
+		event_id BIGINT NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		weight INT NOT NULL,
+		amount DECIMAL(15, 2) NOT NULL,
+		PRIMARY KEY (event_id, user_id),
+		FOREIGN KEY (event_id) REFERENCES betting_events(id) ON DELETE CASCADE,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
 	`CREATE TABLE IF NOT EXISTS transactions (
 		id BIGINT AUTO_INCREMENT PRIMARY KEY,
 		guild_id VARCHAR(255) NOT NULL,
