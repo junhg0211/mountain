@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatMoneyDisplay } from '$lib/economy/money-display';
 	let { data, form } = $props();
 </script>
 
@@ -50,7 +51,9 @@
 					<h2>{pool.title}</h2>
 					<p>판 주인 · {pool.ownerName}</p>
 					<footer>
-						<strong>{pool.totalAmount}</strong><span>{pool.participantCount}명 참가 →</span>
+						<strong>{formatMoneyDisplay(pool.totalAmount)}</strong><span
+							>{pool.participantCount}명 참가 →</span
+						>
 					</footer>
 				</a>
 			{:else}<div class="empty">아직 베팅 판이 없습니다.</div>{/each}

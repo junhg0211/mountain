@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatMoneyDisplay } from '$lib/economy/money-display';
 	const { data, form } = $props();
 	const selectedGuild = $derived(
 		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
@@ -63,7 +64,9 @@
 			<span>SERVER SETTINGS</span>
 			<h2>{selectedGuild.name}</h2>
 			<div class="supply">
-				<span>총 유통량</span><strong>{data.totalSupply} {selectedGuild.currencyUnit}</strong>
+				<span>총 유통량</span><strong
+					>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong
+				>
 			</div>
 			<form method="POST" action={`?/settings&guild=${selectedGuild.id}`}>
 				<input type="hidden" name="guildId" value={selectedGuild.id} /><label

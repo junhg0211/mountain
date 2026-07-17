@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import ConfirmDialog from './ConfirmDialog.svelte';
+	import { formatMoneyDisplay } from '$lib/economy/money-display';
 
 	type Participant = { userId: string; username: string; amount: string };
 	type Pool = {
@@ -108,7 +109,7 @@
 						</div>
 						<div class="pool-total">
 							<span class:open={pool.status === 'open'}>{statusLabel(pool.status)}</span>
-							<strong>{pool.totalAmount} {currencyUnit}</strong>
+							<strong>{formatMoneyDisplay(pool.totalAmount)} {currencyUnit}</strong>
 							<small>{pool.participantCount}명 참가</small>
 						</div>
 					</header>
@@ -118,7 +119,7 @@
 							{#each pool.participants as participant, index}
 								<li>
 									<b>{index + 1}</b><span>{participant.username}</span><strong
-										>{participant.amount} {currencyUnit}</strong
+										>{formatMoneyDisplay(participant.amount)} {currencyUnit}</strong
 									>
 								</li>
 							{/each}
@@ -158,7 +159,7 @@
 											askConfirmation(
 												event,
 												'베팅 판을 정산할까요?',
-												`${pool.totalAmount} ${currencyUnit} 전부가 선택한 승자에게 지급되며 되돌릴 수 없습니다.`,
+												`${formatMoneyDisplay(pool.totalAmount)} ${currencyUnit} 전부가 선택한 승자에게 지급되며 되돌릴 수 없습니다.`,
 												'정산하기'
 											)}
 									>
@@ -167,7 +168,8 @@
 										<select name="winnerId" required disabled={!pool.participants.length}>
 											<option value="">승자 선택</option>
 											{#each pool.participants as participant}<option value={participant.userId}
-													>{participant.username} · {participant.amount} {currencyUnit}</option
+													>{participant.username} · {formatMoneyDisplay(participant.amount)}
+													{currencyUnit}</option
 												>{/each}
 										</select>
 										<button class="settle" disabled={!pool.participants.length}

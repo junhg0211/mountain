@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatMoneyDisplay } from '$lib/economy/money-display';
 	import { onMount } from 'svelte';
 	let { data, form } = $props();
 	let livePool = $state<typeof data.pool>();
@@ -55,7 +56,7 @@
 	function eventText(event: (typeof events)[number]) {
 		if (event.type === 'created') return `${event.username}님이 베팅 판을 만들었습니다.`;
 		if (event.type === 'stake')
-			return `${event.username}님이 ${event.optionKey}팀에 ${event.amount} ${data.currencyUnit}을 걸었습니다.`;
+			return `${event.username}님이 ${event.optionKey}팀에 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}을 걸었습니다.`;
 		if (event.type === 'settled') return `${event.optionKey}팀 승리로 정산됐습니다.`;
 		if (event.type === 'refunded') return '모든 베팅이 환불됐습니다.';
 		return '베팅 상태가 변경됐습니다.';
@@ -109,7 +110,9 @@
 			<span>판 주인 · {pool.ownerName}</span>
 		</div>
 		<div class="total">
-			<small>현재 판돈</small><strong>{pool.totalAmount}</strong><b>{data.currencyUnit}</b>
+			<small>현재 판돈</small><strong>{formatMoneyDisplay(pool.totalAmount)}</strong><b
+				>{data.currencyUnit}</b
+			>
 		</div>
 	</section>
 
@@ -135,7 +138,8 @@
 							onclick={() => (selectedTeam = team as 'A' | 'B')}
 						>
 							<strong>{team}팀</strong><span>{percentage(team as 'A' | 'B')}%</span><small
-								>{pool.optionTotals[team as 'A' | 'B']} {data.currencyUnit}</small
+								>{formatMoneyDisplay(pool.optionTotals[team as 'A' | 'B'])}
+								{data.currencyUnit}</small
 							>
 						</button>
 					{/each}
@@ -150,8 +154,9 @@
 								value={selectedTeam}
 							/>{/if}
 						<button name="amount" value={amount} disabled={pool.status !== 'open'}
-							><strong>{amount}</strong><span>{data.currencyUnit}</span
-							>{#if pool.bettingMode === 'team'}<small>예상 {estimatedPayout(amount)}</small
+							><strong>{formatMoneyDisplay(amount)}</strong><span>{data.currencyUnit}</span
+							>{#if pool.bettingMode === 'team'}<small
+									>예상 {formatMoneyDisplay(estimatedPayout(amount))}</small
 								>{/if}</button
 						>
 					</form>
@@ -171,7 +176,7 @@
 				{#each pool.participants as participant, index}
 					<div>
 						<b>{participant.optionKey || index + 1}</b><span>{participant.username}</span><strong
-							>{participant.amount} {data.currencyUnit}</strong
+							>{formatMoneyDisplay(participant.amount)} {data.currencyUnit}</strong
 						>
 					</div>
 				{:else}<p>아직 베팅한 사람이 없습니다.</p>{/each}
@@ -210,15 +215,15 @@
 			<h2>내 베팅 정보</h2>
 			<div>
 				<span>참여 판 <b>{stats.poolsJoined}</b></span><span>승리 <b>{stats.poolsWon}</b></span
-				><span>누적 베팅 <b>{stats.totalStaked}</b></span><span
-					>누적 수령 <b>{stats.totalReturned}</b></span
+				><span>누적 베팅 <b>{formatMoneyDisplay(stats.totalStaked)}</b></span><span
+					>누적 수령 <b>{formatMoneyDisplay(stats.totalReturned)}</b></span
 				><span
 					>적중률 <b
 						>{stats.poolsJoined
 							? ((stats.poolsWon / stats.poolsJoined) * 100).toFixed(1)
 							: '0.0'}%</b
 					></span
-				><span>순손익 <b>{stats.netProfit}</b></span>
+				><span>순손익 <b>{formatMoneyDisplay(stats.netProfit)}</b></span>
 			</div>
 		</section>
 		<section class="events-card">

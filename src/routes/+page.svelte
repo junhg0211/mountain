@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import { formatMoneyDisplay } from '$lib/economy/money-display';
 
 	const { data, form } = $props();
 	const selectedGuild = $derived(
@@ -157,7 +158,9 @@
 				<section class="card balance-card">
 					<div>
 						<p class="card-label">내 소지금</p>
-						<strong>{selectedGuild.balance}</strong><span>{selectedGuild.currencyUnit}</span>
+						<strong>{formatMoneyDisplay(selectedGuild.balance)}</strong><span
+							>{selectedGuild.currencyUnit}</span
+						>
 					</div>
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
@@ -179,7 +182,9 @@
 									<span>현재 연속 <b>{data.attendance.currentStreak}일</b></span>
 									<span>최장 연속 <b>{data.attendance.longestStreak}일</b></span>
 								</div>
-								<strong>{data.attendance.reward}</strong><span>{selectedGuild.currencyUnit}</span>
+								<strong>{formatMoneyDisplay(data.attendance.reward)}</strong><span
+									>{selectedGuild.currencyUnit}</span
+								>
 								<form method="POST" action={`?/attendance&guild=${selectedGuild.id}`}>
 									<input type="hidden" name="guildId" value={selectedGuild.id} />
 									<button disabled={data.attendance.claimed}
@@ -302,7 +307,7 @@
 						<ol class="ranking">
 							{#each data.ranking as entry}<li>
 									<b>{entry.rank}</b><span>{entry.username}</span><strong
-										>{entry.balance} {selectedGuild.currencyUnit}</strong
+										>{formatMoneyDisplay(entry.balance)} {selectedGuild.currencyUnit}</strong
 									>
 								</li>{/each}
 						</ol>
@@ -331,7 +336,9 @@
 										>
 									</div>
 									<b class:credit={transaction.direction === 'credit'}
-										>{transaction.direction === 'credit' ? '+' : '-'}{transaction.amount}
+										>{transaction.direction === 'credit' ? '+' : '-'}{formatMoneyDisplay(
+											transaction.amount
+										)}
 										{selectedGuild.currencyUnit}</b
 									>
 								</li>

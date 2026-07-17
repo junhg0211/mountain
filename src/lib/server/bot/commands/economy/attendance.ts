@@ -1,4 +1,5 @@
 import { getLanguage } from '$lib/server/bot/i18n';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import {
 	AttendanceAlreadyClaimedError,
@@ -90,13 +91,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			getCurrencyUnit(interaction.guildId)
 		]);
 		const messages = {
-			en: `📅 Attendance complete! You received **${result.reward} ${unit}**. Balance: **${result.balance} ${unit}**. Current streak: **${result.currentStreak} days** · Best: **${result.longestStreak} days**.`,
-			ko: `📅 출석 완료! **${result.reward} ${unit}**을(를) 받았습니다. 현재 소지금: **${result.balance} ${unit}**. 현재 **${result.currentStreak}일 연속** · 최장 **${result.longestStreak}일**.`,
-			ja: `📅 出席完了！ **${result.reward} ${unit}** を受け取りました。残高: **${result.balance} ${unit}**。現在 **${result.currentStreak}日連続** · 最長 **${result.longestStreak}日**。`
+			en: `📅 Attendance complete! You received **${formatMoneyDisplay(result.reward)} ${unit}**. Balance: **${formatMoneyDisplay(result.balance)} ${unit}**. Current streak: **${result.currentStreak} days** · Best: **${result.longestStreak} days**.`,
+			ko: `📅 출석 완료! **${formatMoneyDisplay(result.reward)} ${unit}**을(를) 받았습니다. 현재 소지금: **${formatMoneyDisplay(result.balance)} ${unit}**. 현재 **${result.currentStreak}일 연속** · 최장 **${result.longestStreak}일**.`,
+			ja: `📅 出席完了！ **${formatMoneyDisplay(result.reward)} ${unit}** を受け取りました。残高: **${formatMoneyDisplay(result.balance)} ${unit}**。現在 **${result.currentStreak}日連続** · 最長 **${result.longestStreak}日**。`
 		};
 		await sendTransactionNotification(
 			interaction.guildId,
-			`📅 **출석 보상**\n사용자: ${interaction.user}\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
+			`📅 **출석 보상**\n사용자: ${interaction.user}\n지급액: **${formatMoneyDisplay(result.reward)} ${unit}**\n지급 후 잔액: **${formatMoneyDisplay(result.balance)} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
 		);
 		await interaction.editReply(messages[language]);
 	} catch (error) {

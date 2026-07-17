@@ -1,4 +1,5 @@
 import { getLanguage } from '$lib/server/bot/i18n';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { getBalanceRanking } from '$lib/server/db/accounts';
 import { getCurrencyUnit, getVisibilitySettings } from '$lib/server/db/guild-settings';
 import {
@@ -38,7 +39,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 	const titles = { en: 'Balance ranking', ko: '소지금 순위', ja: '残高ランキング' };
 	const lines = ranking.map(
 		(entry: { rank: number; username: string; balance: string }) =>
-			`**${entry.rank}.** ${entry.username} — **${entry.balance} ${unit}**`
+			`**${entry.rank}.** ${entry.username} — **${formatMoneyDisplay(entry.balance)} ${unit}**`
 	);
 	await interaction.reply({
 		content: `## ${titles[language]}\n${lines.join('\n') || '-'}`,

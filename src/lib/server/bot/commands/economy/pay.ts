@@ -1,4 +1,5 @@
 import { getLanguage } from '$lib/server/bot/i18n';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import { InsufficientBalanceError, transferBalance } from '$lib/server/db/accounts';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
@@ -117,13 +118,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			getCurrencyUnit(interaction.guildId)
 		]);
 		const success = {
-			en: `Sent **${amount} ${currencyUnit}** to ${recipient}. Remaining balance: **${remainingBalance} ${currencyUnit}**.`,
-			ko: `${recipient}님에게 **${amount} ${currencyUnit}**을(를) 보냈습니다. 남은 소지금: **${remainingBalance} ${currencyUnit}**.`,
-			ja: `${recipient} に **${amount} ${currencyUnit}** を送金しました。残高: **${remainingBalance} ${currencyUnit}**。`
+			en: `Sent **${formatMoneyDisplay(amount)} ${currencyUnit}** to ${recipient}. Remaining balance: **${formatMoneyDisplay(remainingBalance)} ${currencyUnit}**.`,
+			ko: `${recipient}님에게 **${formatMoneyDisplay(amount)} ${currencyUnit}**을(를) 보냈습니다. 남은 소지금: **${formatMoneyDisplay(remainingBalance)} ${currencyUnit}**.`,
+			ja: `${recipient} に **${formatMoneyDisplay(amount)} ${currencyUnit}** を送金しました。残高: **${formatMoneyDisplay(remainingBalance)} ${currencyUnit}**。`
 		};
 		await sendTransactionNotification(
 			interaction.guildId,
-			`💸 **송금**\n보낸 사용자: <@${interaction.user.id}>\n받는 사용자: <@${recipient.id}>\n금액: **${amount} ${currencyUnit}**`
+			`💸 **송금**\n보낸 사용자: <@${interaction.user.id}>\n받는 사용자: <@${recipient.id}>\n금액: **${formatMoneyDisplay(amount)} ${currencyUnit}**`
 		);
 		await interaction.reply({ content: success[language], flags: MessageFlags.Ephemeral });
 	} catch (error) {

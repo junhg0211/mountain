@@ -1,4 +1,5 @@
 import { getLanguage } from '$lib/server/bot/i18n';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { ensureUser } from '$lib/server/db/users';
 import { getOrCreateBalance } from '$lib/server/db/accounts';
 import { getCurrencyUnit, getVisibilitySettings } from '$lib/server/db/guild-settings';
@@ -60,9 +61,9 @@ async function execute(interaction: ChatInputCommandInteraction) {
 	]);
 	const language = getLanguage(interaction.locale);
 	const messages = {
-		en: `${user.id === interaction.user.id ? 'Your' : `${user.username}'s`} balance is **${balance} ${currencyUnit}**.`,
-		ko: `${user.id === interaction.user.id ? '현재' : `${user.username}님의`} 소지금은 **${balance} ${currencyUnit}**입니다.`,
-		ja: `${user.id === interaction.user.id ? '現在の' : `${user.username}の`}所持金は **${balance} ${currencyUnit}** です。`
+		en: `${user.id === interaction.user.id ? 'Your' : `${user.username}'s`} balance is **${formatMoneyDisplay(balance)} ${currencyUnit}**.`,
+		ko: `${user.id === interaction.user.id ? '현재' : `${user.username}님의`} 소지금은 **${formatMoneyDisplay(balance)} ${currencyUnit}**입니다.`,
+		ja: `${user.id === interaction.user.id ? '現在の' : `${user.username}の`}所持金は **${formatMoneyDisplay(balance)} ${currencyUnit}** です。`
 	};
 
 	await interaction.reply({ content: messages[language], flags: MessageFlags.Ephemeral });

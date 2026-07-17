@@ -30,6 +30,7 @@ import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
@@ -163,9 +164,9 @@ export const actions: Actions = {
 			await transferBalance(guildId, membership.user.id, recipientId, amount);
 			await sendTransactionNotification(
 				guildId,
-				`💸 **송금**\n보낸 사용자: <@${membership.user.id}>\n받는 사용자: <@${recipientId}>\n금액: **${amount}**`
+				`💸 **송금**\n보낸 사용자: <@${membership.user.id}>\n받는 사용자: <@${recipientId}>\n금액: **${formatMoneyDisplay(amount)}**`
 			);
-			redirectToDashboard(cookies, guildId, `${amount} 송금이 완료됐습니다.`);
+			redirectToDashboard(cookies, guildId, `${formatMoneyDisplay(amount)} 송금이 완료됐습니다.`);
 		} catch (error) {
 			if (error instanceof InsufficientBalanceError)
 				return fail(400, { message: '소지금이 부족합니다.' });
@@ -184,12 +185,12 @@ export const actions: Actions = {
 			]);
 			await sendTransactionNotification(
 				guildId,
-				`📅 **출석 보상**\n사용자: <@${membership.user.id}>\n지급액: **${result.reward} ${unit}**\n지급 후 잔액: **${result.balance} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
+				`📅 **출석 보상**\n사용자: <@${membership.user.id}>\n지급액: **${formatMoneyDisplay(result.reward)} ${unit}**\n지급 후 잔액: **${formatMoneyDisplay(result.balance)} ${unit}**\n연속 출석: **${result.currentStreak}일** · 최장 **${result.longestStreak}일**`
 			);
 			redirectToDashboard(
 				cookies,
 				guildId,
-				`출석 완료! ${result.reward} ${unit}을(를) 받았습니다. 현재 ${result.currentStreak}일 연속, 최장 ${result.longestStreak}일입니다.`
+				`출석 완료! ${formatMoneyDisplay(result.reward)} ${unit}을(를) 받았습니다. 현재 ${result.currentStreak}일 연속, 최장 ${result.longestStreak}일입니다.`
 			);
 		} catch (error) {
 			if (error instanceof AttendanceAlreadyClaimedError)
@@ -230,9 +231,13 @@ export const actions: Actions = {
 			publishBettingUpdate(guildId, poolId);
 			await sendTransactionNotification(
 				guildId,
-				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: <@${membership.user.id}>\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
+				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: <@${membership.user.id}>\n추가 베팅: **${formatMoneyDisplay(amount)}**\n판돈: **${formatMoneyDisplay(pool?.totalAmount || amount)}**`
 			);
-			redirectToDashboard(cookies, guildId, `${amount}을 베팅했습니다. 남은 소지금: ${remaining}`);
+			redirectToDashboard(
+				cookies,
+				guildId,
+				`${formatMoneyDisplay(amount)}을 베팅했습니다. 남은 소지금: ${formatMoneyDisplay(remaining)}`
+			);
 		} catch (error) {
 			return bettingActionError(error);
 		}
@@ -258,12 +263,12 @@ export const actions: Actions = {
 			publishBettingUpdate(guildId, poolId);
 			await sendTransactionNotification(
 				guildId,
-				`🏆 **베팅 정산**\n#${poolId} ${pool?.title || ''}\n승자: <@${winnerId}>\n지급액: **${payout}**\n처리자: <@${membership.user.id}>`
+				`🏆 **베팅 정산**\n#${poolId} ${pool?.title || ''}\n승자: <@${winnerId}>\n지급액: **${formatMoneyDisplay(payout)}**\n처리자: <@${membership.user.id}>`
 			);
 			redirectToDashboard(
 				cookies,
 				guildId,
-				`${pool?.winnerName || '승자'}님에게 ${payout}을 지급했습니다.`
+				`${pool?.winnerName || '승자'}님에게 ${formatMoneyDisplay(payout)}을 지급했습니다.`
 			);
 		} catch (error) {
 			return bettingActionError(error);

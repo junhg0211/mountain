@@ -17,6 +17,7 @@ import { canManageGuild } from '$lib/server/db/user-guilds';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember, getGuildTextChannels } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -96,11 +97,11 @@ async function handleAdjustment(cookies: Cookies, request: Request, type: Balanc
 		const balance = await adjustBalance(guildId, targetId, amount, type);
 		await sendTransactionNotification(
 			guildId,
-			`🏦 **${type === 'mint' ? 'Mint · 발행' : 'Burn · 소각'}**\n대상: <@${targetId}>\n금액: **${amount}**\n처리 관리자: <@${user.id}>\n처리 후 잔액: **${balance}**`
+			`🏦 **${type === 'mint' ? 'Mint · 발행' : 'Burn · 소각'}**\n대상: <@${targetId}>\n금액: **${formatMoneyDisplay(amount)}**\n처리 관리자: <@${user.id}>\n처리 후 잔액: **${formatMoneyDisplay(balance)}**`
 		);
 		return {
 			success: true,
-			message: `${member.nick || member.user.username}님에게 ${amount}을 ${type === 'mint' ? '발행' : '소각'}했습니다. 현재 소지금: ${balance}`
+			message: `${member.nick || member.user.username}님에게 ${formatMoneyDisplay(amount)}을 ${type === 'mint' ? '발행' : '소각'}했습니다. 현재 소지금: ${formatMoneyDisplay(balance)}`
 		};
 	} catch (error) {
 		if (error instanceof InsufficientBalanceError)

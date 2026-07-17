@@ -19,6 +19,7 @@ import {
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
 import { parseMoney } from '$lib/server/economy/money';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import {
 	Locale,
@@ -210,7 +211,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			const pools = await getBettingPools(interaction.guildId);
 			const lines = pools.map(
 				(pool) =>
-					`**#${pool.id} ${pool.title}** · ${statusLabel(pool.status, language)}\n${pool.totalAmount} ${unit} · ${pool.participantCount} participants · host ${pool.ownerName}`
+					`**#${pool.id} ${pool.title}** · ${statusLabel(pool.status, language)}\n${formatMoneyDisplay(pool.totalAmount)} ${unit} · ${pool.participantCount} participants · host ${pool.ownerName}`
 			);
 			await interaction.editReply(
 				lines.join('\n\n') ||
@@ -232,13 +233,13 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			if (!pool) throw new BettingPoolNotFoundError();
 			const participants = pool.participants.map(
 				(entry, index) =>
-					`${index + 1}. ${entry.optionKey ? `**${entry.optionKey}팀** · ` : ''}**${entry.username}** — ${entry.amount} ${unit}`
+					`${index + 1}. ${entry.optionKey ? `**${entry.optionKey}팀** · ` : ''}**${entry.username}** — ${formatMoneyDisplay(entry.amount)} ${unit}`
 			);
 			const visibleParticipants = participants.slice(0, 25);
 			if (participants.length > visibleParticipants.length)
 				visibleParticipants.push(`… and ${participants.length - visibleParticipants.length} more`);
 			await interaction.editReply(
-				`## #${pool.id} ${pool.title}\n${statusLabel(pool.status, language)} · host ${pool.ownerName}\n**${pool.totalAmount} ${unit}** · ${pool.participantCount} participants\n\n${visibleParticipants.join('\n') || '-'}`
+				`## #${pool.id} ${pool.title}\n${statusLabel(pool.status, language)} · host ${pool.ownerName}\n**${formatMoneyDisplay(pool.totalAmount)} ${unit}** · ${pool.participantCount} participants\n\n${visibleParticipants.join('\n') || '-'}`
 			);
 			return;
 		}
@@ -279,14 +280,14 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			publishBettingUpdate(interaction.guildId, poolId);
 			await sendTransactionNotification(
 				interaction.guildId,
-				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: ${interaction.user}\n추가 베팅: **${amount} ${unit}**\n판돈: **${pool?.totalAmount || amount} ${unit}**`
+				`🎟️ **베팅 참가**\n#${poolId} ${pool?.title || ''}\n참가자: ${interaction.user}\n추가 베팅: **${formatMoneyDisplay(amount)} ${unit}**\n판돈: **${formatMoneyDisplay(pool?.totalAmount || amount)} ${unit}**`
 			);
 			await interaction.editReply(
 				localize(
 					language,
-					`🎟️ Staked **${amount} ${unit}** on #${poolId}. Remaining: **${remaining} ${unit}**.`,
-					`🎟️ #${poolId}에 **${amount} ${unit}**을(를) 걸었습니다. 남은 소지금: **${remaining} ${unit}**.`,
-					`🎟️ #${poolId} に **${amount} ${unit}** を賭けました。残高: **${remaining} ${unit}**。`
+					`🎟️ Staked **${formatMoneyDisplay(amount)} ${unit}** on #${poolId}. Remaining: **${formatMoneyDisplay(remaining)} ${unit}**.`,
+					`🎟️ #${poolId}에 **${formatMoneyDisplay(amount)} ${unit}**을(를) 걸었습니다. 남은 소지금: **${formatMoneyDisplay(remaining)} ${unit}**.`,
+					`🎟️ #${poolId} に **${formatMoneyDisplay(amount)} ${unit}** を賭けました。残高: **${formatMoneyDisplay(remaining)} ${unit}**。`
 				)
 			);
 			return;
@@ -319,7 +320,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 				);
 				publishBettingUpdate(interaction.guildId, poolId);
 				await interaction.editReply(
-					`🏆 ${team}팀 승리 · ${result.winnerCount}명에게 **${result.total} ${unit}** 비례 지급`
+					`🏆 ${team}팀 승리 · ${result.winnerCount}명에게 **${formatMoneyDisplay(result.total)} ${unit}** 비례 지급`
 				);
 				return;
 			}
@@ -335,14 +336,14 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			publishBettingUpdate(interaction.guildId, poolId);
 			await sendTransactionNotification(
 				interaction.guildId,
-				`🏆 **베팅 정산**\n#${poolId}\n승자: ${winner}\n지급액: **${payout} ${unit}**\n처리자: ${interaction.user}`
+				`🏆 **베팅 정산**\n#${poolId}\n승자: ${winner}\n지급액: **${formatMoneyDisplay(payout)} ${unit}**\n처리자: ${interaction.user}`
 			);
 			await interaction.editReply(
 				localize(
 					language,
-					`🏆 ${winner} received the entire pot of **${payout} ${unit}**.`,
-					`🏆 ${winner}님에게 판돈 **${payout} ${unit}** 전부를 지급했습니다.`,
-					`🏆 ${winner} に全額 **${payout} ${unit}** を支払いました。`
+					`🏆 ${winner} received the entire pot of **${formatMoneyDisplay(payout)} ${unit}**.`,
+					`🏆 ${winner}님에게 판돈 **${formatMoneyDisplay(payout)} ${unit}** 전부를 지급했습니다.`,
+					`🏆 ${winner} に全額 **${formatMoneyDisplay(payout)} ${unit}** を支払いました。`
 				)
 			);
 			return;
@@ -358,7 +359,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		publishBettingUpdate(interaction.guildId, poolId);
 		await sendTransactionNotification(
 			interaction.guildId,
-			`↩️ **베팅 환불**\n#${poolId} ${pool?.title || ''}\n${count}명에게 총 **${pool?.totalAmount || '0.00'} ${unit}** 환불\n처리자: ${interaction.user}`
+			`↩️ **베팅 환불**\n#${poolId} ${pool?.title || ''}\n${count}명에게 총 **${formatMoneyDisplay(pool?.totalAmount || '0.00')} ${unit}** 환불\n처리자: ${interaction.user}`
 		);
 		await interaction.editReply(
 			localize(

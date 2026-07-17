@@ -18,6 +18,7 @@ import {
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { parseMoney } from '$lib/server/economy/money';
+import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { InsufficientBalanceError } from '$lib/server/db/accounts';
 import { fail, redirect } from '@sveltejs/kit';
@@ -87,7 +88,7 @@ export const actions: Actions = {
 			publishBettingUpdate(guildId, params.poolId);
 			await sendTransactionNotification(
 				guildId,
-				`🎟️ **베팅 참가**\n#${params.poolId} ${pool?.title || ''}\n참가자: <@${context.user.id}>${pool?.bettingMode === 'team' ? `\n선택: **${optionKey}팀**` : ''}\n추가 베팅: **${amount}**\n판돈: **${pool?.totalAmount || amount}**`
+				`🎟️ **베팅 참가**\n#${params.poolId} ${pool?.title || ''}\n참가자: <@${context.user.id}>${pool?.bettingMode === 'team' ? `\n선택: **${optionKey}팀**` : ''}\n추가 베팅: **${formatMoneyDisplay(amount)}**\n판돈: **${formatMoneyDisplay(pool?.totalAmount || amount)}**`
 			);
 			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}&bet=success`);
 		} catch (error) {
@@ -122,7 +123,7 @@ export const actions: Actions = {
 				publishBettingUpdate(guildId, params.poolId);
 				await sendTransactionNotification(
 					guildId,
-					`🏆 **베팅 정산**\n#${params.poolId}\n승자: <@${winnerId}>\n지급액: **${payout}**`
+					`🏆 **베팅 정산**\n#${params.poolId}\n승자: <@${winnerId}>\n지급액: **${formatMoneyDisplay(payout)}**`
 				);
 				redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
 			}
@@ -138,7 +139,7 @@ export const actions: Actions = {
 			publishBettingUpdate(guildId, params.poolId);
 			await sendTransactionNotification(
 				guildId,
-				`🏆 **팀 베팅 정산**\n#${params.poolId}\n승리: **${winningOption}팀**\n총 지급액: **${result.total}** · ${result.winnerCount}명\n처리자: <@${context.user.id}>`
+				`🏆 **팀 베팅 정산**\n#${params.poolId}\n승리: **${winningOption}팀**\n총 지급액: **${formatMoneyDisplay(result.total)}** · ${result.winnerCount}명\n처리자: <@${context.user.id}>`
 			);
 			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
 		} catch (error) {
