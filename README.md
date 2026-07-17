@@ -54,7 +54,8 @@ returned amount, hit rate, and net profit. The winning team's users share the co
 proportion to their stakes.
 
 Production must be built with `bun run build` and started with `bun run start`. The custom
-`server.ts` entry serves SvelteKit and betting WebSocket upgrades on the same port.
+`server.ts` entry starts the Discord bot immediately, then serves SvelteKit and betting WebSocket
+upgrades on the same port. Bot startup does not wait for the first website request.
 
 ## Contributor reference
 

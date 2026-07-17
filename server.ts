@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { handler } from './build/handler.js';
+import { startBot } from './src/lib/server/bot/index.ts';
 import { consumeRealtimeTicket, registerRealtimePublisher } from './src/lib/server/realtime.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 
@@ -8,6 +9,8 @@ const host = process.env.HOST || '0.0.0.0';
 const server = createServer(handler);
 const sockets = new WebSocketServer({ noServer: true });
 const guildSockets = new Map<string, Set<WebSocket>>();
+
+void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
 server.on('upgrade', (request, socket, head) => {
 	const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);

@@ -68,7 +68,7 @@ single-use ticket after session and guild membership checks, then connect to `/w
 WebSockets carry invalidation events only; the client reloads the pool through the authorized HTTP
 API. Publish an update after committed web or Discord create, stake, settle, and refund operations.
 Production must start with `bun run start`/`server.ts`, not `build/index.js` directly, so WebSocket
-upgrades are handled.
+upgrades are handled and the Discord bot starts immediately without waiting for an HTTP request.
 
 Betting pool owners, winners, and participants must be displayed using their current guild nickname
 when available, then Discord global display name, then username. Keep the database username only as
