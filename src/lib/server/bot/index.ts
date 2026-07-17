@@ -92,6 +92,8 @@ const commands = new Map<string, Command>([
 	[dashboard.data.name, dashboard]
 ]);
 
+const LOGIN_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000] as const;
+
 async function reloadCommands() {
 	const rest = new REST().setToken(process.env.BOT_TOKEN!);
 
@@ -118,20 +120,37 @@ async function start() {
 
 	if (process.env.REGISTER_COMMANDS === 'true') await reloadCommands();
 
-	await new Promise<void>((resolve, reject) => {
-		state.client = new Client({
+	let attempt = 0;
+	while (!state.shuttingDown) {
+		const client = new Client({
 			intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
 		});
-
-		state.client.once(Events.ClientReady, () => {
-			console.log(`Logged in as ${state.client?.user?.tag}!`);
-			startVoiceActivityRewards(state.client!);
-			resolve();
+		state.client = client;
+		client.once(Events.ClientReady, () => {
+			console.log(`Logged in as ${client.user?.tag}!`);
+			startVoiceActivityRewards(client);
 		});
-		state.client.once(Events.Error, reject);
-		bindInteractionHandler(state.client);
-		void state.client.login(process.env.BOT_TOKEN);
-	});
+		client.on(Events.Error, (error) => console.error('Discord client error:', error));
+		bindInteractionHandler(client);
+
+		try {
+			await client.login(process.env.BOT_TOKEN);
+			return;
+		} catch (error) {
+			client.removeAllListeners();
+			client.destroy();
+			if (state.client === client) state.client = null;
+			if (state.shuttingDown) return;
+
+			const delay = LOGIN_RETRY_DELAYS[Math.min(attempt, LOGIN_RETRY_DELAYS.length - 1)];
+			attempt += 1;
+			console.error(
+				`Discord login failed. The web server will stay online; retrying in ${delay / 1000}s.`,
+				error
+			);
+			await new Promise((resolve) => setTimeout(resolve, delay));
+		}
+	}
 }
 
 function bindInteractionHandler(client: Client) {

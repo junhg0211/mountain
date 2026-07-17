@@ -152,6 +152,9 @@ bun -e "import { reloadCommands } from './src/lib/server/bot/index.ts'; await re
 
 Do not leave multiple bot processes running with the same token. `Ctrl+C` and deployment shutdown
 must preserve the graceful signal handler so the Discord and database connections close cleanly.
+Discord REST or gateway startup can fail transiently. Await `Client.login()` so rejections are
+handled, destroy the failed client, and retry with capped backoff while leaving the web server
+online. Never start overlapping login attempts or bot clients.
 
 ## Authorization checklist
 

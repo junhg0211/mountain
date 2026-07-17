@@ -45,6 +45,9 @@ These rules apply to every change in this repository.
   Discord. Global command propagation may take time.
 - Only one Discord bot process may use a token at a time. Preserve graceful `SIGINT`/`SIGTERM`
   shutdown behavior.
+- A transient Discord gateway/login failure must not terminate the web server. Always await the
+  login promise, clean up the failed client, and retry with capped backoff without creating
+  concurrent clients.
 - Start production through `bun run start`/`server.ts` so authenticated betting WebSocket upgrades
   remain available; do not run `build/index.js` directly.
 - For schema changes, update both `database.sql` and the bootstrap/repair statements in
