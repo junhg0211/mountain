@@ -115,9 +115,10 @@ Use row locks for debit operations. A failed insufficient-balance check must cha
 balance nor the ledger. Discord notifications are sent after commit and intentionally swallow
 delivery failures so an external Discord error cannot invalidate completed money movement.
 
-Personal history may include rows where the current user is sender or recipient. A future
-server-wide audit page must be administrator-only and enforce manage-guild permission on the
-server, not only in the UI.
+Personal history may include rows where the current user is sender or recipient. The web admin
+dashboard may show the selected guild's latest server-wide ledger rows only after enforcing
+manage-guild permission on the server. Every query must include the selected `guild_id`; never rely
+on a hidden control or client-side route guard for access isolation.
 
 ## Database schema changes
 

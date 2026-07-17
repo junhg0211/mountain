@@ -40,6 +40,32 @@
 		query = member.username;
 		results = [];
 	}
+	type Transaction = (typeof data.transactions)[number];
+	const transactionLabels: Record<Transaction['type'], string> = {
+		transfer: '송금',
+		mint: '발행',
+		burn: '소각',
+		bet_stake: '베팅 참여',
+		bet_payout: '베팅 지급',
+		bet_refund: '베팅 환불',
+		attendance: '출석 보상',
+		voice_activity: '음성 활동 보상'
+	};
+	function transactionRoute(transaction: Transaction) {
+		const sender = transaction.sender?.name || '시스템';
+		const recipient = transaction.recipient?.name || '시스템';
+		return `${sender} → ${recipient}`;
+	}
+	function formatTime(value: string) {
+		return new Intl.DateTimeFormat('ko-KR', {
+			timeZone: 'Asia/Seoul',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		}).format(new Date(value));
+	}
 </script>
 
 <svelte:head><title>Mountain Admin</title></svelte:head>
@@ -210,6 +236,36 @@
 					>
 				</div>
 			</form>
+			<section class="transaction-log">
+				<div class="log-heading">
+					<div>
+						<span>SERVER LEDGER</span>
+						<h3>최근 트랜잭션</h3>
+					</div>
+					<small>최근 {data.transactions.length}건 · 한국 시간</small>
+				</div>
+				{#if data.transactions.length}
+					<div class="log-table">
+						{#each data.transactions as transaction}
+							<article>
+								<div class="log-kind">
+									<b class={`kind ${transaction.type}`}>{transactionLabels[transaction.type]}</b
+									><time>{formatTime(transaction.createdAt)}</time>
+								</div>
+								<div class="log-route">
+									<strong>{transactionRoute(transaction)}</strong>{#if transaction.bettingPool}<a
+											href={`/bets/${transaction.bettingPool.id}`}
+											>#{transaction.bettingPool.id} {transaction.bettingPool.title}</a
+										>{/if}
+								</div>
+								<strong class="log-amount"
+									>{formatMoneyDisplay(transaction.amount)} {selectedGuild.currencyUnit}</strong
+								>
+							</article>
+						{/each}
+					</div>
+				{:else}<div class="log-empty">아직 기록된 트랜잭션이 없습니다.</div>{/if}
+			</section>
 		</section>{:else}<section class="empty">관리할 수 있는 서버가 없습니다.</section>{/if}
 </main>
 
@@ -385,6 +441,100 @@
 		max-width: 480px;
 		margin-top: 32px;
 	}
+	.transaction-log {
+		border-top: 1px solid #292e39;
+		margin-top: 32px;
+		padding-top: 28px;
+	}
+	.log-heading {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 16px;
+		margin-bottom: 14px;
+	}
+	.log-heading span {
+		color: #7e8797;
+		font-size: 11px;
+		font-weight: 800;
+		letter-spacing: 0.16em;
+	}
+	.log-heading h3 {
+		margin: 6px 0 0;
+		font-size: 22px;
+	}
+	.log-heading small {
+		color: #747d8d;
+	}
+	.log-table {
+		border: 1px solid #292e39;
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.log-table article {
+		display: grid;
+		grid-template-columns: 150px minmax(0, 1fr) auto;
+		gap: 18px;
+		align-items: center;
+		padding: 15px 17px;
+		background: #0c0f14;
+	}
+	.log-table article + article {
+		border-top: 1px solid #20252e;
+	}
+	.log-kind,
+	.log-route {
+		display: grid;
+		gap: 5px;
+		min-width: 0;
+	}
+	.log-kind time,
+	.log-route a {
+		color: #747d8d;
+		font-size: 11px;
+	}
+	.log-route strong,
+	.log-route a {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.log-route a {
+		color: #9585ff;
+		text-decoration: none;
+	}
+	.kind {
+		width: max-content;
+		color: #c6cbd4;
+		font-size: 11px;
+		padding: 4px 7px;
+		border-radius: 5px;
+		background: #242a35;
+	}
+	.kind.mint,
+	.kind.bet_payout,
+	.kind.bet_refund,
+	.kind.attendance,
+	.kind.voice_activity {
+		color: #78dcb2;
+		background: #153c32;
+	}
+	.kind.burn,
+	.kind.bet_stake {
+		color: #f099aa;
+		background: #492029;
+	}
+	.log-amount {
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
+	}
+	.log-empty {
+		padding: 28px;
+		text-align: center;
+		color: #747d8d;
+		border: 1px dashed #303744;
+		border-radius: 12px;
+	}
 	.visibility {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
@@ -518,6 +668,22 @@
 		}
 		.heading select {
 			flex: 1;
+		}
+		.log-table article {
+			grid-template-columns: 1fr auto;
+			gap: 10px;
+		}
+		.log-route {
+			grid-column: 1 / -1;
+			grid-row: 2;
+		}
+		.log-amount {
+			grid-column: 2;
+			grid-row: 1;
+		}
+		.log-heading {
+			align-items: start;
+			flex-direction: column;
 		}
 	}
 </style>

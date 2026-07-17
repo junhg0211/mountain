@@ -3,6 +3,15 @@ import { centsToMoney, moneyToCents } from '$lib/server/economy/money';
 
 export class InsufficientBalanceError extends Error {}
 export type BalanceAdjustmentType = 'mint' | 'burn';
+export type TransactionType =
+	| 'transfer'
+	| 'mint'
+	| 'burn'
+	| 'bet_stake'
+	| 'bet_payout'
+	| 'bet_refund'
+	| 'attendance'
+	| 'voice_activity';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = await getDB();
@@ -68,15 +77,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 	`;
 
 	return rows.map((row: Record<string, unknown>) => {
-		const type = String(row.transaction_type) as
-			| 'transfer'
-			| 'mint'
-			| 'burn'
-			| 'bet_stake'
-			| 'bet_payout'
-			| 'bet_refund'
-			| 'attendance'
-			| 'voice_activity';
+		const type = String(row.transaction_type) as TransactionType;
 		const outgoing = String(row.sender_id || '') === userId;
 		const credit =
 			type === 'mint' ||
@@ -104,6 +105,39 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			createdAt: new Date(row.created_at as string | number | Date).toISOString()
 		};
 	});
+}
+
+export async function getGuildTransactions(guildId: string, limit = 50) {
+	const db = await getDB();
+	const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+	const rows = await db`
+		SELECT transactions.id, transactions.sender_id, transactions.recipient_id,
+			transactions.amount, transactions.transaction_type, transactions.created_at,
+			transactions.betting_pool_id, betting_pools.title AS betting_pool_title,
+			sender.username AS sender_name, recipient.username AS recipient_name
+		FROM transactions
+		LEFT JOIN users sender ON sender.id = transactions.sender_id
+		LEFT JOIN users recipient ON recipient.id = transactions.recipient_id
+		LEFT JOIN betting_pools ON betting_pools.id = transactions.betting_pool_id
+		WHERE transactions.guild_id=${guildId}
+		ORDER BY transactions.created_at DESC, transactions.id DESC
+		LIMIT ${safeLimit}
+	`;
+	return rows.map((row: Record<string, unknown>) => ({
+		id: String(row.id),
+		type: String(row.transaction_type) as TransactionType,
+		amount: formatBalance(row.amount),
+		sender: row.sender_id
+			? { id: String(row.sender_id), name: String(row.sender_name || '알 수 없는 사용자') }
+			: null,
+		recipient: row.recipient_id
+			? { id: String(row.recipient_id), name: String(row.recipient_name || '알 수 없는 사용자') }
+			: null,
+		bettingPool: row.betting_pool_id
+			? { id: String(row.betting_pool_id), title: String(row.betting_pool_title || '베팅 판') }
+			: null,
+		createdAt: new Date(row.created_at as string | number | Date).toISOString()
+	}));
 }
 
 export async function adjustBalance(

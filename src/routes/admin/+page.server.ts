@@ -2,6 +2,7 @@ import { getSessionUser } from '$lib/server/auth';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
 import {
 	adjustBalance,
+	getGuildTransactions,
 	getTotalSupply,
 	InsufficientBalanceError,
 	type BalanceAdjustmentType
@@ -74,7 +75,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		: guilds[0]?.id || null;
 	const totalSupply = selectedGuildId ? await getTotalSupply(selectedGuildId) : '0.00';
 	const channels = selectedGuildId ? await getGuildTextChannels(selectedGuildId) : [];
-	return { user, guilds, selectedGuildId, totalSupply, channels };
+	const transactions = selectedGuildId ? await getGuildTransactions(selectedGuildId) : [];
+	return { user, guilds, selectedGuildId, totalSupply, channels, transactions };
 };
 
 async function handleAdjustment(cookies: Cookies, request: Request, type: BalanceAdjustmentType) {

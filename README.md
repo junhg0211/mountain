@@ -57,3 +57,7 @@ Production must be built with `bun run build` and started with `bun run start`. 
 Read [`AGENTS.md`](./AGENTS.md) before making changes. Detailed economy, transaction ledger,
 database migration, Discord registration, authorization, verification, and commit rules are in
 [`docs/ECONOMY_DEVELOPMENT.md`](./docs/ECONOMY_DEVELOPMENT.md).
+
+The web admin dashboard shows the selected guild's 50 most recent ledger transactions, including
+the operation type, sender, recipient, amount, timestamp, and linked betting pool. This server-wide
+history is available only after an authenticated manage-guild permission check.
