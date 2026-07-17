@@ -65,10 +65,13 @@ must insert exactly one row in the same database transaction as its balance upda
 | Scheduled pay  | sender       | recipient      | `scheduled_transfer` |
 
 Signed weighted settlement is owner-only and uses an integer weight for every pool member. The
-weights must sum to zero and include at least one positive and one negative value. The service
-refunds any current stakes first, locks participant accounts in stable user-ID order, verifies all
-negative-weight balances, and then transfers `abs(weight) * unit amount` from negative to positive
-participants. Each paired movement writes a `bet_weighted` ledger row, while
+service centers all weights around their arithmetic mean, treating that mean as zero, so the raw
+weights do not need to sum to zero or contain negative values. It calculates each result as
+`(weight - mean) * unit amount`, rounds the total pot down to cents, and distributes leftover cents
+by fractional remainder and then user ID so credits and debits remain exactly equal and deterministic.
+It refunds any current stakes first, locks participant accounts in stable user-ID order, verifies
+all below-average balances, and transfers their debits to above-average participants. Each paired
+movement writes a `bet_weighted` ledger row, while
 `betting_weighted_results` preserves the complete per-user result for the settlement event. Any
 validation or balance failure rolls back the refunds and the entire settlement together.
 

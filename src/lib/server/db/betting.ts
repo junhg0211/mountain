@@ -577,12 +577,35 @@ export async function settleWeightedBettingPool(
 			userId,
 			weight: weights.find((item) => item.userId === userId)?.weight || 0
 		}));
-		if (normalized.reduce((sum, item) => sum + item.weight, 0) !== 0 ||
-			!normalized.some((item) => item.weight > 0) || !normalized.some((item) => item.weight < 0))
-			throw new BettingWeightError();
 		const unit = moneyToCents(unitAmount);
 		const maxMoney = 999_999_999_999_999n;
-		const deltas = normalized.map((item) => ({ ...item, amount: BigInt(Math.abs(item.weight)) * unit }));
+		const count = BigInt(normalized.length);
+		const weightSum = normalized.reduce((sum, item) => sum + BigInt(item.weight), 0n);
+		const centered = normalized.map((item) => ({
+			...item,
+			centeredNumerator: BigInt(item.weight) * count - weightSum
+		}));
+		if (!centered.some((item) => item.centeredNumerator > 0n) ||
+			!centered.some((item) => item.centeredNumerator < 0n)) throw new BettingWeightError();
+		const positiveNumerator = centered.reduce((sum, item) =>
+			sum + (item.centeredNumerator > 0n ? item.centeredNumerator : 0n), 0n);
+		const totalTransferred = positiveNumerator * unit / count;
+		if (totalTransferred <= 0n || totalTransferred > maxMoney) throw new BettingWeightError();
+		const deltas = centered.map((item) => ({
+			...item,
+			amount: (item.centeredNumerator < 0n ? -item.centeredNumerator : item.centeredNumerator) * unit / count,
+			remainder: (item.centeredNumerator < 0n ? -item.centeredNumerator : item.centeredNumerator) * unit % count
+		}));
+		for (const direction of [-1n, 1n]) {
+			const side = deltas.filter((item) => item.centeredNumerator * direction > 0n)
+				.sort((a, b) => a.remainder === b.remainder ? a.userId.localeCompare(b.userId) : a.remainder > b.remainder ? -1 : 1);
+			let remainderCents = totalTransferred - side.reduce((sum, item) => sum + item.amount, 0n);
+			for (const item of side) {
+				if (remainderCents <= 0n) break;
+				item.amount += 1n;
+				remainderCents -= 1n;
+			}
+		}
 		if (deltas.some((item) => item.amount > maxMoney)) throw new BettingWeightError();
 		const entries = await tx`SELECT user_id,amount FROM betting_entries WHERE pool_id=${poolId} ORDER BY user_id FOR UPDATE`;
 		const balances = new Map<string, bigint>();
@@ -597,15 +620,15 @@ export async function settleWeightedBettingPool(
 			await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${userId}`;
 			await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${null},${userId},${amount},'bet_refund',${poolId})`;
 		}
-		for (const item of deltas.filter((entry) => entry.weight < 0))
+		for (const item of deltas.filter((entry) => entry.centeredNumerator < 0n))
 			if ((balances.get(item.userId) || 0n) < item.amount) throw new InsufficientBalanceError();
 		for (const item of deltas) {
 			const amount = centsToMoney(item.amount);
-			if (item.weight < 0) await tx`UPDATE accounts SET balance=balance-${amount} WHERE guild_id=${guildId} AND user_id=${item.userId}`;
-			if (item.weight > 0) await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${item.userId}`;
+			if (item.centeredNumerator < 0n) await tx`UPDATE accounts SET balance=balance-${amount} WHERE guild_id=${guildId} AND user_id=${item.userId}`;
+			if (item.centeredNumerator > 0n) await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${item.userId}`;
 		}
-		const losers = deltas.filter((item) => item.weight < 0).map((item) => ({ ...item, remaining: item.amount }));
-		const winners = deltas.filter((item) => item.weight > 0).map((item) => ({ ...item, remaining: item.amount }));
+		const losers = deltas.filter((item) => item.centeredNumerator < 0n).map((item) => ({ ...item, remaining: item.amount }));
+		const winners = deltas.filter((item) => item.centeredNumerator > 0n).map((item) => ({ ...item, remaining: item.amount }));
 		for (const loser of losers) for (const winner of winners) {
 			const amount = loser.remaining < winner.remaining ? loser.remaining : winner.remaining;
 			if (amount <= 0n) continue;
@@ -618,7 +641,7 @@ export async function settleWeightedBettingPool(
 		const eventId = String(event.lastInsertRowid);
 		for (const item of deltas) await tx`INSERT INTO betting_weighted_results (event_id,user_id,weight,amount) VALUES (${eventId},${item.userId},${item.weight},${centsToMoney(item.amount)})`;
 		await tx`UPDATE betting_pools SET status='settled',winner_id=NULL,winning_option=NULL,closed_at=CURRENT_TIMESTAMP WHERE id=${poolId}`;
-		return { participantCount: normalized.length, totalTransferred: centsToMoney(winners.reduce((sum,item) => sum+item.amount,0n)) };
+		return { participantCount: normalized.length, totalTransferred: centsToMoney(totalTransferred) };
 	});
 }
 

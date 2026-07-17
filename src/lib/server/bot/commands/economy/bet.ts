@@ -169,7 +169,7 @@ const data = new SlashCommandBuilder()
 		.addStringOption(poolIdOption).addUserOption((option) => option.setName('user').setNameLocalizations({ [Locale.Korean]: '사용자', [Locale.Japanese]: 'ユーザー' }).setDescription('Winning participant.').setRequired(true)))
 	.addSubcommand((command) => command.setName('weighted')
 		.setNameLocalizations({ [Locale.Korean]: '가중치정산', [Locale.Japanese]: '重み精算' })
-		.setDescription('Settle signed participant weights.').setDescriptionLocalizations({ [Locale.Korean]: '참가자의 양수·음수 가중치로 정산합니다.', [Locale.Japanese]: '参加者の正負の重みで精算します。' })
+		.setDescription('Settle participant weights around their mean.').setDescriptionLocalizations({ [Locale.Korean]: '참가자 가중치의 평균을 0점으로 정산합니다.', [Locale.Japanese]: '参加者の重みの平均を0として精算します。' })
 		.addStringOption(poolIdOption)
 		.addStringOption((option) => option.setName('unit').setNameLocalizations({ [Locale.Korean]: '단위금액', [Locale.Japanese]: '単位金額' }).setDescription('Money per weight point.').setRequired(true))
 		.addStringOption((option) => option.setName('weights').setNameLocalizations({ [Locale.Korean]: '가중치', [Locale.Japanese]: '重み' }).setDescription('userId:+3,userId:-3').setRequired(true)));
@@ -512,9 +512,9 @@ function bettingError(error: unknown, language: SupportedLanguage) {
 	if (error instanceof BettingWeightError)
 		return localize(
 			language,
-			'Weights must sum to zero and include at least one positive and negative value.',
-			'가중치 합계는 0이어야 하며 양수와 음수가 각각 하나 이상 필요합니다.',
-			'重みの合計は0で、正と負の値がそれぞれ1つ以上必要です。'
+			'Enter at least two different weights that produce a settlement of 0.01 or more.',
+			'서로 다른 가중치를 입력해 0.01 이상 정산되도록 해 주세요.',
+			'異なる重みを入力し、0.01以上の精算額になるようにしてください。'
 		);
 	throw error;
 }

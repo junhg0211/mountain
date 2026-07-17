@@ -273,6 +273,6 @@ function managementError(error: unknown) {
 	if (error instanceof BettingParticipantError)
 		return fail(400, { message: '참가자 중 승자를 선택해 주세요.' });
 	if (error instanceof BettingWeightError)
-		return fail(400, { message: '가중치 합계는 0이어야 하며 양수와 음수가 각각 하나 이상 필요합니다.' });
+		return fail(400, { message: '서로 다른 가중치를 입력해 0.01 이상 정산되도록 해 주세요.' });
 	throw error;
 }

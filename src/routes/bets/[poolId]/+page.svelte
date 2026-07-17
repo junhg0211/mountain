@@ -253,8 +253,8 @@
 					{:else}<p class="no-current-bets">현재 처리할 베팅이 없습니다.</p>{/each}
 				</div>
 				<div class="weighted-management">
-					<div class="weighted-heading"><div><p>WEIGHTED SETTLEMENT</p><h3>음수 포함 가중치 정산</h3></div><span>가중치 합계 0</span></div>
-					<p>리치 마작처럼 참가자별 가중치에 단위 금액을 곱해 패자에게서 승자에게 직접 이동합니다. 현재 베팅액은 먼저 전액 환불됩니다.</p>
+					<div class="weighted-heading"><div><p>WEIGHTED SETTLEMENT</p><h3>평균 기준 가중치 정산</h3></div><span>평균 = 0점</span></div>
+					<p>입력한 가중치의 평균을 자동으로 0점으로 잡습니다. 평균보다 낮으면 지급하고 높으면 수령하며, 현재 베팅액은 먼저 전액 환불됩니다.</p>
 					<form method="POST" action="?/weightedSettlement">
 						<input type="hidden" name="guildId" value={data.guildId}>
 						<label class="weighted-unit">가중치 1당 금액 ({data.currencyUnit})<input name="unitAmount" inputmode="decimal" placeholder="100.00" required></label>
