@@ -48,6 +48,9 @@
 		bet_stake: '베팅 참여',
 		bet_payout: '베팅 지급',
 		bet_refund: '베팅 환불',
+		bet_fund: '판 자금 충전',
+		bet_house_cover: '판 자금 보충',
+		bet_house_refund: '판 자금 반환',
 		attendance: '출석 보상',
 		voice_activity: '음성 활동 보상',
 		monthly_burn: '월간 소각'

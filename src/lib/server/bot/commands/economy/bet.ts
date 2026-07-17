@@ -8,12 +8,15 @@ import {
 	BettingPoolClosedError,
 	BettingPoolNotFoundError,
 	archiveBettingPool,
+	fundBettingPool,
 	createTeamBettingPool,
 	getBettingPool,
 	getBettingPools,
 	placeBet,
 	placeTeamBet,
+	payDoubleBettingParticipant,
 	refundBettingPool,
+	refundBettingParticipant,
 	reopenBettingPool,
 	settleBettingPool,
 	settleTeamBettingPool
@@ -149,7 +152,19 @@ const data = new SlashCommandBuilder()
 		.setNameLocalizations({ [Locale.Korean]: '완전종료', [Locale.Japanese]: '完全終了' })
 		.setDescription('Permanently close and hide a betting pool.')
 		.setDescriptionLocalizations({ [Locale.Korean]: '베팅 판을 완전히 종료하고 목록에서 숨깁니다.', [Locale.Japanese]: 'ベットを完全終了して一覧から非表示にします。' })
-		.addStringOption(poolIdOption));
+		.addStringOption(poolIdOption))
+	.addSubcommand((command) => command.setName('fund')
+		.setNameLocalizations({ [Locale.Korean]: '판충전', [Locale.Japanese]: 'テーブル入金' })
+		.setDescription('Fund the table bank.').setDescriptionLocalizations({ [Locale.Korean]: '판 보유금을 충전합니다.', [Locale.Japanese]: 'テーブル資金を入金します。' })
+		.addStringOption(poolIdOption).addStringOption((option) => option.setName('amount').setNameLocalizations({ [Locale.Korean]: '금액', [Locale.Japanese]: '金額' }).setDescription('Amount to fund.').setRequired(true)))
+	.addSubcommand((command) => command.setName('refund-user')
+		.setNameLocalizations({ [Locale.Korean]: '개별환불', [Locale.Japanese]: '個別返金' })
+		.setDescription('Refund one participant.').setDescriptionLocalizations({ [Locale.Korean]: '참가자 한 명의 베팅액을 환불합니다.', [Locale.Japanese]: '参加者1人のベット額を返金します。' })
+		.addStringOption(poolIdOption).addUserOption((option) => option.setName('user').setNameLocalizations({ [Locale.Korean]: '사용자', [Locale.Japanese]: 'ユーザー' }).setDescription('Participant to refund.').setRequired(true)))
+	.addSubcommand((command) => command.setName('double')
+		.setNameLocalizations({ [Locale.Korean]: '두배지급', [Locale.Japanese]: '二倍支給' })
+		.setDescription('Pay twice a participant’s stake.').setDescriptionLocalizations({ [Locale.Korean]: '참가자의 베팅액 두 배를 지급합니다.', [Locale.Japanese]: '参加者のベット額の2倍を支給します。' })
+		.addStringOption(poolIdOption).addUserOption((option) => option.setName('user').setNameLocalizations({ [Locale.Korean]: '사용자', [Locale.Japanese]: 'ユーザー' }).setDescription('Winning participant.').setRequired(true)));
 
 function poolIdOption(option: import('discord.js').SlashCommandStringOption) {
 	return option
@@ -308,6 +323,31 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		const canOverride = Boolean(
 			interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)
 		);
+		if (subcommand === 'fund') {
+			const amount = parseMoney(interaction.options.getString('amount', true));
+			if (!amount) { await interaction.editReply(localize(language, 'Enter a valid amount of at least 0.01.', '0.01 이상의 올바른 금액을 입력해 주세요.', '0.01以上の正しい金額を入力してください。')); return; }
+			const tableBalance = await fundBettingPool(interaction.guildId, poolId, interaction.user.id, amount);
+			publishBettingUpdate(interaction.guildId, poolId);
+			await sendTransactionNotification(interaction.guildId, `🏦 **베팅 판 자금 충전**\n#${poolId}\n판 주인: ${interaction.user}\n충전: **${formatMoneyDisplay(amount)} ${unit}**\n판 보유금: **${formatMoneyDisplay(tableBalance)} ${unit}**`);
+			await interaction.editReply(`🏦 판에 **${formatMoneyDisplay(amount)} ${unit}** 충전 · 판 보유금 **${formatMoneyDisplay(tableBalance)} ${unit}**`);
+			return;
+		}
+		if (subcommand === 'refund-user') {
+			const user = interaction.options.getUser('user', true);
+			const amount = await refundBettingParticipant(interaction.guildId, poolId, interaction.user.id, user.id);
+			publishBettingUpdate(interaction.guildId, poolId);
+			await sendTransactionNotification(interaction.guildId, `↩️ **개별 베팅 환불**\n#${poolId}\n대상: ${user}\n환불: **${formatMoneyDisplay(amount)} ${unit}**`);
+			await interaction.editReply(`↩️ ${user}님에게 **${formatMoneyDisplay(amount)} ${unit}**을 환불했습니다.`);
+			return;
+		}
+		if (subcommand === 'double') {
+			const user = interaction.options.getUser('user', true);
+			const result = await payDoubleBettingParticipant(interaction.guildId, poolId, interaction.user.id, user.id);
+			publishBettingUpdate(interaction.guildId, poolId);
+			await sendTransactionNotification(interaction.guildId, `🃏 **2배 당첨금 지급**\n#${poolId}\n대상: ${user}\n지급: **${formatMoneyDisplay(result.payout)} ${unit}**${result.ownerCover !== '0.00' ? `\n판 주인 자동 보충: **${formatMoneyDisplay(result.ownerCover)} ${unit}**` : ''}`);
+			await interaction.editReply(`🃏 ${user}님에게 **${formatMoneyDisplay(result.payout)} ${unit}** 지급${result.ownerCover !== '0.00' ? ` · 판 주인 자동 보충 ${formatMoneyDisplay(result.ownerCover)} ${unit}` : ''}`);
+			return;
+		}
 		if (subcommand === 'settle') {
 			const pool = await getBettingPool(interaction.guildId, poolId);
 			const team = interaction.options.getString('team');
@@ -370,7 +410,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		}
 
 		if (subcommand === 'archive') {
-			const refunded = await archiveBettingPool(interaction.guildId, poolId, interaction.user.id, canOverride);
+			const refunded = await archiveBettingPool(interaction.guildId, poolId, interaction.user.id);
 			publishBettingUpdate(interaction.guildId, poolId);
 			await sendTransactionNotification(interaction.guildId, `⛔ **베팅 판 완전 종료**\n#${poolId}${refunded ? `\n${refunded}명 자동 환불` : ''}\n처리자: ${interaction.user}`);
 			await interaction.editReply(localize(language, '⛔ Permanently closed the betting pool. It is now hidden from lists.', '⛔ 베팅 판을 완전히 종료했습니다. 이제 목록에 표시되지 않습니다.', '⛔ ベットを完全終了しました。一覧には表示されません。'));

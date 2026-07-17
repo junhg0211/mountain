@@ -154,6 +154,7 @@ const TABLES = [
 		status VARCHAR(16) NOT NULL DEFAULT 'open',
 		winner_id VARCHAR(255),
 		winning_option VARCHAR(1),
+		house_balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		closed_at TIMESTAMP NULL,
 		INDEX betting_pools_guild_status_idx (guild_id, status, created_at),
@@ -248,6 +249,7 @@ const REPAIRS = [
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_betting_pool_idx (betting_pool_id)`,
 	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS betting_mode VARCHAR(16) NOT NULL DEFAULT 'legacy'`,
 	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS winning_option VARCHAR(1)`,
+	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS house_balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
 	`ALTER TABLE betting_entries ADD COLUMN IF NOT EXISTS option_key VARCHAR(1)`
 ] as const;
 

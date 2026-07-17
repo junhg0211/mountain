@@ -187,6 +187,7 @@ CREATE TABLE IF NOT EXISTS betting_pools (
     status VARCHAR(16) NOT NULL DEFAULT 'open',
     winner_id VARCHAR(255),
     winning_option VARCHAR(1),
+    house_balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     closed_at TIMESTAMP NULL,
     INDEX betting_pools_guild_status_idx (guild_id, status, created_at),

@@ -17,6 +17,7 @@ export interface BettingPool {
 	winnerName: string | null;
 	winningOption: 'A' | 'B' | null;
 	totalAmount: string;
+	houseBalance: string;
 	optionTotals: { A: string; B: string };
 	participantCount: number;
 	createdAt: string;
@@ -75,6 +76,7 @@ async function mapPools(rows: PoolRow[]): Promise<BettingPool[]> {
 				winningOption:
 					row.winning_option === 'A' || row.winning_option === 'B' ? row.winning_option : null,
 				totalAmount: formatMoney(row.total_amount || 0),
+				houseBalance: formatMoney(row.house_balance || 0),
 				optionTotals: {
 					A: formatMoney(row.option_a_total || 0),
 					B: formatMoney(row.option_b_total || 0)
@@ -472,6 +474,78 @@ export async function refundBettingPool(
 	});
 }
 
+export async function fundBettingPool(guildId: string, poolId: string, actorId: string, amount: string) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const pools = await tx`SELECT owner_id,status,house_balance FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
+		if (pools.length !== 1) throw new BettingPoolNotFoundError();
+		if (String(pools[0].owner_id) !== actorId) throw new BettingPermissionError();
+		if (String(pools[0].status) === 'archived') throw new BettingPoolClosedError();
+		await tx`INSERT IGNORE INTO accounts (guild_id,user_id) VALUES (${guildId},${actorId})`;
+		const accounts = await tx`SELECT balance FROM accounts WHERE guild_id=${guildId} AND user_id=${actorId} FOR UPDATE`;
+		if (moneyToCents(formatMoney(accounts[0]?.balance || 0)) < moneyToCents(amount)) throw new InsufficientBalanceError();
+		await tx`UPDATE accounts SET balance=balance-${amount} WHERE guild_id=${guildId} AND user_id=${actorId}`;
+		await tx`UPDATE betting_pools SET house_balance=house_balance+${amount} WHERE id=${poolId}`;
+		await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${actorId},${null},${amount},'bet_fund',${poolId})`;
+		await tx`INSERT INTO betting_events (pool_id,event_type,user_id,amount) VALUES (${poolId},'funded',${actorId},${amount})`;
+		return centsToMoney(moneyToCents(formatMoney(pools[0].house_balance || 0)) + moneyToCents(amount));
+	});
+}
+
+export async function refundBettingParticipant(guildId: string, poolId: string, actorId: string, userId: string) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const pools = await tx`SELECT owner_id,status,house_balance FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
+		if (pools.length !== 1) throw new BettingPoolNotFoundError();
+		if (String(pools[0].owner_id) !== actorId) throw new BettingPermissionError();
+		if (String(pools[0].status) !== 'open') throw new BettingPoolClosedError();
+		const entries = await tx`SELECT amount FROM betting_entries WHERE pool_id=${poolId} AND user_id=${userId} FOR UPDATE`;
+		if (entries.length !== 1) throw new BettingParticipantError();
+		const amount = formatMoney(entries[0].amount);
+		await tx`INSERT IGNORE INTO accounts (guild_id,user_id) VALUES (${guildId},${userId})`;
+		await tx`SELECT balance FROM accounts WHERE guild_id=${guildId} AND user_id=${userId} FOR UPDATE`;
+		await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${userId}`;
+		await tx`DELETE FROM betting_entries WHERE pool_id=${poolId} AND user_id=${userId}`;
+		await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${null},${userId},${amount},'bet_refund',${poolId})`;
+		await tx`INSERT INTO betting_events (pool_id,event_type,user_id,amount) VALUES (${poolId},'user_refund',${userId},${amount})`;
+		return amount;
+	});
+}
+
+export async function payDoubleBettingParticipant(guildId: string, poolId: string, actorId: string, userId: string) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const pools = await tx`SELECT owner_id,status,house_balance FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
+		if (pools.length !== 1) throw new BettingPoolNotFoundError();
+		const ownerId = String(pools[0].owner_id);
+		if (ownerId !== actorId) throw new BettingPermissionError();
+		if (String(pools[0].status) !== 'open') throw new BettingPoolClosedError();
+		const entries = await tx`SELECT amount FROM betting_entries WHERE pool_id=${poolId} AND user_id=${userId} FOR UPDATE`;
+		if (entries.length !== 1) throw new BettingParticipantError();
+		const stake = moneyToCents(formatMoney(entries[0].amount));
+		const house = moneyToCents(formatMoney(pools[0].house_balance || 0));
+		const houseUsed = house < stake ? house : stake;
+		const cover = stake - houseUsed;
+		const payout = stake * 2n;
+		await tx`INSERT IGNORE INTO accounts (guild_id,user_id) VALUES (${guildId},${ownerId}),(${guildId},${userId})`;
+		const accounts = await tx`SELECT user_id,balance FROM accounts WHERE guild_id=${guildId} AND user_id IN (${ownerId},${userId}) ORDER BY user_id FOR UPDATE`;
+		const owner = accounts.find((row: PoolRow) => String(row.user_id) === ownerId);
+		if (cover > 0n && (!owner || moneyToCents(formatMoney(owner.balance)) < cover)) throw new InsufficientBalanceError();
+		if (cover > 0n) {
+			const amount = centsToMoney(cover);
+			await tx`UPDATE accounts SET balance=balance-${amount} WHERE guild_id=${guildId} AND user_id=${ownerId}`;
+			await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${ownerId},${null},${amount},'bet_house_cover',${poolId})`;
+		}
+		const payoutText = centsToMoney(payout);
+		await tx`UPDATE accounts SET balance=balance+${payoutText} WHERE guild_id=${guildId} AND user_id=${userId}`;
+		await tx`UPDATE betting_pools SET house_balance=house_balance-${centsToMoney(houseUsed)} WHERE id=${poolId}`;
+		await tx`DELETE FROM betting_entries WHERE pool_id=${poolId} AND user_id=${userId}`;
+		await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${null},${userId},${payoutText},'bet_payout',${poolId})`;
+		await tx`INSERT INTO betting_events (pool_id,event_type,user_id,amount) VALUES (${poolId},'double_payout',${userId},${payoutText})`;
+		return { payout: payoutText, ownerCover: centsToMoney(cover), houseBalance: centsToMoney(house-houseUsed) };
+	});
+}
+
 export async function reopenBettingPool(
 	guildId: string,
 	poolId: string,
@@ -480,7 +554,7 @@ export async function reopenBettingPool(
 ) {
 	const db = await getDB();
 	await db.begin(async (tx) => {
-		const pools = await tx`SELECT owner_id,status FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
+		const pools = await tx`SELECT owner_id,status,house_balance FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
 		if (pools.length !== 1) throw new BettingPoolNotFoundError();
 		if (String(pools[0].owner_id) !== actorId && !canOverride) throw new BettingPermissionError();
 		if (!['settled', 'refunded'].includes(String(pools[0].status))) throw new BettingPoolClosedError();
@@ -494,14 +568,13 @@ export async function reopenBettingPool(
 export async function archiveBettingPool(
 	guildId: string,
 	poolId: string,
-	actorId: string,
-	canOverride = false
+	actorId: string
 ) {
 	const db = await getDB();
 	return db.begin(async (tx) => {
-		const pools = await tx`SELECT owner_id,status FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
+		const pools = await tx`SELECT owner_id,status,house_balance FROM betting_pools WHERE id=${poolId} AND guild_id=${guildId} FOR UPDATE`;
 		if (pools.length !== 1) throw new BettingPoolNotFoundError();
-		if (String(pools[0].owner_id) !== actorId && !canOverride) throw new BettingPermissionError();
+		if (String(pools[0].owner_id) !== actorId) throw new BettingPermissionError();
 		if (String(pools[0].status) === 'archived') throw new BettingPoolClosedError();
 		const entries = await tx`SELECT user_id,amount FROM betting_entries WHERE pool_id=${poolId} ORDER BY user_id FOR UPDATE`;
 		let refunded = 0;
@@ -515,7 +588,15 @@ export async function archiveBettingPool(
 				refunded += 1;
 			}
 		}
-		await tx`UPDATE betting_pools SET status='archived',closed_at=CURRENT_TIMESTAMP WHERE id=${poolId}`;
+		const houseBalance = moneyToCents(formatMoney(pools[0].house_balance || 0));
+		if (houseBalance > 0n) {
+			const ownerId = String(pools[0].owner_id), amount = centsToMoney(houseBalance);
+			await tx`INSERT IGNORE INTO accounts (guild_id,user_id) VALUES (${guildId},${ownerId})`;
+			await tx`SELECT balance FROM accounts WHERE guild_id=${guildId} AND user_id=${ownerId} FOR UPDATE`;
+			await tx`UPDATE accounts SET balance=balance+${amount} WHERE guild_id=${guildId} AND user_id=${ownerId}`;
+			await tx`INSERT INTO transactions (guild_id,sender_id,recipient_id,amount,transaction_type,betting_pool_id) VALUES (${guildId},${null},${ownerId},${amount},'bet_house_refund',${poolId})`;
+		}
+		await tx`UPDATE betting_pools SET status='archived',house_balance=0.00,closed_at=CURRENT_TIMESTAMP WHERE id=${poolId}`;
 		await tx`INSERT INTO betting_events (pool_id,event_type,user_id) VALUES (${poolId},'archived',${actorId})`;
 		return refunded;
 	});

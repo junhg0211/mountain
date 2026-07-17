@@ -10,6 +10,9 @@ export type TransactionType =
 	| 'bet_stake'
 	| 'bet_payout'
 	| 'bet_refund'
+	| 'bet_fund'
+	| 'bet_house_cover'
+	| 'bet_house_refund'
 	| 'attendance'
 	| 'voice_activity'
 	| 'monthly_burn'
@@ -57,7 +60,9 @@ export async function getTotalSupply(guildId: string): Promise<string> {
 			(SELECT COALESCE(SUM(betting_entries.amount), 0.00)
 			 FROM betting_entries
 			 JOIN betting_pools ON betting_pools.id=betting_entries.pool_id
-			 WHERE betting_pools.guild_id=${guildId} AND betting_pools.status='open') AS total
+			 WHERE betting_pools.guild_id=${guildId} AND betting_pools.status='open') +
+			(SELECT COALESCE(SUM(house_balance), 0.00) FROM betting_pools
+			 WHERE guild_id=${guildId} AND status<>'archived') AS total
 	`;
 	return formatBalance(rows[0]?.total || 0);
 }
@@ -93,6 +98,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'bet_refund' ||
 			type === 'attendance' ||
 			type === 'voice_activity' ||
+			type === 'bet_house_refund' ||
 			(!outgoing && (type === 'transfer' || type === 'scheduled_transfer'));
 		const balanceAfter = centsToMoney(runningBalance);
 		const amount = moneyToCents(formatBalance(row.amount));

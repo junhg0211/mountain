@@ -54,6 +54,9 @@ must insert exactly one row in the same database transaction as its balance upda
 | Bet stake      | participant  | `NULL`         | `bet_stake`        |
 | Bet payout     | `NULL`       | winner         | `bet_payout`       |
 | Bet refund     | `NULL`       | participant    | `bet_refund`       |
+| Table funding  | owner        | `NULL`         | `bet_fund`         |
+| House fallback | owner        | `NULL`         | `bet_house_cover`  |
+| House return   | `NULL`       | owner          | `bet_house_refund` |
 | Attendance     | `NULL`       | rewarded user  | `attendance`       |
 | Voice activity | `NULL`       | rewarded user  | `voice_activity`   |
 | Monthly burn   | debited user | `NULL`         | `monthly_burn`     |
@@ -86,6 +89,15 @@ Permanent closure uses `status='archived'`, which normal web and Discord list qu
 Archiving an open pool first refunds every current entry and records each `bet_refund` in the same
 database transaction, then archives the pool. Only the owner or a manage-guild administrator may
 reopen or archive it.
+
+`betting_pools.house_balance` is reusable table escrow for blackjack/baccarat-style payouts. Only
+the pool owner may fund it, individually refund a current entry, pay an entry at 2x, or permanently
+archive the pool. A 2x payout returns the participant's stake plus equal winnings. Consume winnings
+from `house_balance` first; if it is short, lock and debit only the shortage from the owner's guild
+account using `bet_house_cover`. The payout, cover, entry deletion, and balances belong to one DB
+transaction. Archiving refunds open entries and returns all remaining house escrow to the owner.
+Manage-guild permission must never override permanent archive ownership, and non-owners must not be
+shown its button.
 
 Betting rows also carry `betting_pool_id`. Money staked in an open pool is escrow, not burned, so
 total supply is account balances plus stakes in open pools. Settlement and refund must lock the

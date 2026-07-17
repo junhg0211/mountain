@@ -66,6 +66,9 @@
 			| 'bet_stake'
 			| 'bet_payout'
 			| 'bet_refund'
+			| 'bet_fund'
+			| 'bet_house_cover'
+			| 'bet_house_refund'
 			| 'attendance'
 			| 'voice_activity'
 			| 'monthly_burn'
@@ -87,6 +90,9 @@
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 당첨금`;
 		if (transaction.type === 'bet_refund')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 환불`;
+		if (transaction.type === 'bet_fund') return `#${transaction.bettingPool?.id} 판 자금 충전`;
+		if (transaction.type === 'bet_house_cover') return `#${transaction.bettingPool?.id} 판 자금 자동 보충`;
+		if (transaction.type === 'bet_house_refund') return `#${transaction.bettingPool?.id} 남은 판 자금 반환`;
 		return transaction.direction === 'credit'
 			? `${transaction.counterparty}님에게서 받음`
 			: `${transaction.counterparty}님에게 송금`;

@@ -86,6 +86,9 @@
 		if (event.type === 'refunded') return '모든 베팅이 환불됐습니다.';
 		if (event.type === 'reopened') return '참가자 명단을 유지한 채 새 회차가 시작됐습니다.';
 		if (event.type === 'archived') return '베팅 판이 완전히 종료됐습니다.';
+		if (event.type === 'funded') return `${event.username}님이 판 자금 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}을 충전했습니다.`;
+		if (event.type === 'user_refund') return `${event.username}님의 베팅액 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}이 개별 환불됐습니다.`;
+		if (event.type === 'double_payout') return `${event.username}님에게 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}이 2배 당첨금으로 지급됐습니다.`;
 		return '베팅 상태가 변경됐습니다.';
 	}
 
@@ -153,6 +156,7 @@
 			<small>현재 판돈</small><strong>{formatMoneyDisplay(pool.totalAmount)}</strong><b
 				>{data.currencyUnit}</b
 			>
+			<span>판 보유금 {formatMoneyDisplay(pool.houseBalance)} {data.currencyUnit}</span>
 		</div>
 	</section>
 
@@ -238,13 +242,23 @@
 					</form>
 				</div>
 			{/if}
+			{#if data.isOwner && pool.status === 'open'}
+				<div class="house-management">
+					<div class="house-heading"><div><p>TABLE BANK</p><h3>판 자금과 개별 처리</h3></div><strong>{formatMoneyDisplay(pool.houseBalance)} {data.currencyUnit}</strong></div>
+					<form class="fund-form" method="POST" action="?/fund"><input type="hidden" name="guildId" value={data.guildId}><label>판 자금 충전<input name="amount" inputmode="decimal" placeholder="0.01" required></label><button>충전</button></form>
+					<p class="house-guide">2배 지급 시 참가자의 베팅액을 포함한 2배를 돌려줍니다. 판 보유금이 모자라면 부족분만 판 주인의 소지금에서 자동 충전됩니다.</p>
+					{#each pool.participants.filter((participant) => Number(participant.amount) > 0) as participant}
+						<article class="participant-action"><div><strong>{participant.username}</strong><span>{formatMoneyDisplay(participant.amount)} {data.currencyUnit} 베팅</span></div><form method="POST" action="?/refundParticipant"><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="single-refund">개별 환불</button></form><form method="POST" action="?/doublePayout"><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="double-payout">2배 지급</button></form></article>
+					{:else}<p class="no-current-bets">현재 처리할 베팅이 없습니다.</p>{/each}
+				</div>
+			{/if}
 			{#if data.canManage && (pool.status === 'settled' || pool.status === 'refunded')}
 				<div class="management reuse-management">
 					<form method="POST" action="?/reopen"><input type="hidden" name="guildId" value={data.guildId}><button class="reopen">같은 멤버로 새 회차 시작</button></form>
-					<form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>완전히 종료</button></form>
+					{#if data.isOwner}<form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>완전히 종료</button></form>{/if}
 				</div>
 			{/if}
-			{#if data.canManage && pool.status === 'open'}
+			{#if data.isOwner && pool.status === 'open'}
 				<div class="management archive-open"><form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>환불 후 완전히 종료</button></form></div>
 			{/if}
 		</section>
@@ -560,6 +574,25 @@
 	.reuse-management form:first-child { min-width: 0; }
 	.management .reopen { width: 100%; background: #285d4b; color: #9ff2cf; }
 	.management .archive { width: 100%; background: #421d25; color: #ff9aaa; }
+	.house-management { margin-top: 18px; padding: 16px; border: 1px solid #2d3441; border-radius: 13px; background: #0c0f14; }
+	.house-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; }
+	.house-heading p { margin: 0; color: #806cff; font-size: 9px; font-weight: 900; letter-spacing: .14em; }
+	.house-heading h3 { margin: 4px 0 0; font-size: 16px; }
+	.house-heading > strong { color: #a99cff; font-variant-numeric: tabular-nums; }
+	.fund-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; margin-top: 14px; }
+	.fund-form label { display: grid; gap: 5px; color: #858d9b; font-size: 11px; }
+	.fund-form input { min-width: 0; height: 40px; padding: 0 10px; color: #fff; background: #151922; border: 1px solid #303746; border-radius: 9px; }
+	.fund-form button { height: 40px; }
+	.house-guide { color: #737c8c; font-size: 11px; line-height: 1.5; }
+	.participant-action { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; padding: 10px 0; border-top: 1px solid #252b35; }
+	.participant-action > div { display: grid; gap: 3px; min-width: 0; }
+	.participant-action > div strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.participant-action > div span { color: #7c8492; font-size: 10px; }
+	.participant-action form { margin: 0; }
+	.participant-action button { padding: 8px 10px; border: 0; border-radius: 8px; font-weight: 800; }
+	.single-refund { color: #f3c08e; background: #3b2a18; }
+	.double-payout { color: #9ff2cf; background: #1b4939; }
+	.no-current-bets { margin: 14px 0 0; color: #737c8c; font-size: 11px; }
 	.error {
 		color: #ff8d8d;
 		background: #32191d;
@@ -654,5 +687,9 @@
 		.amounts {
 			grid-template-columns: repeat(2, 1fr);
 		}
+		.house-heading { align-items: flex-start; flex-direction: column; }
+		.participant-action { grid-template-columns: 1fr 1fr; }
+		.participant-action > div { grid-column: 1 / -1; }
+		.participant-action form button { width: 100%; }
 	}
 </style>

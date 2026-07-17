@@ -8,11 +8,14 @@ import {
 	BettingPermissionError,
 	BettingOptionError,
 	archiveBettingPool,
+	fundBettingPool,
 	getBettingPoolExtras,
 	getBettingPool,
 	placeBet,
 	placeTeamBet,
+	payDoubleBettingParticipant,
 	refundBettingPool,
+	refundBettingParticipant,
 	reopenBettingPool,
 	settleBettingPool,
 	settleTeamBettingPool
@@ -65,7 +68,8 @@ export const load: PageServerLoad = async ({ cookies, params, url }) => {
 		...extras,
 		currencyUnit: await getCurrencyUnit(guildId),
 		balance: await getOrCreateBalance(guildId, user.user.id),
-		canManage: pool.ownerId === user.user.id || canManageGuild(user.permissions)
+		canManage: pool.ownerId === user.user.id || canManageGuild(user.permissions),
+		isOwner: pool.ownerId === user.user.id
 	};
 };
 
@@ -173,6 +177,41 @@ export const actions: Actions = {
 			return managementError(error);
 		}
 	},
+	fund: async ({ cookies, params, request }) => {
+		const form = await request.formData(), guildId = String(form.get('guildId') || '');
+		const context = await requireContext(cookies, guildId);
+		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
+		const amount = parseMoney(String(form.get('amount') || '').trim());
+		if (!amount) return fail(400, { message: '0.01 이상의 충전 금액을 입력해 주세요.' });
+		try {
+			const balance = await fundBettingPool(guildId, params.poolId, context.user.id, amount);
+			publishBettingUpdate(guildId, params.poolId);
+			await sendTransactionNotification(guildId, `🏦 **베팅 판 자금 충전**\n#${params.poolId}\n판 주인: <@${context.user.id}>\n충전: **${formatMoneyDisplay(amount)}**\n판 보유금: **${formatMoneyDisplay(balance)}**`);
+			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
+		} catch (error) { return managementError(error); }
+	},
+	refundParticipant: async ({ cookies, params, request }) => {
+		const form = await request.formData(), guildId = String(form.get('guildId') || ''), userId = String(form.get('userId') || '');
+		const context = await requireContext(cookies, guildId);
+		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
+		try {
+			const amount = await refundBettingParticipant(guildId, params.poolId, context.user.id, userId);
+			publishBettingUpdate(guildId, params.poolId);
+			await sendTransactionNotification(guildId, `↩️ **개별 베팅 환불**\n#${params.poolId}\n대상: <@${userId}>\n환불: **${formatMoneyDisplay(amount)}**`);
+			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
+		} catch (error) { return managementError(error); }
+	},
+	doublePayout: async ({ cookies, params, request }) => {
+		const form = await request.formData(), guildId = String(form.get('guildId') || ''), userId = String(form.get('userId') || '');
+		const context = await requireContext(cookies, guildId);
+		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
+		try {
+			const result = await payDoubleBettingParticipant(guildId, params.poolId, context.user.id, userId);
+			publishBettingUpdate(guildId, params.poolId);
+			await sendTransactionNotification(guildId, `🃏 **2배 당첨금 지급**\n#${params.poolId}\n대상: <@${userId}>\n지급: **${formatMoneyDisplay(result.payout)}**${result.ownerCover !== '0.00' ? `\n판 주인 자동 보충: **${formatMoneyDisplay(result.ownerCover)}**` : ''}`);
+			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
+		} catch (error) { return managementError(error); }
+	},
 	reopen: async ({ cookies, params, request }) => {
 		const form = await request.formData();
 		const guildId = String(form.get('guildId') || '');
@@ -191,7 +230,7 @@ export const actions: Actions = {
 		const context = await requireContext(cookies, guildId);
 		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
 		try {
-			const refunded = await archiveBettingPool(guildId, params.poolId, context.user.id, canManageGuild(context.permissions));
+			const refunded = await archiveBettingPool(guildId, params.poolId, context.user.id);
 			publishBettingUpdate(guildId, params.poolId);
 			await sendTransactionNotification(guildId, `⛔ **베팅 판 완전 종료**\n#${params.poolId}${refunded ? `\n진행 중이던 ${refunded}명의 베팅액을 환불했습니다.` : ''}\n처리자: <@${context.user.id}>`);
 			redirect(303, `/bets?guild=${encodeURIComponent(guildId)}`);
@@ -200,6 +239,8 @@ export const actions: Actions = {
 };
 
 function managementError(error: unknown) {
+	if (error instanceof InsufficientBalanceError)
+		return fail(400, { message: '판 보유금과 판 주인의 소지금이 부족합니다.' });
 	if (error instanceof BettingPoolNotFoundError)
 		return fail(404, { message: '베팅 판을 찾을 수 없습니다.' });
 	if (error instanceof BettingPoolClosedError)
