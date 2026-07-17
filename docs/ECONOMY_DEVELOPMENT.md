@@ -96,9 +96,12 @@ participant. Refund restores every participant's cumulative stake exactly once.
 The betting web UI lives at `/bets` with one `/bets/[poolId]` detail page per pool. Quick betting
 accepts only `0.01`, `0.05`, `0.10`, `0.50`, `1.00`, `5.00`, `10.00`, `50.00`, `100.00`, and
 `500.00`; the action validates this allowlist on the server. Clients obtain a 30-second,
-single-use ticket after session and guild membership checks, then connect to `/ws/betting`.
-WebSockets carry invalidation events only; the client reloads the pool through the authorized HTTP
-API. Publish an update after committed web or Discord create, stake, settle, and refund operations.
+single-use ticket after session and guild membership checks, then connect to `/ws/betting`. The
+ticket binds both `guild_id` and `user_id`; every incoming bet message must re-check stored guild
+access and current Discord membership. Quick-bet buttons send `place-bet` over that socket and the
+server responds with `bet-result` containing the committed balance, pool, events, and user stats so
+the initiating client does not issue a POST or reload. Other clients receive an invalidation event
+and refresh through the authorized HTTP API. Publish only after the money transaction commits.
 Production must start with `bun run start`/`server.ts`, not `build/index.js` directly, so WebSocket
 upgrades are handled and the Discord bot starts immediately without waiting for an HTTP request.
 

@@ -23,6 +23,7 @@ import { parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { InsufficientBalanceError } from '$lib/server/db/accounts';
+import { getOrCreateBalance } from '$lib/server/db/accounts';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -63,6 +64,7 @@ export const load: PageServerLoad = async ({ cookies, params, url }) => {
 		pool,
 		...extras,
 		currencyUnit: await getCurrencyUnit(guildId),
+		balance: await getOrCreateBalance(guildId, user.user.id),
 		canManage: pool.ownerId === user.user.id || canManageGuild(user.permissions)
 	};
 };

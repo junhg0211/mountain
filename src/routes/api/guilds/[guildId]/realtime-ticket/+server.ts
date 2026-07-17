@@ -12,5 +12,5 @@ export const POST: RequestHandler = async ({ cookies, params }) => {
 		SELECT 1 FROM user_guilds WHERE user_id=${user.id} AND guild_id=${params.guildId} LIMIT 1
 	`;
 	if (membership.length !== 1) error(403, 'Guild access denied.');
-	return json({ ticket: createRealtimeTicket(params.guildId) });
+	return json({ ticket: createRealtimeTicket(params.guildId, user.id) });
 };

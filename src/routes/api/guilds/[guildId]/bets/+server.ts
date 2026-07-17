@@ -3,6 +3,7 @@ import { getDB } from '$lib/server/db';
 import { getBettingPool, getBettingPools } from '$lib/server/db/betting';
 import { getBettingPoolExtras } from '$lib/server/db/betting';
 import { error, json, type RequestHandler } from '@sveltejs/kit';
+import { getOrCreateBalance } from '$lib/server/db/accounts';
 
 export const GET: RequestHandler = async ({ cookies, params, url }) => {
 	const user = await getSessionUser(cookies);
@@ -19,7 +20,8 @@ export const GET: RequestHandler = async ({ cookies, params, url }) => {
 		if (!pool) error(404, 'Betting pool not found.');
 		return json({
 			pool,
-			...(await getBettingPoolExtras(params.guildId, poolId, user.id))
+			...(await getBettingPoolExtras(params.guildId, poolId, user.id)),
+			balance: await getOrCreateBalance(params.guildId, user.id)
 		});
 	}
 	return json({ pools: await getBettingPools(params.guildId) });

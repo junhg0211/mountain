@@ -9,7 +9,13 @@
 	let events = $derived(liveEvents ?? data.events);
 	let liveStats = $state<typeof data.stats>();
 	let stats = $derived(liveStats ?? data.stats);
+	let liveBalance = $state<string>();
+	let balance = $derived(liveBalance ?? data.balance);
 	let connected = $state(false);
+	let socket = $state<WebSocket | null>(null);
+	let betPending = $state(false);
+	let betMessage = $state('');
+	let ignoreNextUpdate = false;
 	let pulse = $state(0);
 	let selectedTeam = $state<'A' | 'B'>('A');
 	let archiveConfirmationOpen = $state(false);
@@ -31,8 +37,24 @@
 			livePool = updated;
 			liveEvents = payload.events;
 			liveStats = payload.stats;
+			liveBalance = payload.balance;
 			pulse += 1;
 		}
+	}
+
+	function placeRealtimeBet(amount: string) {
+		if (!socket || socket.readyState !== WebSocket.OPEN) {
+			betMessage = '실시간 서버에 연결된 뒤 다시 시도해 주세요.';
+			return;
+		}
+		if (pool.bettingMode === 'team' && selectedTeam !== 'A' && selectedTeam !== 'B') {
+			betMessage = 'A팀 또는 B팀을 선택해 주세요.';
+			return;
+		}
+		betPending = true;
+		betMessage = '';
+		ignoreNextUpdate = true;
+		socket.send(JSON.stringify({ type: 'place-bet', requestId: crypto.randomUUID(), poolId: pool.id, amount, optionKey: selectedTeam }));
 	}
 
 	function cents(value: string) {
@@ -68,7 +90,6 @@
 	}
 
 	onMount(() => {
-		let socket: WebSocket | null = null;
 		let stopped = false;
 		let retry: ReturnType<typeof setTimeout>;
 		async function connect() {
@@ -84,8 +105,21 @@
 			socket.onopen = () => (connected = true);
 			socket.onmessage = (event) => {
 				const message = JSON.parse(event.data);
-				if (message.type === 'betting-update' && (!message.poolId || message.poolId === pool.id))
-					void refresh();
+				if (message.type === 'bet-result') {
+					betPending = false;
+					if (!message.ok) { betMessage = message.error; ignoreNextUpdate = false; return; }
+					liveBalance = message.balance;
+					livePool = message.pool;
+					liveEvents = message.events;
+					liveStats = message.stats;
+					betMessage = `베팅이 완료됐습니다. 남은 소지금 ${formatMoneyDisplay(message.balance)} ${data.currencyUnit}`;
+					pulse += 1;
+					return;
+				}
+				if (message.type === 'betting-update' && (!message.poolId || message.poolId === pool.id)) {
+					if (ignoreNextUpdate) ignoreNextUpdate = false;
+					else void refresh();
+				}
 			};
 			socket.onclose = () => {
 				connected = false;
@@ -97,6 +131,7 @@
 			stopped = true;
 			clearTimeout(retry);
 			socket?.close();
+			socket = null;
 		};
 	});
 </script>
@@ -128,12 +163,11 @@
 					<p>QUICK BET</p>
 					<h2>베팅 금액 선택</h2>
 				</div>
-				<b class:closed={pool.status !== 'open'}
-					>{pool.status === 'open' ? '베팅 가능' : '종료됨'}</b
-				>
+				<div class="bet-state"><span>소지금 <strong>{formatMoneyDisplay(balance)} {data.currencyUnit}</strong></span><b class:closed={pool.status !== 'open'}>{pool.status === 'open' ? '베팅 가능' : '종료됨'}</b></div>
 			</header>
 			<p class="guide">팀을 고른 뒤 금액을 선택하세요. 예상 수령액은 현재 판돈 기준입니다.</p>
 			{#if form?.message}<p class="error">{form.message}</p>{/if}
+			{#if betMessage}<p class:success={betMessage.includes('완료')} class="bet-message">{betMessage}</p>{/if}
 			{#if pool.bettingMode === 'team'}<div class="teams">
 					{#each ['A', 'B'] as team}
 						<button
@@ -151,20 +185,12 @@
 				</div>{/if}
 			<div class="amounts">
 				{#each amounts as amount}
-					<form method="POST" action="?/bet">
-						<input type="hidden" name="guildId" value={data.guildId} />
-						{#if pool.bettingMode === 'team'}<input
-								type="hidden"
-								name="optionKey"
-								value={selectedTeam}
-							/>{/if}
-						<button name="amount" value={amount} disabled={pool.status !== 'open'}
+					<button type="button" onclick={() => placeRealtimeBet(amount)} disabled={pool.status !== 'open' || !connected || betPending}
 							><strong>{formatMoneyDisplay(amount)}</strong><span>{data.currencyUnit}</span
 							>{#if pool.bettingMode === 'team'}<small
 									>예상 {formatMoneyDisplay(estimatedPayout(amount))}</small
 								>{/if}</button
 						>
-					</form>
 				{/each}
 			</div>
 		</section>
@@ -374,14 +400,14 @@
 	.participants h2 {
 		margin: 5px 0;
 	}
-	.bet-card header > b {
+	.bet-state b {
 		font-size: 10px;
 		color: #58dfa5;
 		background: #123327;
 		padding: 7px 9px;
 		border-radius: 99px;
 	}
-	.bet-card header > b.closed {
+	.bet-state b.closed {
 		color: #9198a5;
 		background: #262b34;
 	}
@@ -389,6 +415,11 @@
 		color: #737c8c;
 		font-size: 12px;
 	}
+	.bet-state { display: flex; align-items: center; gap: 10px; }
+	.bet-state > span { display: grid; gap: 2px; color: #737c8c; font-size: 10px; text-align: right; }
+	.bet-state > span strong { color: #f4f5f8; font-size: 13px; font-variant-numeric: tabular-nums; }
+	.bet-message { padding: 10px 12px; border-radius: 9px; color: #ff9b9b; background: #32191d; font-size: 12px; }
+	.bet-message.success { color: #8de5bf; background: #15382c; }
 	.teams {
 		display: grid;
 		grid-template-columns: 1fr 1fr;
@@ -428,9 +459,6 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 9px;
 		margin-top: 24px;
-	}
-	.amounts form {
-		margin: 0;
 	}
 	.amounts button {
 		width: 100%;
