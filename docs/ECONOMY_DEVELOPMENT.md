@@ -132,6 +132,11 @@ atomic database service, and respond with `create-result` or `action-result`. Ot
 an invalidation event and refresh through the authorized HTTP API. Publish and send best-effort
 Discord notifications only after the money transaction commits, even if the initiating socket has
 already disconnected.
+
+Transaction-channel notifications are rendered as a single horizontal line. Callers may compose
+readable multiline templates, but `sendTransactionNotification` trims each line and joins them with
+` · ` before sending so logs do not grow vertically in Discord.
+
 Production must start with `bun run start`/`server.ts`, not `build/index.js` directly, so WebSocket
 upgrades are handled and the Discord bot starts immediately without waiting for an HTTP request.
 
