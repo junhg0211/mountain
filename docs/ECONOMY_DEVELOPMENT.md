@@ -8,6 +8,7 @@ This document records the assumptions that must remain true as Mountain evolves.
 - `src/lib/server/db/betting.ts`: betting pool escrow, staking, settlement, refund, and live views.
 - `src/lib/server/db/attendance.ts`: Korean-date daily claims and atomic reward payments.
 - `src/lib/server/db/voice-activity.ts`: bucketed voice rewards and per-user daily caps.
+- `src/lib/server/db/monthly-burn.ts`: idempotent scheduled percentage burns and ledger writes.
 - `src/lib/server/economy/money.ts`: canonical money parsing and integer-cent conversion.
 - `src/lib/server/db/guild-settings.ts`: per-server unit, visibility, and notification settings.
 - `src/lib/server/bot/commands/`: Discord slash command definitions and handlers.
@@ -25,7 +26,8 @@ have unrelated balances in different servers. Never query or mutate an account u
 user's stored guild memberships.
 
 Guild settings are similarly scoped by `guild_id`. The current settings are the currency unit,
-public balance lookup, public ranking, and the transaction notification channel.
+public balance lookup, public ranking, reward configuration, monthly burn schedule, and the
+transaction notification channel.
 
 ## Money rules
 
@@ -54,6 +56,7 @@ must insert exactly one row in the same database transaction as its balance upda
 | Bet refund     | `NULL`       | participant    | `bet_refund`       |
 | Attendance     | `NULL`       | rewarded user  | `attendance`       |
 | Voice activity | `NULL`       | rewarded user  | `voice_activity`   |
+| Monthly burn   | debited user | `NULL`         | `monthly_burn`     |
 
 Betting rows also carry `betting_pool_id`. Money staked in an open pool is escrow, not burned, so
 total supply is account balances plus stakes in open pools. Settlement and refund must lock the
@@ -115,6 +118,16 @@ for these frequent automatic credits to avoid channel spam.
 The ordinary web dashboard may expose configured reward amounts to guild members. Calculate every
 displayed participant tier through the same integer-cent reward function used by the award service,
 and hide the reward card when either the base reward or daily cap is `0.00`.
+
+Monthly balance burn settings are stored per guild as an enabled flag, integer basis points
+(`1000` = `10.00%`), Korean-calendar day 1-28, hour, minute, and the next UTC epoch timestamp. New
+schedules default to day 1 at 12:00 KST and 10%. Initializing an existing guild schedules only the
+next future occurrence; it must not retroactively burn the current month. At execution, lock the
+guild setting and every positive account, calculate `floor(balance_cents * basis_points / 10000)`,
+skip results below one cent, debit each account, and write one `monthly_burn` ledger row per debit
+inside the same database transaction. The unique `(guild_id, burn_period)` run record prevents a
+second burn in the same Korean calendar month. After commit, send at most one best-effort summary
+notification for the guild.
 
 Use row locks for debit operations. A failed insufficient-balance check must change neither the
 balance nor the ledger. Discord notifications are sent after commit and intentionally swallow

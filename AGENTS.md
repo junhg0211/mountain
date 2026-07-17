@@ -27,6 +27,9 @@ These rules apply to every change in this repository.
 - Voice activity rewards use `voice_activity` with a null sender and the rewarded user as the
   recipient. They are limited by a per-user Korean-calendar daily cap and a unique five-minute
   reward bucket; never award message activity.
+- Monthly balance burns use `monthly_burn` with the debited user as sender and a null recipient.
+  Store percentage as integer basis points, round each account's burn down to cents, and guard each
+  guild/month with a unique `monthly_burn_runs` row in the same transaction.
 - Team betting uses option `A` or `B`. Settle the full escrow pot among the winning option in
   proportion to each winner's integer-cent stake, distribute remainder cents deterministically,
   and write one `bet_payout` ledger row per recipient in the settlement transaction.
@@ -65,5 +68,7 @@ These rules apply to every change in this repository.
 - Voice rewards allow one or more eligible humans in a voice channel. A solo non-deafened member
   earns the highest multiplier for starting the room. Bots and deafened members are excluded.
   Reset the five-minute presence timer when a member leaves, moves channels, or becomes ineligible.
+- Monthly burn schedules use `Asia/Seoul`, days 1-28, and a persisted next-run timestamp. A restart
+  must neither duplicate a completed month nor retroactively burn when a schedule is first created.
 
 See `docs/ECONOMY_DEVELOPMENT.md` for the detailed architecture and change checklist.

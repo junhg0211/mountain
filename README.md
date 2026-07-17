@@ -34,6 +34,8 @@ preserves Discord's Activity Entry Point command when bulk-reloading slash comma
   and `/設定 通貨`.
 - `/settings voice-reward reward:<amount> daily-cap:<amount>` configures voice activity rewards.
   It is localized as `/설정 음성보상` and `/設定 ボイス報酬`.
+- `/settings monthly-burn enabled:<bool> percentage:<percent> day:<day> hour:<hour> minute:<minute>`
+  configures the monthly balance burn. It is localized as `/설정 월간소각` and `/設定 月次バーン`.
 - `/dashboard` opens the web dashboard. It is localized as `/대시보드` and `/ダッシュボード`.
 - `/bet` creates, joins, views, settles, or refunds server betting pools. It is localized as
   `/베팅` and `/ベット`.
@@ -48,6 +50,11 @@ base reward, two-person channels 2x, three-person channels 1.5x, four-person cha
 larger channels 1x. Bots, deafened users, and message activity receive no reward. Administrators
 can set the base reward and per-user daily cap from Discord or the web admin dashboard; setting
 both to `0.00` disables the feature.
+
+Monthly balance burn is enabled per server by default at 10% on the first day of each month at
+12:00 KST. Administrators can change the percentage (0.01%-100%), day (1-28), and time or disable
+it from `/settings monthly-burn` or the web admin dashboard. Each account is rounded down to the
+nearest cent, recorded in the ledger, and processed at most once per Korean calendar month.
 
 When voice rewards are enabled, the main web dashboard shows the exact five-minute reward for
 solo, two-person, three-person, four-person, and larger channels together with the per-user daily

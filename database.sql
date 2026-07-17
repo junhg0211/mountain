@@ -49,9 +49,25 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     attendance_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
     voice_activity_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
     voice_activity_daily_cap DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+    monthly_burn_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    monthly_burn_basis_points INT NOT NULL DEFAULT 1000,
+    monthly_burn_day TINYINT NOT NULL DEFAULT 1,
+    monthly_burn_hour TINYINT NOT NULL DEFAULT 12,
+    monthly_burn_minute TINYINT NOT NULL DEFAULT 0,
+    monthly_burn_next_at BIGINT,
     notification_channel_id VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS monthly_burn_runs (
+    guild_id VARCHAR(255) NOT NULL,
+    burn_period CHAR(7) NOT NULL,
+    total_amount DECIMAL(30, 2) NOT NULL,
+    accounts_affected INT NOT NULL,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, burn_period),
+    INDEX monthly_burn_runs_executed_idx (executed_at)
 );
 
 CREATE TABLE IF NOT EXISTS voice_activity_rewards (

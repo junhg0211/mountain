@@ -49,7 +49,8 @@
 		bet_payout: '베팅 지급',
 		bet_refund: '베팅 환불',
 		attendance: '출석 보상',
-		voice_activity: '음성 활동 보상'
+		voice_activity: '음성 활동 보상',
+		monthly_burn: '월간 소각'
 	};
 	function transactionRoute(transaction: Transaction) {
 		const sender = transaction.sender?.name || '시스템';
@@ -155,6 +156,68 @@
 				<small>1명 3배 · 2명 2배 · 3명 1.5배 · 4명 1.25배 · 5명 이상 기본 보상</small>
 				<button>음성 활동 보상 저장</button>
 			</form>
+			<form
+				method="POST"
+				action={`?/monthlyBurn&guild=${selectedGuild.id}`}
+				class="monthly-burn-settings"
+			>
+				<input type="hidden" name="guildId" value={selectedGuild.id} />
+				<h3>월간 보유금 소각</h3>
+				<p>한국 시간 기준으로 매월 한 번, 모든 계정의 보유금에서 설정 비율을 소각합니다.</p>
+				<label class="toggle"
+					><input type="checkbox" name="enabled" checked={selectedGuild.monthlyBurnEnabled} /><span
+						><b>자동 소각 사용</b><small>기본값은 매월 1일 12:00, 10%입니다.</small></span
+					></label
+				>
+				<div class="settings-grid burn-grid">
+					<label
+						>소각 비율 (%)<input
+							name="percentage"
+							type="number"
+							min="0.01"
+							max="100"
+							step="0.01"
+							value={selectedGuild.monthlyBurnPercentage}
+							required
+						/></label
+					>
+					<label
+						>실행일<input
+							name="day"
+							type="number"
+							min="1"
+							max="28"
+							step="1"
+							value={selectedGuild.monthlyBurnDay}
+							required
+						/></label
+					>
+					<label
+						>시<input
+							name="hour"
+							type="number"
+							min="0"
+							max="23"
+							step="1"
+							value={selectedGuild.monthlyBurnHour}
+							required
+						/></label
+					>
+					<label
+						>분<input
+							name="minute"
+							type="number"
+							min="0"
+							max="59"
+							step="1"
+							value={selectedGuild.monthlyBurnMinute}
+							required
+						/></label
+					>
+				</div>
+				<small>소각액은 0.01 단위로 내림하며, 계산 결과가 0.01 미만인 계정은 건너뜁니다.</small>
+				<button>월간 소각 설정 저장</button>
+			</form>
 			<form method="POST" action={`?/visibility&guild=${selectedGuild.id}`} class="visibility">
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>공개 범위</h3>
@@ -185,7 +248,7 @@
 			>
 				<input type="hidden" name="guildId" value={selectedGuild.id} />
 				<h3>거래 알림 채널</h3>
-				<p>송금, 발행·소각, 베팅, 출석 보상이 발생하면 선택한 Discord 채널에 기록합니다.</p>
+				<p>송금, 발행·소각, 베팅, 출석 보상과 월간 소각을 선택한 Discord 채널에 기록합니다.</p>
 				<label class="channel-select"
 					>알림 채널<select name="channelId"
 						><option value="">알림 사용 안 함</option>{#each data.channels as channel}<option
@@ -523,6 +586,7 @@
 		background: #153c32;
 	}
 	.kind.burn,
+	.kind.monthly_burn,
 	.kind.bet_stake {
 		color: #f099aa;
 		background: #492029;
@@ -547,19 +611,24 @@
 		padding-top: 26px;
 	}
 	.attendance-settings,
-	.voice-settings {
+	.voice-settings,
+	.monthly-burn-settings {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
 	}
 	.attendance-settings h3,
 	.attendance-settings p,
 	.voice-settings h3,
-	.voice-settings p {
+	.voice-settings p,
+	.monthly-burn-settings h3,
+	.monthly-burn-settings p {
 		margin: 0;
 	}
 	.attendance-settings p,
 	.voice-settings p,
-	.voice-settings > small {
+	.voice-settings > small,
+	.monthly-burn-settings p,
+	.monthly-burn-settings > small {
 		color: #747d8d;
 		font-size: 13px;
 	}
@@ -567,6 +636,9 @@
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 12px;
+	}
+	.burn-grid {
+		grid-template-columns: repeat(4, 1fr);
 	}
 	@media (max-width: 720px) {
 		.settings-grid {

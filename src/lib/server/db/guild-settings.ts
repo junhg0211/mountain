@@ -68,6 +68,54 @@ export interface VoiceActivitySettings {
 	dailyCap: string;
 }
 
+export interface MonthlyBurnSettings {
+	enabled: boolean;
+	basisPoints: number;
+	day: number;
+	hour: number;
+	minute: number;
+}
+
+export function nextMonthlyBurnAt(
+	settings: Pick<MonthlyBurnSettings, 'day' | 'hour' | 'minute'>,
+	now = new Date()
+): number {
+	const koreanNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+	let year = koreanNow.getUTCFullYear();
+	let month = koreanNow.getUTCMonth();
+	let candidate = Date.UTC(year, month, settings.day, settings.hour - 9, settings.minute);
+	if (candidate <= now.getTime()) {
+		month += 1;
+		if (month > 11) {
+			month = 0;
+			year += 1;
+		}
+		candidate = Date.UTC(year, month, settings.day, settings.hour - 9, settings.minute);
+	}
+	return candidate;
+}
+
+export async function setMonthlyBurnSettings(guildId: string, settings: MonthlyBurnSettings) {
+	const db = await getDB();
+	const nextAt = settings.enabled ? nextMonthlyBurnAt(settings) : null;
+	await db`
+		INSERT INTO guild_settings (
+			guild_id, monthly_burn_enabled, monthly_burn_basis_points,
+			monthly_burn_day, monthly_burn_hour, monthly_burn_minute, monthly_burn_next_at
+		) VALUES (
+			${guildId}, ${settings.enabled}, ${settings.basisPoints},
+			${settings.day}, ${settings.hour}, ${settings.minute}, ${nextAt}
+		)
+		ON DUPLICATE KEY UPDATE
+			monthly_burn_enabled=VALUES(monthly_burn_enabled),
+			monthly_burn_basis_points=VALUES(monthly_burn_basis_points),
+			monthly_burn_day=VALUES(monthly_burn_day),
+			monthly_burn_hour=VALUES(monthly_burn_hour),
+			monthly_burn_minute=VALUES(monthly_burn_minute),
+			monthly_burn_next_at=VALUES(monthly_burn_next_at)
+	`;
+}
+
 export async function setVoiceActivitySettings(
 	guildId: string,
 	settings: VoiceActivitySettings

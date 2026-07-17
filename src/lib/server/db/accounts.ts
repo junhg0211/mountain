@@ -11,7 +11,8 @@ export type TransactionType =
 	| 'bet_payout'
 	| 'bet_refund'
 	| 'attendance'
-	| 'voice_activity';
+	| 'voice_activity'
+	| 'monthly_burn';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = await getDB();

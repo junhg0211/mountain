@@ -67,7 +67,8 @@
 			| 'bet_payout'
 			| 'bet_refund'
 			| 'attendance'
-			| 'voice_activity';
+			| 'voice_activity'
+			| 'monthly_burn';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
@@ -76,6 +77,7 @@
 		if (transaction.type === 'burn') return '관리자 소각';
 		if (transaction.type === 'attendance') return '일일 출석 보상';
 		if (transaction.type === 'voice_activity') return '음성 활동 보상';
+		if (transaction.type === 'monthly_burn') return '월간 보유금 소각';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')

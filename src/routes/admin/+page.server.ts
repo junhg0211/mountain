@@ -12,6 +12,7 @@ import {
 	setAttendanceReward,
 	setCurrencyUnit,
 	setNotificationChannel,
+	setMonthlyBurnSettings,
 	setVoiceActivitySettings,
 	setVisibilitySettings
 } from '$lib/server/db/guild-settings';
@@ -36,6 +37,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			COALESCE(gs.attendance_reward, 0.00) AS attendance_reward,
 			COALESCE(gs.voice_activity_reward, 0.00) AS voice_activity_reward,
 			COALESCE(gs.voice_activity_daily_cap, 0.00) AS voice_activity_daily_cap,
+			COALESCE(gs.monthly_burn_enabled, TRUE) AS monthly_burn_enabled,
+			COALESCE(gs.monthly_burn_basis_points, 1000) AS monthly_burn_basis_points,
+			COALESCE(gs.monthly_burn_day, 1) AS monthly_burn_day,
+			COALESCE(gs.monthly_burn_hour, 12) AS monthly_burn_hour,
+			COALESCE(gs.monthly_burn_minute, 0) AS monthly_burn_minute,
 			gs.notification_channel_id
 		FROM user_guilds ug
 		LEFT JOIN guild_settings gs ON gs.guild_id = ug.guild_id
@@ -54,6 +60,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				attendance_reward: unknown;
 				voice_activity_reward: unknown;
 				voice_activity_daily_cap: unknown;
+				monthly_burn_enabled: unknown;
+				monthly_burn_basis_points: unknown;
+				monthly_burn_day: unknown;
+				monthly_burn_hour: unknown;
+				monthly_burn_minute: unknown;
 				notification_channel_id: unknown;
 			}) => ({
 				id: String(row.guild_id),
@@ -64,6 +75,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				attendanceReward: Number(row.attendance_reward).toFixed(2),
 				voiceActivityReward: Number(row.voice_activity_reward).toFixed(2),
 				voiceActivityDailyCap: Number(row.voice_activity_daily_cap).toFixed(2),
+				monthlyBurnEnabled: Boolean(row.monthly_burn_enabled),
+				monthlyBurnPercentage: (Number(row.monthly_burn_basis_points) / 100).toFixed(2),
+				monthlyBurnDay: Number(row.monthly_burn_day),
+				monthlyBurnHour: Number(row.monthly_burn_hour),
+				monthlyBurnMinute: Number(row.monthly_burn_minute),
 				notificationChannelId: row.notification_channel_id
 					? String(row.notification_channel_id)
 					: null
@@ -191,6 +207,48 @@ export const actions: Actions = {
 			message: disabled
 				? '음성 활동 보상을 비활성화했습니다.'
 				: `음성 활동 기본 보상을 ${formatMoneyDisplay(reward)}, 일일 한도를 ${formatMoneyDisplay(dailyCap)}(으)로 설정했습니다.`
+		};
+	},
+	monthlyBurn: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const enabled = form.get('enabled') === 'on';
+		const percentage = String(form.get('percentage') || '').trim();
+		const day = Number(form.get('day'));
+		const hour = Number(form.get('hour'));
+		const minute = Number(form.get('minute'));
+		const db = await getDB();
+		const rows = await db`
+			SELECT permissions FROM user_guilds
+			WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1
+		`;
+		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		if (!/^\d{1,3}(?:\.\d{1,2})?$/.test(percentage))
+			return fail(400, { message: '소각 비율은 0.01%~100%로 입력해 주세요.' });
+		const [whole, fraction = ''] = percentage.split('.');
+		const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+		if (basisPoints < 1 || basisPoints > 10_000)
+			return fail(400, { message: '소각 비율은 0.01%~100%로 입력해 주세요.' });
+		if (!Number.isInteger(day) || day < 1 || day > 28)
+			return fail(400, { message: '실행일은 매월 1일~28일 중에서 선택해 주세요.' });
+		if (
+			!Number.isInteger(hour) ||
+			hour < 0 ||
+			hour > 23 ||
+			!Number.isInteger(minute) ||
+			minute < 0 ||
+			minute > 59
+		)
+			return fail(400, { message: '올바른 실행 시간을 입력해 주세요.' });
+		await setMonthlyBurnSettings(guildId, { enabled, basisPoints, day, hour, minute });
+		return {
+			success: true,
+			message: enabled
+				? `월간 소각을 매월 ${day}일 ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}에 ${percentage}%로 설정했습니다.`
+				: '월간 소각을 비활성화했습니다.'
 		};
 	},
 	visibility: async ({ cookies, request }) => {

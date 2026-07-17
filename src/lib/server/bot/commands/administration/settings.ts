@@ -1,4 +1,8 @@
-import { setCurrencyUnit, setVoiceActivitySettings } from '$lib/server/db/guild-settings';
+import {
+	setCurrencyUnit,
+	setMonthlyBurnSettings,
+	setVoiceActivitySettings
+} from '$lib/server/db/guild-settings';
 import { getLanguage } from '$lib/server/bot/i18n';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { moneyToCents, parseMoney } from '$lib/server/economy/money';
@@ -27,6 +31,13 @@ const invalidUnitMessages = {
 
 function isZeroMoney(value: string) {
 	return /^0(?:\.0{1,2})?$/.test(value);
+}
+
+function parsePercentage(value: string): number | null {
+	if (!/^\d{1,3}(?:\.\d{1,2})?$/.test(value)) return null;
+	const [whole, fraction = ''] = value.split('.');
+	const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+	return basisPoints >= 1 && basisPoints <= 10_000 ? basisPoints : null;
 }
 
 const data = new SlashCommandBuilder()
@@ -102,6 +113,77 @@ const data = new SlashCommandBuilder()
 					})
 					.setRequired(true)
 			)
+	)
+	.addSubcommand((subcommand) =>
+		subcommand
+			.setName('monthly-burn')
+			.setNameLocalizations({ [Locale.Korean]: '월간소각', [Locale.Japanese]: '月次バーン' })
+			.setDescription('Configure the monthly percentage burn for all balances.')
+			.setDescriptionLocalizations({
+				[Locale.Korean]: '모든 보유금의 월간 비율 소각을 설정합니다.',
+				[Locale.Japanese]: '全残高の月次割合バーンを設定します。'
+			})
+			.addBooleanOption((option) =>
+				option
+					.setName('enabled')
+					.setNameLocalizations({ [Locale.Korean]: '활성화', [Locale.Japanese]: '有効' })
+					.setDescription('Whether the monthly burn is enabled.')
+					.setDescriptionLocalizations({
+						[Locale.Korean]: '월간 소각 활성화 여부입니다.',
+						[Locale.Japanese]: '月次バーンを有効にするかどうかです。'
+					})
+					.setRequired(true)
+			)
+			.addStringOption((option) =>
+				option
+					.setName('percentage')
+					.setNameLocalizations({ [Locale.Korean]: '비율', [Locale.Japanese]: '割合' })
+					.setDescription('Percentage from 0.01 to 100, such as 10.')
+					.setDescriptionLocalizations({
+						[Locale.Korean]: '0.01~100 사이의 소각 비율입니다. 예: 10',
+						[Locale.Japanese]: '0.01～100のバーン割合です。例: 10'
+					})
+					.setRequired(true)
+			)
+			.addIntegerOption((option) =>
+				option
+					.setName('day')
+					.setNameLocalizations({ [Locale.Korean]: '실행일', [Locale.Japanese]: '実行日' })
+					.setDescription('Day of month in Korean time (1-28).')
+					.setDescriptionLocalizations({
+						[Locale.Korean]: '한국 시간 기준 실행일입니다 (1~28).',
+						[Locale.Japanese]: '韓国時間基準の実行日です（1～28）。'
+					})
+					.setMinValue(1)
+					.setMaxValue(28)
+					.setRequired(true)
+			)
+			.addIntegerOption((option) =>
+				option
+					.setName('hour')
+					.setNameLocalizations({ [Locale.Korean]: '시', [Locale.Japanese]: '時' })
+					.setDescription('Hour in Korean time (0-23).')
+					.setDescriptionLocalizations({
+						[Locale.Korean]: '한국 시간 기준 시각입니다 (0~23).',
+						[Locale.Japanese]: '韓国時間基準の時です（0～23）。'
+					})
+					.setMinValue(0)
+					.setMaxValue(23)
+					.setRequired(true)
+			)
+			.addIntegerOption((option) =>
+				option
+					.setName('minute')
+					.setNameLocalizations({ [Locale.Korean]: '분', [Locale.Japanese]: '分' })
+					.setDescription('Minute (0-59).')
+					.setDescriptionLocalizations({
+						[Locale.Korean]: '실행 분입니다 (0~59).',
+						[Locale.Japanese]: '実行する分です（0～59）。'
+					})
+					.setMinValue(0)
+					.setMaxValue(59)
+					.setRequired(true)
+			)
 	);
 
 async function execute(interaction: ChatInputCommandInteraction) {
@@ -109,6 +191,48 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
 	const language = getLanguage(interaction.locale);
 	const subcommand = interaction.options.getSubcommand();
+	if (subcommand === 'monthly-burn') {
+		const enabled = interaction.options.getBoolean('enabled', true);
+		const percentage = interaction.options.getString('percentage', true).trim();
+		const basisPoints = parsePercentage(percentage);
+		const day = interaction.options.getInteger('day', true);
+		const hour = interaction.options.getInteger('hour', true);
+		const minute = interaction.options.getInteger('minute', true);
+		if (basisPoints === null) {
+			await interaction.reply({
+				content: {
+					en: 'Enter a burn percentage from 0.01 to 100.',
+					ko: '소각 비율을 0.01%~100%로 입력해 주세요.',
+					ja: 'バーン割合を0.01%～100%で入力してください。'
+				}[language],
+				flags: MessageFlags.Ephemeral
+			});
+			return;
+		}
+		await setMonthlyBurnSettings(interaction.guildId, {
+			enabled,
+			basisPoints,
+			day,
+			hour,
+			minute
+		});
+		const time = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+		await interaction.reply({
+			content: enabled
+				? {
+						en: `Monthly burn: **${percentage}%** on day **${day}** at **${time} KST**.`,
+						ko: `월간 소각: 매월 **${day}일 ${time}**에 **${percentage}%** (한국 시간)`,
+						ja: `月次バーン: 毎月**${day}日 ${time}**に**${percentage}%**（韓国時間）`
+					}[language]
+				: {
+						en: 'Monthly balance burn is disabled.',
+						ko: '월간 보유금 소각을 비활성화했습니다.',
+						ja: '月次残高バーンを無効にしました。'
+					}[language],
+			flags: MessageFlags.Ephemeral
+		});
+		return;
+	}
 	if (subcommand === 'voice-reward') {
 		const rawReward = interaction.options.getString('reward', true).trim();
 		const rawDailyCap = interaction.options.getString('daily-cap', true).trim();
