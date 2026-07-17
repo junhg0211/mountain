@@ -23,14 +23,19 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
 	if (!user) redirect(303, '/login');
 	const db = await getDB();
-	const rows = await db`SELECT guild_id,guild_name FROM user_guilds WHERE user_id=${user.id} ORDER BY guild_name`;
-	const guilds = rows.map((r: Record<string, unknown>) => ({ id: String(r.guild_id), name: String(r.guild_name) }));
+	const rows = await db`SELECT ug.guild_id,ug.guild_name,COALESCE(gs.currency_unit,'coin') AS currency_unit
+		FROM user_guilds ug LEFT JOIN guild_settings gs ON gs.guild_id=ug.guild_id
+		WHERE ug.user_id=${user.id} ORDER BY ug.guild_name`;
+	const guilds = rows.map((r: Record<string, unknown>) => ({
+		id: String(r.guild_id), name: String(r.guild_name), currencyUnit: String(r.currency_unit)
+	}));
 	const requested = url.searchParams.get('guild');
 	const selectedGuildId = guilds.some((g: { id: string }) => g.id === requested) ? requested : guilds[0]?.id || null;
 	const [plans, payments] = selectedGuildId
 		? await Promise.all([listRolePlans(selectedGuildId), getUserAutomaticPayments(selectedGuildId, user.id)])
 		: [[], { subscriptions: [], transfers: [], runs: [] }];
-	return { user, guilds, selectedGuildId, plans, ...payments };
+	const currencyUnit = guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.currencyUnit || 'coin';
+	return { user, guilds, selectedGuildId, currencyUnit, plans, ...payments };
 };
 
 export const actions: Actions = {

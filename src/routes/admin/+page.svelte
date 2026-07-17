@@ -69,6 +69,10 @@
 			second: '2-digit'
 		}).format(new Date(value));
 	}
+	function roleColor(roleId: string) {
+		const color = data.roles.find((role: { id: string }) => role.id === roleId)?.color || 0x7d8799;
+		return `#${color.toString(16).padStart(6, '0')}`;
+	}
 </script>
 
 <svelte:head><title>Mountain Admin</title></svelte:head>
@@ -98,14 +102,27 @@
 				>
 			</div>
 			<div class="role-plans">
-				<h3>색상 역할 구독</h3>
-				<p>기존 Discord 역할을 월 구독 상품으로 등록합니다. 가입 즉시 결제되며 이후 매월 1일 12:00(KST)에 전액 결제됩니다.</p>
-				<form method="POST" action={`?/rolePlan&guild=${selectedGuild.id}`}>
+				<div class="role-plan-heading">
+					<div><span>ROLE SUBSCRIPTIONS</span><h3>색상 역할 구독</h3></div>
+					<small>매월 1일 12:00 KST 갱신</small>
+				</div>
+				<p class="role-plan-description">서버에 이미 만들어진 역할을 구독 상품으로 등록합니다. 사용자는 가입 즉시 한 달 요금 전액을 결제합니다.</p>
+				<form class="role-plan-form" method="POST" action={`?/rolePlan&guild=${selectedGuild.id}`}>
 					<input type="hidden" name="guildId" value={selectedGuild.id}>
 					<label>역할<select name="roleId" required><option value="">선택</option>{#each data.roles as role}<option value={role.id}>{role.name}</option>{/each}</select></label>
-					<label>월 요금<input name="amount" inputmode="decimal" placeholder="100.00" required></label><button>상품 저장</button>
+					<label>월 요금 ({selectedGuild.currencyUnit})<input name="amount" inputmode="decimal" placeholder="100.00" required></label><button>상품 저장</button>
 				</form>
-				{#each data.rolePlans as plan}<div class="plan-row"><span>{plan.name} · {formatMoneyDisplay(plan.monthlyPrice)} · {plan.active ? '활성' : '비활성'}</span>{#if plan.active}<form method="POST" action={`?/disableRolePlan&guild=${selectedGuild.id}`}><input type="hidden" name="guildId" value={selectedGuild.id}><input type="hidden" name="planId" value={plan.id}><button>비활성화</button></form>{/if}</div>{/each}
+				<div class="plan-list">
+					{#each data.rolePlans as plan}
+						<article class:inactive={!plan.active} class="plan-row">
+							<i style={`--role-color:${roleColor(plan.roleId)}`}></i>
+							<div class="plan-info"><strong>{plan.name}</strong><span>Discord 역할 구독 상품</span></div>
+							<div class="plan-price"><strong>{formatMoneyDisplay(plan.monthlyPrice)} {selectedGuild.currencyUnit}</strong><span>매월</span></div>
+							<span class:active={plan.active} class="status">{plan.active ? '활성' : '비활성'}</span>
+							{#if plan.active}<form method="POST" action={`?/disableRolePlan&guild=${selectedGuild.id}`}><input type="hidden" name="guildId" value={selectedGuild.id}><input type="hidden" name="planId" value={plan.id}><button class="plan-disable">비활성화</button></form>{/if}
+						</article>
+					{:else}<div class="plan-empty">아직 등록된 역할 구독 상품이 없습니다.</div>{/each}
+				</div>
 			</div>
 			<form method="POST" action={`?/settings&guild=${selectedGuild.id}`}>
 				<input type="hidden" name="guildId" value={selectedGuild.id} /><label
@@ -421,6 +438,66 @@
 		font-size: 34px;
 		margin-top: 6px;
 	}
+	.role-plans {
+		margin: 28px 0 34px;
+		padding: 24px;
+		background: #0c0f14;
+		border: 1px solid #292e39;
+		border-radius: 14px;
+	}
+	.role-plan-heading {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 18px;
+	}
+	.role-plan-heading span {
+		color: #7e8797;
+		font-size: 10px;
+		font-weight: 800;
+		letter-spacing: .15em;
+	}
+	.role-plan-heading h3 { margin: 6px 0 0; font-size: 21px; }
+	.role-plan-heading small,
+	.role-plan-description { color: #747d8d; font-size: 12px; }
+	.role-plan-description { margin: 10px 0 0; }
+	.card .role-plan-form {
+		max-width: none;
+		grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+		align-items: end;
+		margin-top: 20px;
+	}
+	.role-plan-form button { min-width: 120px; }
+	.plan-list { display: grid; gap: 8px; margin-top: 22px; }
+	.plan-row {
+		display: grid;
+		grid-template-columns: 12px minmax(0, 1fr) auto auto auto;
+		align-items: center;
+		gap: 14px;
+		min-height: 72px;
+		padding: 13px 15px;
+		background: #141820;
+		border: 1px solid #292f3a;
+		border-radius: 11px;
+	}
+	.plan-row.inactive { opacity: .6; }
+	.plan-row > i {
+		width: 10px;
+		height: 38px;
+		border-radius: 999px;
+		background: var(--role-color);
+		box-shadow: 0 0 18px color-mix(in srgb, var(--role-color) 50%, transparent);
+	}
+	.plan-info,
+	.plan-price { display: grid; gap: 4px; }
+	.plan-info span,
+	.plan-price span { color: #747d8d; font-size: 11px; }
+	.plan-price { text-align: right; font-variant-numeric: tabular-nums; }
+	.status { padding: 5px 8px; border-radius: 999px; background: #282d36; color: #929aa8; font-size: 10px; font-weight: 800; }
+	.status.active { color: #75dbb0; background: #153c32; }
+	.card .plan-row form { display: block; max-width: none; margin: 0; }
+	.plan-disable { min-height: 36px; padding: 0 11px; color: #ef9eac; background: #3c1d25; }
+	.plan-empty { padding: 25px; border: 1px dashed #303744; border-radius: 10px; color: #747d8d; text-align: center; }
 	.issuance {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
@@ -656,6 +733,11 @@
 		.settings-grid {
 			grid-template-columns: 1fr;
 		}
+		.card .role-plan-form { grid-template-columns: 1fr; }
+		.plan-row { grid-template-columns: 10px minmax(0, 1fr) auto; }
+		.plan-price { grid-column: 2; text-align: left; }
+		.status { grid-column: 3; grid-row: 1; }
+		.plan-row form { grid-column: 2 / -1; }
 	}
 	.notifications h3 {
 		margin: 0;
