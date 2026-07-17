@@ -1,6 +1,65 @@
 <script lang="ts">
 	import { formatMoneyDisplay } from '$lib/economy/money-display';
+	import { onMount } from 'svelte';
 	let { data, form } = $props();
+	let livePools = $state<typeof data.pools>();
+	let pools = $derived(livePools ?? data.pools);
+	let socket = $state<WebSocket | null>(null);
+	let connected = $state(false);
+	let createPending = $state(false);
+	let realtimeMessage = $state('');
+
+	function createPool(event: SubmitEvent) {
+		event.preventDefault();
+		if (!socket || socket.readyState !== WebSocket.OPEN) {
+			realtimeMessage = '실시간 서버에 연결된 뒤 다시 시도해 주세요.';
+			return;
+		}
+		const formData = new FormData(event.currentTarget as HTMLFormElement);
+		createPending = true;
+		realtimeMessage = '';
+		socket.send(JSON.stringify({ type: 'create-pool', requestId: crypto.randomUUID(), title: formData.get('title') }));
+	}
+
+	onMount(() => {
+		if (!data.selectedGuildId) return;
+		let stopped = false;
+		let retry: ReturnType<typeof setTimeout>;
+		async function refreshPools() {
+			const response = await fetch(`/api/guilds/${data.selectedGuildId}/bets`);
+			if (response.ok) livePools = (await response.json()).pools;
+		}
+		async function connect() {
+			const response = await fetch(`/api/guilds/${data.selectedGuildId}/realtime-ticket`, { method: 'POST' });
+			if (!response.ok || stopped) return;
+			const { ticket } = await response.json();
+			const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+			socket = new WebSocket(`${protocol}//${location.host}/ws/betting?ticket=${encodeURIComponent(ticket)}`);
+			socket.onopen = () => (connected = true);
+			socket.onmessage = (event) => {
+				const message = JSON.parse(event.data);
+				if (message.type === 'create-result') {
+					createPending = false;
+					if (!message.ok) { realtimeMessage = message.error; return; }
+					location.href = message.redirect;
+					return;
+				}
+				if (message.type === 'betting-update') void refreshPools();
+			};
+			socket.onclose = () => {
+				connected = false;
+				createPending = false;
+				if (!stopped) retry = setTimeout(connect, 1500);
+			};
+		}
+		void connect();
+		return () => {
+			stopped = true;
+			clearTimeout(retry);
+			socket?.close();
+			socket = null;
+		};
+	});
 </script>
 
 <svelte:head><title>베팅 대시보드 · Mountain</title></svelte:head>
@@ -26,15 +85,16 @@
 				</select>
 				<button>전환</button>
 			</form>
-			<form method="POST" action="?/create" class="create">
+			<form class="create" onsubmit={createPool}>
 				<input type="hidden" name="guildId" value={data.selectedGuildId || ''} />
 				<input name="title" maxlength="80" required placeholder="새 베팅 판 제목" />
-				<button>판 만들기</button>
+				<button disabled={!connected || createPending}>판 만들기</button>
 			</form>
 		</section>
 		{#if form?.message}<p class="notice">{form.message}</p>{/if}
+		{#if realtimeMessage}<p class="notice">{realtimeMessage}</p>{/if}
 		<section class="grid">
-			{#each data.pools as pool}
+			{#each pools as pool}
 				<a
 					class:closed={pool.status !== 'open'}
 					href={`/bets/${pool.id}?guild=${data.selectedGuildId}`}

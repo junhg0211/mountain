@@ -14,6 +14,7 @@
 	let connected = $state(false);
 	let socket = $state<WebSocket | null>(null);
 	let betPending = $state(false);
+	let dashboardPending = $state(false);
 	let betMessage = $state('');
 	let ignoreNextUpdate = false;
 	let pulse = $state(0);
@@ -55,6 +56,20 @@
 		betMessage = '';
 		ignoreNextUpdate = true;
 		socket.send(JSON.stringify({ type: 'place-bet', requestId: crypto.randomUUID(), poolId: pool.id, amount, optionKey: selectedTeam }));
+	}
+
+	function runDashboardAction(event: SubmitEvent, action: string) {
+		event.preventDefault();
+		if (!socket || socket.readyState !== WebSocket.OPEN) {
+			betMessage = '실시간 서버에 연결된 뒤 다시 시도해 주세요.';
+			return;
+		}
+		const payload = Object.fromEntries(new FormData(event.currentTarget as HTMLFormElement));
+		delete payload.guildId;
+		dashboardPending = true;
+		betMessage = '';
+		ignoreNextUpdate = true;
+		socket.send(JSON.stringify({ type: 'dashboard-action', requestId: crypto.randomUUID(), poolId: pool.id, action, payload }));
 	}
 
 	function cents(value: string) {
@@ -120,6 +135,18 @@
 					pulse += 1;
 					return;
 				}
+				if (message.type === 'action-result') {
+					dashboardPending = false;
+					if (!message.ok) { betMessage = message.error; ignoreNextUpdate = false; return; }
+					if (message.redirect) { location.href = message.redirect; return; }
+					liveBalance = message.balance;
+					livePool = message.pool;
+					liveEvents = message.events;
+					liveStats = message.stats;
+					betMessage = message.message || '작업이 완료됐습니다.';
+					pulse += 1;
+					return;
+				}
 				if (message.type === 'betting-update' && (!message.poolId || message.poolId === pool.id)) {
 					if (ignoreNextUpdate) ignoreNextUpdate = false;
 					else void refresh();
@@ -127,6 +154,9 @@
 			};
 			socket.onclose = () => {
 				connected = false;
+				betPending = false;
+				dashboardPending = false;
+				ignoreNextUpdate = false;
 				if (!stopped) retry = setTimeout(connect, 1500);
 			};
 		}
@@ -219,58 +249,58 @@
 			</div>
 			{#if data.canManage && pool.status === 'open'}
 				<div class="management">
-					<form method="POST" action="?/settle">
+					<form onsubmit={(event) => runDashboardAction(event, 'settle')}>
 						<input type="hidden" name="guildId" value={data.guildId} />
 						{#if pool.bettingMode === 'team'}
-							<select name="winningOption" required disabled={!pool.participants.length}
+							<select name="winningOption" required disabled={!pool.participants.length || dashboardPending}
 								><option value="">승리 팀 선택</option><option value="A">A팀</option><option
 									value="B">B팀</option
 								></select
 							>
-							<button disabled={!pool.participants.length}>비율대로 정산</button>
+							<button disabled={!pool.participants.length || !connected || dashboardPending}>비율대로 정산</button>
 						{:else}
-							<select name="winnerId" required disabled={!pool.participants.length}
+							<select name="winnerId" required disabled={!pool.participants.length || dashboardPending}
 								><option value="">승자 선택</option>{#each pool.participants as participant}<option
 										value={participant.userId}>{participant.username}</option
 									>{/each}</select
 							>
-							<button disabled={!pool.participants.length}>승자에게 지급</button>
+							<button disabled={!pool.participants.length || !connected || dashboardPending}>승자에게 지급</button>
 						{/if}
 					</form>
-					<form method="POST" action="?/refund">
+					<form onsubmit={(event) => runDashboardAction(event, 'refund')}>
 						<input type="hidden" name="guildId" value={data.guildId} />
-						<button class="refund">전체 환불</button>
+						<button class="refund" disabled={!connected || dashboardPending}>전체 환불</button>
 					</form>
 				</div>
 			{/if}
 			{#if data.isOwner && pool.status === 'open'}
 				<div class="house-management">
 					<div class="house-heading"><div><p>TABLE BANK</p><h3>판 자금과 개별 처리</h3></div><strong>{formatMoneyDisplay(pool.houseBalance)} {data.currencyUnit}</strong></div>
-					<form class="fund-form" method="POST" action="?/fund"><input type="hidden" name="guildId" value={data.guildId}><label>판 자금 충전<input name="amount" inputmode="decimal" placeholder="0.01" required></label><button>충전</button></form>
+					<form class="fund-form" onsubmit={(event) => runDashboardAction(event, 'fund')}><input type="hidden" name="guildId" value={data.guildId}><label>판 자금 충전<input name="amount" inputmode="decimal" placeholder="0.01" required></label><button disabled={!connected || dashboardPending}>충전</button></form>
 					<p class="house-guide">2배 지급 시 참가자의 베팅액을 포함한 2배를 돌려줍니다. 판 보유금이 모자라면 부족분만 판 주인의 소지금에서 자동 충전됩니다.</p>
 					{#each pool.participants.filter((participant) => Number(participant.amount) > 0) as participant}
-						<article class="participant-action"><div><strong>{participant.username}</strong><span>{formatMoneyDisplay(participant.amount)} {data.currencyUnit} 베팅</span></div><form method="POST" action="?/refundParticipant"><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="single-refund">개별 환불</button></form><form method="POST" action="?/doublePayout"><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="double-payout">2배 지급</button></form></article>
+						<article class="participant-action"><div><strong>{participant.username}</strong><span>{formatMoneyDisplay(participant.amount)} {data.currencyUnit} 베팅</span></div><form onsubmit={(event) => runDashboardAction(event, 'refund-participant')}><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="single-refund" disabled={!connected || dashboardPending}>개별 환불</button></form><form onsubmit={(event) => runDashboardAction(event, 'double-payout')}><input type="hidden" name="guildId" value={data.guildId}><input type="hidden" name="userId" value={participant.userId}><button class="double-payout" disabled={!connected || dashboardPending}>2배 지급</button></form></article>
 					{:else}<p class="no-current-bets">현재 처리할 베팅이 없습니다.</p>{/each}
 				</div>
 				<div class="weighted-management">
 					<div class="weighted-heading"><div><p>WEIGHTED SETTLEMENT</p><h3>평균 기준 가중치 정산</h3></div><span>평균 = 0점</span></div>
 					<p>입력한 가중치의 평균을 자동으로 0점으로 잡습니다. 평균보다 낮으면 지급하고 높으면 수령하며, 현재 베팅액은 먼저 전액 환불됩니다.</p>
-					<form method="POST" action="?/weightedSettlement">
+					<form onsubmit={(event) => runDashboardAction(event, 'weighted-settlement')}>
 						<input type="hidden" name="guildId" value={data.guildId}>
 						<label class="weighted-unit">가중치 1당 금액 ({data.currencyUnit})<input name="unitAmount" inputmode="decimal" placeholder="100.00" required></label>
 						<div class="weight-list">{#each pool.participants as participant}<label><span>{participant.username}</span><input name={`weight_${participant.userId}`} type="number" min="-10000" max="10000" step="1" value="0" required></label>{/each}</div>
-						<button disabled={pool.participants.length < 2}>가중치로 회차 정산</button>
+						<button disabled={pool.participants.length < 2 || !connected || dashboardPending}>가중치로 회차 정산</button>
 					</form>
 				</div>
 			{/if}
 			{#if data.canManage && (pool.status === 'settled' || pool.status === 'refunded')}
 				<div class="management reuse-management">
-					<form method="POST" action="?/reopen"><input type="hidden" name="guildId" value={data.guildId}><button class="reopen">같은 멤버로 새 회차 시작</button></form>
-					{#if data.isOwner}<form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>완전히 종료</button></form>{/if}
+					<form onsubmit={(event) => runDashboardAction(event, 'reopen')}><input type="hidden" name="guildId" value={data.guildId}><button class="reopen" disabled={!connected || dashboardPending}>같은 멤버로 새 회차 시작</button></form>
+					{#if data.isOwner}<form bind:this={archiveForm} onsubmit={(event) => runDashboardAction(event, 'archive')}><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" disabled={!connected || dashboardPending} onclick={() => (archiveConfirmationOpen = true)}>완전히 종료</button></form>{/if}
 				</div>
 			{/if}
 			{#if data.isOwner && pool.status === 'open'}
-				<div class="management archive-open"><form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>환불 후 완전히 종료</button></form></div>
+				<div class="management archive-open"><form bind:this={archiveForm} onsubmit={(event) => runDashboardAction(event, 'archive')}><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" disabled={!connected || dashboardPending} onclick={() => (archiveConfirmationOpen = true)}>환불 후 완전히 종료</button></form></div>
 			{/if}
 		</section>
 	</div>

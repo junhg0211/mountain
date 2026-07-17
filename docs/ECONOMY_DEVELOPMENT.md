@@ -124,8 +124,14 @@ single-use ticket after session and guild membership checks, then connect to `/w
 ticket binds both `guild_id` and `user_id`; every incoming bet message must re-check stored guild
 access and current Discord membership. Quick-bet buttons send `place-bet` over that socket and the
 server responds with `bet-result` containing the committed balance, pool, events, and user stats so
-the initiating client does not issue a POST or reload. Other clients receive an invalidation event
-and refresh through the authorized HTTP API. Publish only after the money transaction commits.
+the initiating client does not issue a POST or reload. Pool creation uses `create-pool`, and every
+state-changing detail action (settlement, full or individual refund, funding, double payout,
+weighted settlement, reopening, and archive) uses `dashboard-action`. The server must re-check
+membership and the required owner/manage-guild permission for every message, execute the existing
+atomic database service, and respond with `create-result` or `action-result`. Other clients receive
+an invalidation event and refresh through the authorized HTTP API. Publish and send best-effort
+Discord notifications only after the money transaction commits, even if the initiating socket has
+already disconnected.
 Production must start with `bun run start`/`server.ts`, not `build/index.js` directly, so WebSocket
 upgrades are handled and the Discord bot starts immediately without waiting for an HTTP request.
 
