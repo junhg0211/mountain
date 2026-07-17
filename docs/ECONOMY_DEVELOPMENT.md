@@ -138,6 +138,11 @@ dashboard may show the selected guild's latest server-wide ledger rows only afte
 manage-guild permission on the server. Every query must include the selected `guild_id`; never rely
 on a hidden control or client-side route guard for access isolation.
 
+Personal history displays the user's balance immediately after each listed transaction. Derive it
+exactly with integer cents by starting from the current guild balance and walking ledger rows from
+newest to oldest, reversing credits and debits after recording each row's displayed balance. This
+keeps legacy rows usable without storing mutable balance snapshots.
+
 ## Database schema changes
 
 For every schema change:

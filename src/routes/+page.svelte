@@ -391,6 +391,10 @@
 										<time datetime={transaction.createdAt}
 											>{formatTransactionTime(transaction.createdAt)}</time
 										>
+										<small class="balance-after"
+											>거래 후 잔고 {formatMoneyDisplay(transaction.balanceAfter)}
+											{selectedGuild.currencyUnit}</small
+										>
 									</div>
 									<b class:credit={transaction.direction === 'credit'}
 										>{transaction.direction === 'credit' ? '+' : '-'}{formatMoneyDisplay(
@@ -963,6 +967,11 @@
 	.transactions time {
 		color: #747d8d;
 		font-size: 11px;
+	}
+	.transactions .balance-after {
+		color: #9098a8;
+		font-size: 11px;
+		font-variant-numeric: tabular-nums;
 	}
 	.transactions b {
 		color: #ff9fae;

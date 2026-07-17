@@ -66,7 +66,11 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 		SELECT transactions.id, transactions.sender_id, transactions.recipient_id,
 			transactions.amount, transactions.transaction_type, transactions.created_at,
 			transactions.betting_pool_id, betting_pools.title AS betting_pool_title,
-			sender.username AS sender_name, recipient.username AS recipient_name
+			sender.username AS sender_name, recipient.username AS recipient_name,
+			COALESCE((
+				SELECT balance FROM accounts
+				WHERE guild_id=${guildId} AND user_id=${userId} LIMIT 1
+			), 0.00) AS current_balance
 		FROM transactions
 		LEFT JOIN users sender ON sender.id = transactions.sender_id
 		LEFT JOIN users recipient ON recipient.id = transactions.recipient_id
@@ -77,6 +81,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 		LIMIT ${limit}
 	`;
 
+	let runningBalance = moneyToCents(formatBalance(rows[0]?.current_balance || 0));
 	return rows.map((row: Record<string, unknown>) => {
 		const type = String(row.transaction_type) as TransactionType;
 		const outgoing = String(row.sender_id || '') === userId;
@@ -87,6 +92,9 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'attendance' ||
 			type === 'voice_activity' ||
 			(!outgoing && type === 'transfer');
+		const balanceAfter = centsToMoney(runningBalance);
+		const amount = moneyToCents(formatBalance(row.amount));
+		runningBalance = credit ? runningBalance - amount : runningBalance + amount;
 		return {
 			id: String(row.id),
 			type,
@@ -100,6 +108,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 						)
 					: null,
 			amount: formatBalance(row.amount),
+			balanceAfter,
 			bettingPool: row.betting_pool_id
 				? { id: String(row.betting_pool_id), title: String(row.betting_pool_title || '베팅 판') }
 				: null,
