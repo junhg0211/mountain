@@ -229,7 +229,7 @@
 					<strong>입장하기 →</strong>
 				</a>
 
-				<section class="card action-card">
+				<section class="card action-card" class:full-width={!selectedGuild.rankingEnabled}>
 					<div class="card-title">
 						<span>01</span>
 						<div>
@@ -725,6 +725,9 @@
 	.action-card form {
 		display: grid;
 		gap: 14px;
+	}
+	.action-card.full-width {
+		grid-column: 1 / -1;
 	}
 	.action-card button {
 		margin-top: 3px;
