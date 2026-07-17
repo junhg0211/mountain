@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { formatMoneyDisplay } from '$lib/economy/money-display';
 	import { onMount } from 'svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	let { data, form } = $props();
 	let livePool = $state<typeof data.pool>();
 	let pool = $derived(livePool ?? data.pool);
@@ -11,6 +12,8 @@
 	let connected = $state(false);
 	let pulse = $state(0);
 	let selectedTeam = $state<'A' | 'B'>('A');
+	let archiveConfirmationOpen = $state(false);
+	let archiveForm = $state<HTMLFormElement>();
 	let lockedTeam = $derived(
 		pool.participants.find((participant) => participant.userId === data.user.id)?.optionKey
 	);
@@ -59,6 +62,8 @@
 			return `${event.username}님이 ${event.optionKey}팀에 ${formatMoneyDisplay(event.amount)} ${data.currencyUnit}을 걸었습니다.`;
 		if (event.type === 'settled') return `${event.optionKey}팀 승리로 정산됐습니다.`;
 		if (event.type === 'refunded') return '모든 베팅이 환불됐습니다.';
+		if (event.type === 'reopened') return '참가자 명단을 유지한 채 새 회차가 시작됐습니다.';
+		if (event.type === 'archived') return '베팅 판이 완전히 종료됐습니다.';
 		return '베팅 상태가 변경됐습니다.';
 	}
 
@@ -207,6 +212,15 @@
 					</form>
 				</div>
 			{/if}
+			{#if data.canManage && (pool.status === 'settled' || pool.status === 'refunded')}
+				<div class="management reuse-management">
+					<form method="POST" action="?/reopen"><input type="hidden" name="guildId" value={data.guildId}><button class="reopen">같은 멤버로 새 회차 시작</button></form>
+					<form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>완전히 종료</button></form>
+				</div>
+			{/if}
+			{#if data.canManage && pool.status === 'open'}
+				<div class="management archive-open"><form bind:this={archiveForm} method="POST" action="?/archive"><input type="hidden" name="guildId" value={data.guildId}><button type="button" class="archive" onclick={() => (archiveConfirmationOpen = true)}>환불 후 완전히 종료</button></form></div>
+			{/if}
 		</section>
 	</div>
 	<div class="insights">
@@ -242,6 +256,8 @@
 		</section>
 	</div>
 </main>
+
+<ConfirmDialog open={archiveConfirmationOpen} title="베팅 판을 완전히 종료할까요?" description="완전히 종료된 판은 베팅 목록에서 사라지며 다시 사용할 수 없습니다." confirmLabel="완전히 종료" onconfirm={() => { archiveConfirmationOpen = false; archiveForm?.requestSubmit(); }} oncancel={() => (archiveConfirmationOpen = false)} />
 
 <style>
 	:global(*) {
@@ -512,6 +528,10 @@
 		background: #352027;
 		color: #ff9aa9;
 	}
+	.reuse-management { grid-template-columns: 1fr auto; }
+	.reuse-management form:first-child { min-width: 0; }
+	.management .reopen { width: 100%; background: #285d4b; color: #9ff2cf; }
+	.management .archive { width: 100%; background: #421d25; color: #ff9aaa; }
 	.error {
 		color: #ff8d8d;
 		background: #32191d;

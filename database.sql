@@ -205,6 +205,16 @@ CREATE TABLE IF NOT EXISTS betting_entries (
     CHECK (amount >= 0.01)
 );
 
+CREATE TABLE IF NOT EXISTS betting_pool_members (
+    pool_id BIGINT NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (pool_id, user_id),
+    INDEX betting_pool_members_user_idx (user_id),
+    FOREIGN KEY (pool_id) REFERENCES betting_pools(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS betting_events (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     pool_id BIGINT NOT NULL,

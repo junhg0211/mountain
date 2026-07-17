@@ -7,11 +7,13 @@ import {
 	BettingParticipantError,
 	BettingPermissionError,
 	BettingOptionError,
+	archiveBettingPool,
 	getBettingPoolExtras,
 	getBettingPool,
 	placeBet,
 	placeTeamBet,
 	refundBettingPool,
+	reopenBettingPool,
 	settleBettingPool,
 	settleTeamBettingPool
 } from '$lib/server/db/betting';
@@ -168,6 +170,30 @@ export const actions: Actions = {
 		} catch (error) {
 			return managementError(error);
 		}
+	},
+	reopen: async ({ cookies, params, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const context = await requireContext(cookies, guildId);
+		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
+		try {
+			await reopenBettingPool(guildId, params.poolId, context.user.id, canManageGuild(context.permissions));
+			publishBettingUpdate(guildId, params.poolId);
+			await sendTransactionNotification(guildId, `🔄 **베팅 판 새 회차 시작**\n#${params.poolId}\n기존 참가자 명단을 유지하고 베팅 금액을 초기화했습니다.\n처리자: <@${context.user.id}>`);
+			redirect(303, `/bets/${params.poolId}?guild=${encodeURIComponent(guildId)}`);
+		} catch (error) { return managementError(error); }
+	},
+	archive: async ({ cookies, params, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const context = await requireContext(cookies, guildId);
+		if (!context) return fail(401, { message: '로그인이 필요합니다.' });
+		try {
+			const refunded = await archiveBettingPool(guildId, params.poolId, context.user.id, canManageGuild(context.permissions));
+			publishBettingUpdate(guildId, params.poolId);
+			await sendTransactionNotification(guildId, `⛔ **베팅 판 완전 종료**\n#${params.poolId}${refunded ? `\n진행 중이던 ${refunded}명의 베팅액을 환불했습니다.` : ''}\n처리자: <@${context.user.id}>`);
+			redirect(303, `/bets?guild=${encodeURIComponent(guildId)}`);
+		} catch (error) { return managementError(error); }
 	}
 };
 

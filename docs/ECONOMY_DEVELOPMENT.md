@@ -75,6 +75,18 @@ Insufficient renewal balance cancels the subscription and removes the role. A mi
 disabled role product cancels its active subscriptions. Discord role changes happen outside the
 database transaction and failures must never leave an unrecorded balance mutation.
 
+## Reusable betting pools
+
+Betting settlement and permanent closure are separate operations. After a pool is settled or
+refunded, reopening copies all entrants into `betting_pool_members`, deletes only the previous
+round's `betting_entries`, and resets the pool to `open`. Roster members remain visible with a zero
+current stake and can choose a team again. Never carry a prior round's stake into a new round.
+
+Permanent closure uses `status='archived'`, which normal web and Discord list queries omit.
+Archiving an open pool first refunds every current entry and records each `bet_refund` in the same
+database transaction, then archives the pool. Only the owner or a manage-guild administrator may
+reopen or archive it.
+
 Betting rows also carry `betting_pool_id`. Money staked in an open pool is escrow, not burned, so
 total supply is account balances plus stakes in open pools. Settlement and refund must lock the
 pool row first; only an `open` pool can move money. The host may settle or refund, and a user with

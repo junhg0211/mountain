@@ -7,12 +7,14 @@ import {
 	BettingPermissionError,
 	BettingPoolClosedError,
 	BettingPoolNotFoundError,
+	archiveBettingPool,
 	createTeamBettingPool,
 	getBettingPool,
 	getBettingPools,
 	placeBet,
 	placeTeamBet,
 	refundBettingPool,
+	reopenBettingPool,
 	settleBettingPool,
 	settleTeamBettingPool
 } from '$lib/server/db/betting';
@@ -137,7 +139,17 @@ const data = new SlashCommandBuilder()
 				[Locale.Japanese]: '全参加者に賭け金を返金します。'
 			})
 			.addStringOption(poolIdOption)
-	);
+	)
+	.addSubcommand((command) => command.setName('reopen')
+		.setNameLocalizations({ [Locale.Korean]: '다시열기', [Locale.Japanese]: '再開' })
+		.setDescription('Start a new round with the same members.')
+		.setDescriptionLocalizations({ [Locale.Korean]: '같은 멤버로 새 회차를 시작합니다.', [Locale.Japanese]: '同じメンバーで新しいラウンドを開始します。' })
+		.addStringOption(poolIdOption))
+	.addSubcommand((command) => command.setName('archive')
+		.setNameLocalizations({ [Locale.Korean]: '완전종료', [Locale.Japanese]: '完全終了' })
+		.setDescription('Permanently close and hide a betting pool.')
+		.setDescriptionLocalizations({ [Locale.Korean]: '베팅 판을 완전히 종료하고 목록에서 숨깁니다.', [Locale.Japanese]: 'ベットを完全終了して一覧から非表示にします。' })
+		.addStringOption(poolIdOption));
 
 function poolIdOption(option: import('discord.js').SlashCommandStringOption) {
 	return option
@@ -349,6 +361,22 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			return;
 		}
 
+		if (subcommand === 'reopen') {
+			await reopenBettingPool(interaction.guildId, poolId, interaction.user.id, canOverride);
+			publishBettingUpdate(interaction.guildId, poolId);
+			await sendTransactionNotification(interaction.guildId, `🔄 **베팅 판 새 회차 시작**\n#${poolId}\n기존 참가자 명단 유지 · 베팅액 초기화\n처리자: ${interaction.user}`);
+			await interaction.editReply(localize(language, '🔄 Started a new round with the same members.', '🔄 같은 멤버로 새 회차를 시작했습니다.', '🔄 同じメンバーで新しいラウンドを開始しました。'));
+			return;
+		}
+
+		if (subcommand === 'archive') {
+			const refunded = await archiveBettingPool(interaction.guildId, poolId, interaction.user.id, canOverride);
+			publishBettingUpdate(interaction.guildId, poolId);
+			await sendTransactionNotification(interaction.guildId, `⛔ **베팅 판 완전 종료**\n#${poolId}${refunded ? `\n${refunded}명 자동 환불` : ''}\n처리자: ${interaction.user}`);
+			await interaction.editReply(localize(language, '⛔ Permanently closed the betting pool. It is now hidden from lists.', '⛔ 베팅 판을 완전히 종료했습니다. 이제 목록에 표시되지 않습니다.', '⛔ ベットを完全終了しました。一覧には表示されません。'));
+			return;
+		}
+
 		const pool = await getBettingPool(interaction.guildId, poolId);
 		const count = await refundBettingPool(
 			interaction.guildId,
@@ -406,9 +434,9 @@ function bettingError(error: unknown, language: SupportedLanguage) {
 	if (error instanceof BettingPermissionError)
 		return localize(
 			language,
-			'Only the host can settle or refund this pool.',
-			'판 주인만 정산하거나 환불할 수 있습니다.',
-			'主催者のみ精算または返金できます。'
+			'Only the host can manage this pool.',
+			'판 주인만 이 베팅 판을 관리할 수 있습니다.',
+			'主催者のみこのベットを管理できます。'
 		);
 	if (error instanceof BettingParticipantError)
 		return localize(
