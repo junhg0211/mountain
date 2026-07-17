@@ -63,6 +63,10 @@ Read [`AGENTS.md`](./AGENTS.md) before making changes. Detailed economy, transac
 database migration, Discord registration, authorization, verification, and commit rules are in
 [`docs/ECONOMY_DEVELOPMENT.md`](./docs/ECONOMY_DEVELOPMENT.md).
 
+Public legal pages are available at `/terms` and `/privacy`. The shared site footer links to both
+pages and the operator contact address. Keep the disclosed data categories, retention periods,
+hosting location, and third-party integrations synchronized with implementation changes.
+
 The web admin dashboard shows the selected guild's 50 most recent ledger transactions, including
 the operation type, sender, recipient, amount, timestamp, and linked betting pool. This server-wide
 history is available only after an authenticated manage-guild permission check.
