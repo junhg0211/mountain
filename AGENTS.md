@@ -40,9 +40,13 @@ These rules apply to every change in this repository.
 
 - Re-check sessions, guild membership, manage-guild permissions, and Discord membership on the
   server. Client-side hidden fields and disabled buttons are not authorization.
+- Discord Activity authentication must exchange the one-time authorization code on the server.
+  Never trust client-provided Discord identity, persist the Activity access token, or expose the
+  client secret. Activity sessions require Secure, SameSite=None, Partitioned cookies.
 - Keep Discord command names and descriptions localized in English, Korean, and Japanese.
 - When slash commands change, update the command map and re-register the complete command list with
-  Discord. Global command propagation may take time.
+  Discord. Preserve the global Activity Entry Point during bulk overwrite. Global command
+  propagation may take time.
 - Only one Discord bot process may use a token at a time. Preserve graceful `SIGINT`/`SIGTERM`
   shutdown behavior.
 - A transient Discord gateway/login failure must not terminate the web server. Always await the

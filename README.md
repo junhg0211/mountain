@@ -14,6 +14,17 @@ restricted database user.
 
 Set `REGISTER_COMMANDS=true` only when Discord slash commands need to be registered.
 
+## Discord Activity
+
+The same dashboard can run inside Discord as an Activity. In an Activity frame, Mountain uses the
+official Embedded App SDK to request `identify` and `guilds`, exchanges the one-time code on the
+server, authenticates the SDK session, and issues a secure partitioned web session. Normal browser
+OAuth remains available outside Discord.
+
+Complete the Developer Portal URL mapping and Activity toggle described in
+[`docs/DISCORD_ACTIVITY_SETUP.md`](./docs/DISCORD_ACTIVITY_SETUP.md). Command synchronization
+preserves Discord's Activity Entry Point command when bulk-reloading slash commands.
+
 ## Commands
 
 - `/balance [user]` shows a balance. It is localized as `/잔액` and `/残高`.

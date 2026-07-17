@@ -10,7 +10,12 @@ export interface SessionUser {
 	avatarUrl: string | null;
 }
 
-export async function createSession(cookies: Cookies, userId: string, secure: boolean) {
+export async function createSession(
+	cookies: Cookies,
+	userId: string,
+	secure: boolean,
+	activity = false
+) {
 	const db = await getDB();
 	const id = crypto.randomUUID();
 	const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000);
@@ -25,7 +30,8 @@ export async function createSession(cookies: Cookies, userId: string, secure: bo
 		maxAge: SESSION_TTL_SECONDS,
 		httpOnly: true,
 		secure,
-		sameSite: 'lax'
+		sameSite: activity ? 'none' : 'lax',
+		partitioned: activity
 	});
 }
 

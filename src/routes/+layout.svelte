@@ -1,12 +1,15 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import ActivityAuth from '$lib/components/ActivityAuth.svelte';
 
-	let { children } = $props();
+	let { children, data } = $props();
 </script>
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
 </svelte:head>
+
+<ActivityAuth clientId={data.discordClientId} />
 
 {@render children()}
 

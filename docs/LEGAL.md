@@ -19,6 +19,7 @@ The public Korean terms and privacy policy live at `/terms` and `/privacy`.
 Review both pages whenever any of the following changes:
 
 - Discord OAuth scopes, Gateway intents, or collected Discord fields;
+- Discord Activity SDK authentication, URL mappings, or Activity cookie behavior;
 - database tables, transaction types, activity tracking, or retention;
 - cookies, analytics, advertising, payment, or logging tools;
 - hosting region, infrastructure provider, subprocessors, or overseas transfers;

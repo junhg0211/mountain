@@ -3,11 +3,14 @@ import { closeDB } from '$lib/server/db';
 import {
 	Client,
 	Events,
+	ApplicationCommandType,
 	GatewayIntentBits,
 	MessageFlags,
 	REST,
 	Routes,
 	type ChatInputCommandInteraction,
+	type RESTGetAPIApplicationCommandsResult,
+	type RESTPostAPIApplicationCommandsJSONBody,
 	type RESTPostAPIChatInputApplicationCommandsJSONBody
 } from 'discord.js';
 import settings from './commands/administration/settings';
@@ -99,9 +102,31 @@ async function reloadCommands() {
 
 	try {
 		console.log(`Started refreshing ${commands.size} application (/) commands.`);
+		const existing = (await rest.get(
+			Routes.applicationCommands(process.env.CLIENT_ID!)
+		)) as RESTGetAPIApplicationCommandsResult;
+		const entryPoint = existing.find(
+			(command) => command.type === ApplicationCommandType.PrimaryEntryPoint
+		);
+		const body: RESTPostAPIApplicationCommandsJSONBody[] = [...commands.values()].map((command) =>
+			command.data.toJSON()
+		);
+
+		// Bulk overwrite removes every omitted command type. Preserve Discord's automatically-created
+		// Activity entry point while synchronizing Mountain's slash commands.
+		if (entryPoint) {
+			body.push({
+				type: ApplicationCommandType.PrimaryEntryPoint,
+				name: entryPoint.name,
+				name_localizations: entryPoint.name_localizations,
+				handler: entryPoint.handler,
+				integration_types: entryPoint.integration_types,
+				contexts: entryPoint.contexts ?? undefined
+			});
+		}
 
 		const data = (await rest.put(Routes.applicationCommands(process.env.CLIENT_ID!), {
-			body: [...commands.values()].map((command) => command.data.toJSON())
+			body
 		})) as unknown[];
 
 		console.log(`Successfully reloaded ${data.length} application (/) commands.`);
