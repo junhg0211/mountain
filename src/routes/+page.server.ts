@@ -31,6 +31,7 @@ import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
+import { calculateVoiceReward } from '$lib/server/db/voice-activity';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
@@ -46,6 +47,8 @@ interface GuildRow {
 	balance: unknown;
 	currency_unit: unknown;
 	ranking_enabled: unknown;
+	voice_activity_reward: unknown;
+	voice_activity_daily_cap: unknown;
 }
 
 export const load: PageServerLoad = async ({ cookies, url }) => {
@@ -58,24 +61,42 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		SELECT ug.guild_id, ug.guild_name, ug.icon_hash, ug.permissions,
 			COALESCE(a.balance, 0.00) AS balance,
 			COALESCE(gs.currency_unit, 'coin') AS currency_unit,
-			COALESCE(gs.ranking_enabled, TRUE) AS ranking_enabled
+			COALESCE(gs.ranking_enabled, TRUE) AS ranking_enabled,
+			COALESCE(gs.voice_activity_reward, 0.00) AS voice_activity_reward,
+			COALESCE(gs.voice_activity_daily_cap, 0.00) AS voice_activity_daily_cap
 		FROM user_guilds ug
 		LEFT JOIN accounts a ON a.guild_id = ug.guild_id AND a.user_id = ug.user_id
 		LEFT JOIN guild_settings gs ON gs.guild_id = ug.guild_id
 		WHERE ug.user_id = ${user.id}
 		ORDER BY ug.guild_name
 	`;
-	const guilds = guildRows.map((row: GuildRow) => ({
-		id: String(row.guild_id),
-		name: String(row.guild_name),
-		iconUrl: row.icon_hash
-			? `https://cdn.discordapp.com/icons/${row.guild_id}/${row.icon_hash}.png`
-			: null,
-		balance: Number(row.balance).toFixed(2),
-		currencyUnit: String(row.currency_unit),
-		rankingEnabled: Boolean(row.ranking_enabled),
-		canManage: canManageGuild(String(row.permissions))
-	}));
+	const guilds = guildRows.map((row: GuildRow) => {
+		const voiceBaseReward = Number(row.voice_activity_reward).toFixed(2);
+		const voiceDailyCap = Number(row.voice_activity_daily_cap).toFixed(2);
+		return {
+			id: String(row.guild_id),
+			name: String(row.guild_name),
+			iconUrl: row.icon_hash
+				? `https://cdn.discordapp.com/icons/${row.guild_id}/${row.icon_hash}.png`
+				: null,
+			balance: Number(row.balance).toFixed(2),
+			currencyUnit: String(row.currency_unit),
+			rankingEnabled: Boolean(row.ranking_enabled),
+			canManage: canManageGuild(String(row.permissions)),
+			voiceActivity:
+				voiceBaseReward !== '0.00' && voiceDailyCap !== '0.00'
+					? {
+							baseReward: voiceBaseReward,
+							dailyCap: voiceDailyCap,
+							soloReward: calculateVoiceReward(voiceBaseReward, 1),
+							twoPersonReward: calculateVoiceReward(voiceBaseReward, 2),
+							threePersonReward: calculateVoiceReward(voiceBaseReward, 3),
+							fourPersonReward: calculateVoiceReward(voiceBaseReward, 4),
+							groupReward: calculateVoiceReward(voiceBaseReward, 5)
+						}
+					: null
+		};
+	});
 	const requestedGuildId = url.searchParams.get('guild');
 	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requestedGuildId)
 		? requestedGuildId

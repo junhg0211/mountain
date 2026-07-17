@@ -112,6 +112,10 @@ who starts a voice room is rewarded. Message activity never earns currency. Use
 `voice_activity` ledger row in one database transaction. Notifications are intentionally omitted
 for these frequent automatic credits to avoid channel spam.
 
+The ordinary web dashboard may expose configured reward amounts to guild members. Calculate every
+displayed participant tier through the same integer-cent reward function used by the award service,
+and hide the reward card when either the base reward or daily cap is `0.00`.
+
 Use row locks for debit operations. A failed insufficient-balance check must change neither the
 balance nor the ledger. Discord notifications are sent after commit and intentionally swallow
 delivery failures so an external Discord error cannot invalidate completed money movement.

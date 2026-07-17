@@ -174,6 +174,50 @@
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
 
+				{#if selectedGuild.voiceActivity}
+					<section class="card reward-card">
+						<div class="reward-heading">
+							<div>
+								<p class="card-label">AVAILABLE REWARD</p>
+								<h3>음성 활동 보상</h3>
+								<p>청각 차단을 해제하고 음성 채널에 5분간 머무르면 자동으로 지급됩니다.</p>
+							</div>
+							<div class="reward-cap">
+								<span>사용자별 일일 한도</span><strong
+									>{formatMoneyDisplay(selectedGuild.voiceActivity.dailyCap)}</strong
+								><small>{selectedGuild.currencyUnit}</small>
+							</div>
+						</div>
+						<div class="voice-rates">
+							<div class="featured">
+								<span>혼자 시작</span><strong
+									>{formatMoneyDisplay(selectedGuild.voiceActivity.soloReward)}</strong
+								><small>{selectedGuild.currencyUnit} / 5분</small>
+							</div>
+							<div>
+								<span>2명</span><strong
+									>{formatMoneyDisplay(selectedGuild.voiceActivity.twoPersonReward)}</strong
+								><small>{selectedGuild.currencyUnit}</small>
+							</div>
+							<div>
+								<span>3명</span><strong
+									>{formatMoneyDisplay(selectedGuild.voiceActivity.threePersonReward)}</strong
+								><small>{selectedGuild.currencyUnit}</small>
+							</div>
+							<div>
+								<span>4명</span><strong
+									>{formatMoneyDisplay(selectedGuild.voiceActivity.fourPersonReward)}</strong
+								><small>{selectedGuild.currencyUnit}</small>
+							</div>
+							<div>
+								<span>5명 이상</span><strong
+									>{formatMoneyDisplay(selectedGuild.voiceActivity.groupReward)}</strong
+								><small>{selectedGuild.currencyUnit}</small>
+							</div>
+						</div>
+					</section>
+				{/if}
+
 				{#if data.attendance && data.attendance.reward !== '0.00'}
 					<div class="attendance-grid">
 						<section class="card attendance-card">
@@ -619,6 +663,80 @@
 		font-size: 13px;
 		max-width: 240px;
 	}
+	.reward-card {
+		grid-column: 1 / -1;
+		background: linear-gradient(120deg, #17213a, #11141a 62%);
+	}
+	.reward-heading {
+		display: flex;
+		justify-content: space-between;
+		align-items: start;
+		gap: 24px;
+	}
+	.reward-heading h3 {
+		margin: 0;
+		font-size: 22px;
+	}
+	.reward-heading p:not(.card-label) {
+		margin: 7px 0 0;
+		color: #8490a6;
+		font-size: 12px;
+	}
+	.reward-cap {
+		display: grid;
+		grid-template-columns: auto auto;
+		column-gap: 6px;
+		align-items: baseline;
+		text-align: right;
+	}
+	.reward-cap span {
+		grid-column: 1 / -1;
+		color: #8490a6;
+		font-size: 11px;
+	}
+	.reward-cap strong {
+		font-size: 25px;
+	}
+	.reward-cap small {
+		color: #9eadff;
+		font-weight: 800;
+	}
+	.voice-rates {
+		display: grid;
+		grid-template-columns: 1.35fr repeat(4, 1fr);
+		gap: 8px;
+		margin-top: 22px;
+	}
+	.voice-rates > div {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		align-items: baseline;
+		gap: 4px 8px;
+		padding: 13px;
+		border: 1px solid #29334a;
+		border-radius: 10px;
+		background: #0d121d;
+	}
+	.voice-rates span {
+		grid-column: 1 / -1;
+		color: #8490a6;
+		font-size: 11px;
+	}
+	.voice-rates strong {
+		font-size: 18px;
+	}
+	.voice-rates small {
+		color: #8490a6;
+		font-size: 10px;
+	}
+	.voice-rates .featured {
+		border-color: #4b5e9a;
+		background: #18213a;
+	}
+	.voice-rates .featured span,
+	.voice-rates .featured small {
+		color: #aebcff;
+	}
 	.attendance-card {
 		display: flex;
 		flex-direction: column;
@@ -1027,6 +1145,18 @@
 		}
 		.attendance-grid {
 			grid-template-columns: 1fr;
+		}
+		.reward-heading {
+			flex-direction: column;
+		}
+		.reward-cap {
+			text-align: left;
+		}
+		.voice-rates {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.voice-rates .featured {
+			grid-column: 1 / -1;
 		}
 		.balance-card {
 			align-items: start;

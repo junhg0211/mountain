@@ -38,6 +38,10 @@ larger channels 1x. Bots, deafened users, and message activity receive no reward
 can set the base reward and per-user daily cap from Discord or the web admin dashboard; setting
 both to `0.00` disables the feature.
 
+When voice rewards are enabled, the main web dashboard shows the exact five-minute reward for
+solo, two-person, three-person, four-person, and larger channels together with the per-user daily
+cap. Disabled rewards remain hidden.
+
 ## Betting dashboard
 
 `/bets` provides a dedicated betting dashboard with one detail page per pool, fixed quick-bet
