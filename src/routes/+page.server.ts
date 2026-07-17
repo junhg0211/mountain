@@ -1,5 +1,6 @@
 import { deleteSession, getSessionUser } from '$lib/server/auth';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
+import { getClient } from '$lib/server/bot';
 import {
 	getBalanceRanking,
 	getUserTransactions,
@@ -54,7 +55,7 @@ interface GuildRow {
 export const load: PageServerLoad = async ({ cookies, url }) => {
 	const notice = readDashboardNotice(cookies);
 	const user = await getSessionUser(cookies);
-	if (!user) return { user, guilds: [], selectedGuildId: null, notice };
+	if (!user) return { user, guilds: [], selectedGuildId: null, botConnected: false, notice };
 
 	const db = await getDB();
 	const guildRows = await db`
@@ -105,6 +106,10 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const rankingEnabled =
 		selectedGuildId &&
 		guilds.find((guild: { id: string }) => guild.id === selectedGuildId)?.rankingEnabled;
+	const botClient = getClient();
+	const botConnected = Boolean(
+		selectedGuildId && botClient?.isReady() && botClient.guilds.cache.has(selectedGuildId)
+	);
 	const [ranking, transactions, attendance, attendanceLeaderboard] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
@@ -117,6 +122,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		user,
 		guilds,
 		selectedGuildId,
+		botConnected,
 		ranking,
 		transactions,
 		attendance,

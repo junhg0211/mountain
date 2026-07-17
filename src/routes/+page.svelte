@@ -160,7 +160,9 @@
 						<h2>{selectedGuild.name}</h2>
 					</div>
 				</div>
-				<span class="status"><i></i> 봇 연결됨</span>
+				<span class="status" class:connected={data.botConnected}
+					><i></i> {data.botConnected ? '봇 연결됨' : '봇 연결 끊김'}</span
+				>
 			</section>
 
 			<div class="dashboard">
@@ -594,9 +596,9 @@
 	}
 	.status {
 		font-size: 12px;
-		color: #8fd9bc;
-		background: #10291f;
-		border: 1px solid #1c4736;
+		color: #e69aaa;
+		background: #32171e;
+		border: 1px solid #5a2936;
 		padding: 8px 11px;
 		border-radius: 999px;
 	}
@@ -605,8 +607,16 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: #54d49e;
+		background: #e05f7a;
 		margin-right: 5px;
+	}
+	.status.connected {
+		color: #8fd9bc;
+		background: #10291f;
+		border-color: #1c4736;
+	}
+	.status.connected i {
+		background: #54d49e;
 	}
 	.dashboard {
 		display: grid;

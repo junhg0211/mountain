@@ -156,6 +156,10 @@ Discord REST or gateway startup can fail transiently. Await `Client.login()` so 
 handled, destroy the failed client, and retry with capped backoff while leaving the web server
 online. Never start overlapping login attempts or bot clients.
 
+Dashboard connection status must come from the live Discord client. Report a selected guild as
+connected only when the client is ready and its guild cache contains that exact `guild_id`; never
+render a hardcoded connected badge.
+
 ## Authorization checklist
 
 - Ordinary dashboard actions require an authenticated session and membership in the selected
