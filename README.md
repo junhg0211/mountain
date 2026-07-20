@@ -80,6 +80,29 @@ Production must be built with `bun run build` and started with `bun run start`. 
 `server.ts` entry starts the Discord bot immediately, then serves SvelteKit and betting WebSocket
 upgrades on the same port. Bot startup does not wait for the first website request.
 
+## GitHub Actions deployment
+
+`.github/workflows/deploy.yml` restarts production after every push to `main`, and can also be run
+manually from **Actions → Deploy to EC2 → Run workflow**. It connects to EC2 over SSH, sends
+`Ctrl+C` (SIGINT) to the configured tmux pane, waits for the foreground Bun/Node process to exit,
+and types `launch` into the same pane. The `launch` command must already be available in that
+interactive tmux shell and must update, build, and start Mountain with `bun run start`.
+
+Create a GitHub `production` environment and add these environment secrets:
+
+- `DEPLOY_HOST`: EC2 hostname or IP address.
+- `DEPLOY_USER`: SSH user, such as `ubuntu`.
+- `DEPLOY_PORT`: SSH port; leave unset to use `22`.
+- `DEPLOY_TMUX_TARGET`: exact pane target such as `mountain:0.0`.
+- `DEPLOY_SSH_KEY`: private key authorized by the EC2 user's `authorized_keys`.
+- `DEPLOY_KNOWN_HOSTS`: pinned host-key line generated from a trusted machine with
+  `ssh-keyscan -H <host>` (or `ssh-keyscan -p <port> -H <host>`) and verified against the EC2 host
+  fingerprint.
+
+The workflow deliberately fails instead of starting a second bot process if the existing Bun/Node
+process remains active for 20 seconds after SIGINT. Keep `launch` attached to the foreground server
+process so tmux can report its state and subsequent deployments can stop it cleanly.
+
 ## Contributor reference
 
 Read [`AGENTS.md`](./AGENTS.md) before making changes. Detailed economy, transaction ledger,

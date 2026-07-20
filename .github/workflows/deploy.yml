@@ -1,0 +1,85 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: mountain-production
+  cancel-in-progress: false
+
+jobs:
+  restart:
+    name: Restart production tmux pane
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_TMUX_TARGET: ${{ secrets.DEPLOY_TMUX_TARGET }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DEPLOY_HOST:?DEPLOY_HOST is required}"
+          : "${DEPLOY_USER:?DEPLOY_USER is required}"
+          : "${DEPLOY_TMUX_TARGET:?DEPLOY_TMUX_TARGET is required}"
+          : "${DEPLOY_SSH_KEY:?DEPLOY_SSH_KEY is required}"
+          : "${DEPLOY_KNOWN_HOSTS:?DEPLOY_KNOWN_HOSTS is required}"
+          if [[ ! "$DEPLOY_TMUX_TARGET" =~ ^[A-Za-z0-9_.-]+:[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "DEPLOY_TMUX_TARGET must look like session:window.pane" >&2
+            exit 1
+          fi
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/mountain_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/mountain_deploy ~/.ssh/known_hosts
+
+      - name: Restart Mountain with launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${DEPLOY_PORT:-22}"
+          ssh -i ~/.ssh/mountain_deploy -p "$port" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "bash -s -- '$DEPLOY_TMUX_TARGET'" <<'REMOTE'
+          set -euo pipefail
+          target="$1"
+
+          tmux display-message -p -t "$target" '#{session_name}:#{window_index}.#{pane_index}' >/dev/null
+          echo "Sending SIGINT to tmux pane $target"
+          tmux send-keys -t "$target" C-c
+
+          for _ in $(seq 1 20); do
+            current_command="$(tmux display-message -p -t "$target" '#{pane_current_command}')"
+            if [[ "$current_command" != "bun" && "$current_command" != "node" ]]; then
+              break
+            fi
+            sleep 1
+          done
+
+          current_command="$(tmux display-message -p -t "$target" '#{pane_current_command}')"
+          if [[ "$current_command" == "bun" || "$current_command" == "node" ]]; then
+            echo "The existing server did not stop after SIGINT; launch was not started." >&2
+            exit 1
+          fi
+
+          echo "Starting Mountain with launch"
+          tmux send-keys -t "$target" -l "launch"
+          tmux send-keys -t "$target" Enter
+          sleep 2
+          echo "tmux pane command: $(tmux display-message -p -t "$target" '#{pane_current_command}')"
+          REMOTE
