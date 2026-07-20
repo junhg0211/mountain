@@ -178,6 +178,17 @@ CREATE TABLE IF NOT EXISTS attendance_streaks (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS attendance_reminder_runs (
+    guild_id VARCHAR(255) NOT NULL,
+    reminder_date DATE NOT NULL,
+    chunk_index INT NOT NULL,
+    reservation_id CHAR(36) NOT NULL,
+    reserved_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (guild_id, reminder_date, chunk_index),
+    INDEX attendance_reminder_runs_sent_idx (sent_at)
+);
+
 CREATE TABLE IF NOT EXISTS betting_pools (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     guild_id VARCHAR(255) NOT NULL,

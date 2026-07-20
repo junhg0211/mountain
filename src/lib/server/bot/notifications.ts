@@ -23,3 +23,30 @@ export async function sendTransactionNotification(guildId: string, content: stri
 		console.error('Transaction notification failed:', error);
 	}
 }
+
+export async function sendUserMentionNotification(
+	guildId: string,
+	content: string,
+	userIds: string[]
+): Promise<boolean> {
+	const channelId = await getNotificationChannel(guildId);
+	if (!channelId || !process.env.BOT_TOKEN || !content.trim() || !userIds.length) return false;
+	try {
+		const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bot ${process.env.BOT_TOKEN}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				content: content.trim(),
+				allowed_mentions: { parse: [], users: userIds }
+			})
+		});
+		if (!response.ok) throw new Error(`Discord message request failed (${response.status}).`);
+		return true;
+	} catch (error) {
+		console.error('Discord mention notification failed:', error);
+		return false;
+	}
+}

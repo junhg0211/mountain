@@ -162,6 +162,13 @@ be at least `0.01`. Claims use the `Asia/Seoul` calendar date and the composite 
 `attendance` ledger row must happen in one database transaction. This prevents duplicate rewards
 when web and Discord claims race each other.
 
+At midnight in `Asia/Seoul`, each guild with attendance enabled and a transaction notification
+channel sends a reminder mentioning the users who claimed attendance on the previous Korean date.
+Split mentions into stable user-ID-ordered chunks of at most 40 users. Reserve each guild/date/chunk
+in `attendance_reminder_runs` before sending, mark it sent afterward, and allow an unfinished
+reservation to be retried after five minutes. Explicitly allow only those user IDs in Discord's
+allowed mentions so reminders ping participants without enabling arbitrary mentions.
+
 `attendance_streaks` stores the current streak, longest streak, and last attendance date per guild
 and user. A claim on the Korean calendar day immediately following the last claim increments the
 current streak; otherwise it resets to one. The longest streak never decreases. Streak updates are

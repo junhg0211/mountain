@@ -26,6 +26,7 @@ import { getLanguage } from './i18n';
 import { startMonthlyBurnScheduler, stopMonthlyBurnScheduler } from './monthly-burn';
 import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
 import { startAutomaticPaymentScheduler, stopAutomaticPaymentScheduler } from './automatic-payments';
+import { startAttendanceReminderScheduler, stopAttendanceReminderScheduler } from './attendance-reminders';
 
 dotenv.config();
 
@@ -59,6 +60,7 @@ async function shutdown(signal: NodeJS.Signals) {
 		stopVoiceActivityRewards();
 		stopMonthlyBurnScheduler();
 		stopAutomaticPaymentScheduler();
+		stopAttendanceReminderScheduler();
 		state.client?.removeAllListeners();
 		state.client?.destroy();
 		state.client = null;
@@ -146,6 +148,7 @@ async function reloadCommands() {
 async function start() {
 	startMonthlyBurnScheduler();
 	startAutomaticPaymentScheduler();
+	startAttendanceReminderScheduler();
 	if (!process.env.BOT_TOKEN) {
 		console.warn('BOT_TOKEN is not configured; Discord bot startup skipped.');
 		return;
