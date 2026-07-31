@@ -41,6 +41,67 @@ CREATE TABLE IF NOT EXISTS user_guilds (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS items (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    item_key VARCHAR(64) NOT NULL,
+    name VARCHAR(80) NOT NULL,
+    description VARCHAR(500) NOT NULL DEFAULT '',
+    item_type VARCHAR(32) NOT NULL,
+    rarity VARCHAR(16) NOT NULL DEFAULT 'common',
+    icon_url VARCHAR(2048),
+    stackable BOOLEAN NOT NULL DEFAULT TRUE,
+    max_stack INT,
+    tradable BOOLEAN NOT NULL DEFAULT FALSE,
+    usable BOOLEAN NOT NULL DEFAULT FALSE,
+    consumed_on_use BOOLEAN NOT NULL DEFAULT TRUE,
+    purchase_price DECIMAL(15, 2),
+    sell_price DECIMAL(15, 2),
+    effect_type VARCHAR(32),
+    effect_config JSON,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY items_guild_key_unique (guild_id, item_key),
+    UNIQUE KEY items_guild_id_unique (guild_id, id),
+    INDEX items_guild_active_idx (guild_id, active),
+    CHECK (max_stack IS NULL OR max_stack >= 1),
+    CHECK (purchase_price IS NULL OR purchase_price >= 0.01),
+    CHECK (sell_price IS NULL OR sell_price >= 0.01)
+);
+
+CREATE TABLE IF NOT EXISTS inventories (
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    item_id BIGINT NOT NULL,
+    quantity INT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, user_id, item_id),
+    INDEX inventories_user_idx (guild_id, user_id),
+    INDEX inventories_item_fk (guild_id, item_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (guild_id, item_id) REFERENCES items(guild_id, id) ON DELETE RESTRICT,
+    CHECK (quantity >= 1)
+);
+
+CREATE TABLE IF NOT EXISTS item_movements (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    item_id BIGINT NOT NULL,
+    quantity_delta INT NOT NULL,
+    movement_type VARCHAR(32) NOT NULL,
+    reference_type VARCHAR(32),
+    reference_id VARCHAR(64),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX item_movements_user_idx (guild_id, user_id, created_at),
+    INDEX item_movements_item_fk (guild_id, item_id),
+    INDEX item_movements_reference_idx (guild_id, reference_type, reference_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (guild_id, item_id) REFERENCES items(guild_id, id) ON DELETE RESTRICT,
+    CHECK (quantity_delta <> 0)
+);
+
 CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id VARCHAR(255) PRIMARY KEY,
     currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin',

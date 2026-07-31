@@ -75,6 +75,20 @@ movement writes a `bet_weighted` ledger row, while
 `betting_weighted_results` preserves the complete per-user result for the settlement event. Any
 validation or balance failure rolls back the refunds and the entire settlement together.
 
+## Item inventory
+
+Item definitions are guild-scoped rows in `items`; `item_key` is stable code identity and is unique
+inside a guild. Display fields are kept separate from behavior fields, while type-specific effect
+configuration is stored as validated JSON. Existing definitions should be disabled with `active`
+instead of deleted after users have acquired them.
+
+`inventories` stores one positive, stackable quantity per `(guild_id, user_id, item_id)`. The
+composite item foreign key prevents an inventory row from referencing another guild's definition.
+Every quantity change locks the item and inventory rows, verifies the stack and available quantity,
+and writes exactly one `item_movements` row in the same transaction. A zero result removes the
+inventory row; movement history remains append-only. Money charged or rewarded by a future item
+operation must additionally follow the balance ledger rules above in that same transaction.
+
 ## Automatic payments and role subscriptions
 
 `scheduled_transfers` stores only same-guild transfers. Creation does not debit the sender. The
