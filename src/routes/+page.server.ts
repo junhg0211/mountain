@@ -8,6 +8,7 @@ import {
 	transferBalance
 } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
+import { getInventory } from '$lib/server/db/items';
 import {
 	AttendanceAlreadyClaimedError,
 	AttendanceDisabledError,
@@ -55,7 +56,8 @@ interface GuildRow {
 export const load: PageServerLoad = async ({ cookies, url }) => {
 	const notice = readDashboardNotice(cookies);
 	const user = await getSessionUser(cookies);
-	if (!user) return { user, guilds: [], selectedGuildId: null, botConnected: false, notice };
+	if (!user)
+		return { user, guilds: [], selectedGuildId: null, botConnected: false, inventory: [], notice };
 
 	const db = await getDB();
 	const guildRows = await db`
@@ -110,16 +112,23 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const botConnected = Boolean(
 		selectedGuildId && botClient?.isReady() && botClient.guilds.cache.has(selectedGuildId)
 	);
-	const [ranking, transactions, attendance, attendanceLeaderboard, voiceRewardRemaining] =
-		selectedGuildId
-			? await Promise.all([
-					rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
-					getUserTransactions(selectedGuildId, user.id),
-					getAttendanceStatus(selectedGuildId, user.id),
-					getAttendanceLeaderboard(selectedGuildId),
-					getVoiceActivityRemaining(selectedGuildId, user.id)
-				])
-			: [[], [], null, [], '0.00'];
+	const [
+		ranking,
+		transactions,
+		attendance,
+		attendanceLeaderboard,
+		voiceRewardRemaining,
+		inventory
+	] = selectedGuildId
+		? await Promise.all([
+				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
+				getUserTransactions(selectedGuildId, user.id),
+				getAttendanceStatus(selectedGuildId, user.id),
+				getAttendanceLeaderboard(selectedGuildId),
+				getVoiceActivityRemaining(selectedGuildId, user.id),
+				getInventory(selectedGuildId, user.id)
+			])
+		: [[], [], null, [], '0.00', []];
 	return {
 		user,
 		guilds,
@@ -130,6 +139,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		attendance,
 		attendanceLeaderboard,
 		voiceRewardRemaining,
+		inventory,
 		notice
 	};
 };

@@ -54,9 +54,9 @@
 		bet_weighted: '가중치 정산',
 		attendance: '출석 보상',
 		voice_activity: '음성 활동 보상',
-		monthly_burn: '월간 소각'
-		,role_subscription: '역할 구독'
-		,scheduled_transfer: '자동 송금'
+		monthly_burn: '월간 소각',
+		role_subscription: '역할 구독',
+		scheduled_transfer: '자동 송금'
 	};
 	function transactionRoute(transaction: Transaction) {
 		const sender = transaction.sender?.name || '시스템';
@@ -105,25 +105,109 @@
 					>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong
 				>
 			</div>
+			<section class="item-manager">
+				<div class="item-manager-heading">
+					<div>
+						<span>ITEM CATALOG</span>
+						<h3>아이템 만들기</h3>
+					</div>
+					<small>이 서버에서 사용할 아이템을 등록합니다.</small>
+				</div>
+				<form class="item-form" method="POST" action={`?/createItem&guild=${selectedGuild.id}`}>
+					<input type="hidden" name="guildId" value={selectedGuild.id} />
+					<label class="emoji-field"
+						>아이콘 이모지<input name="iconEmoji" placeholder="🎁" maxlength="32" required /></label
+					>
+					<label
+						>아이템 이름<input
+							name="name"
+							placeholder="행운의 부적"
+							maxlength="80"
+							required
+						/></label
+					>
+					<label class="item-description"
+						>설명<textarea
+							name="description"
+							placeholder="아이템에 대한 설명을 입력하세요."
+							maxlength="500"
+							rows="3"
+							required
+						></textarea></label
+					>
+					<button>아이템 만들기</button>
+				</form>
+				<div class="item-list">
+					{#each data.items as item}
+						<article class:inactive={!item.active}>
+							<span class="item-emoji">{item.iconEmoji}</span>
+							<div>
+								<strong>{item.name}</strong>
+								<p>{item.description}</p>
+							</div>
+							<span class:active={item.active} class="status"
+								>{item.active ? '활성' : '비활성'}</span
+							>
+						</article>
+					{:else}
+						<div class="plan-empty">아직 만들어진 아이템이 없습니다.</div>
+					{/each}
+				</div>
+			</section>
 			<div class="role-plans">
 				<div class="role-plan-heading">
-					<div><span>ROLE SUBSCRIPTIONS</span><h3>색상 역할 구독</h3></div>
+					<div>
+						<span>ROLE SUBSCRIPTIONS</span>
+						<h3>색상 역할 구독</h3>
+					</div>
 					<small>매월 1일 12:00 KST 갱신</small>
 				</div>
-				<p class="role-plan-description">서버에 이미 만들어진 역할을 구독 상품으로 등록합니다. 사용자는 가입 즉시 한 달 요금 전액을 결제합니다.</p>
+				<p class="role-plan-description">
+					서버에 이미 만들어진 역할을 구독 상품으로 등록합니다. 사용자는 가입 즉시 한 달 요금 전액을
+					결제합니다.
+				</p>
 				<form class="role-plan-form" method="POST" action={`?/rolePlan&guild=${selectedGuild.id}`}>
-					<input type="hidden" name="guildId" value={selectedGuild.id}>
-					<label>역할<select name="roleId" required><option value="">선택</option>{#each data.roles as role}<option value={role.id}>{role.name}</option>{/each}</select></label>
-					<label>월 요금 ({selectedGuild.currencyUnit})<input name="amount" inputmode="decimal" placeholder="100.00" required></label><button>상품 저장</button>
+					<input type="hidden" name="guildId" value={selectedGuild.id} />
+					<label
+						>역할<select name="roleId" required
+							><option value="">선택</option>{#each data.roles as role}<option value={role.id}
+									>{role.name}</option
+								>{/each}</select
+						></label
+					>
+					<label
+						>월 요금 ({selectedGuild.currencyUnit})<input
+							name="amount"
+							inputmode="decimal"
+							placeholder="100.00"
+							required
+						/></label
+					><button>상품 저장</button>
 				</form>
 				<div class="plan-list">
 					{#each data.rolePlans as plan}
 						<article class:inactive={!plan.active} class="plan-row">
 							<i style={`--role-color:${roleColor(plan.roleId)}`}></i>
-							<div class="plan-info"><strong>{plan.name}</strong><span>Discord 역할 구독 상품</span></div>
-							<div class="plan-price"><strong>{formatMoneyDisplay(plan.monthlyPrice)} {selectedGuild.currencyUnit}</strong><span>매월</span></div>
-							<span class:active={plan.active} class="status">{plan.active ? '활성' : '비활성'}</span>
-							{#if plan.active}<form method="POST" action={`?/disableRolePlan&guild=${selectedGuild.id}`}><input type="hidden" name="guildId" value={selectedGuild.id}><input type="hidden" name="planId" value={plan.id}><button class="plan-disable">비활성화</button></form>{/if}
+							<div class="plan-info">
+								<strong>{plan.name}</strong><span>Discord 역할 구독 상품</span>
+							</div>
+							<div class="plan-price">
+								<strong>{formatMoneyDisplay(plan.monthlyPrice)} {selectedGuild.currencyUnit}</strong
+								><span>매월</span>
+							</div>
+							<span class:active={plan.active} class="status"
+								>{plan.active ? '활성' : '비활성'}</span
+							>
+							{#if plan.active}<form
+									method="POST"
+									action={`?/disableRolePlan&guild=${selectedGuild.id}`}
+								>
+									<input type="hidden" name="guildId" value={selectedGuild.id} /><input
+										type="hidden"
+										name="planId"
+										value={plan.id}
+									/><button class="plan-disable">비활성화</button>
+								</form>{/if}
 						</article>
 					{:else}<div class="plan-empty">아직 등록된 역할 구독 상품이 없습니다.</div>{/each}
 				</div>
@@ -442,6 +526,90 @@
 		font-size: 34px;
 		margin-top: 6px;
 	}
+	.item-manager {
+		margin: 28px 0 34px;
+		padding: 24px;
+		background: linear-gradient(145deg, #151225, #0c0f14 58%);
+		border: 1px solid #30294d;
+		border-radius: 14px;
+	}
+	.item-manager-heading {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 18px;
+	}
+	.item-manager-heading span {
+		color: #9585ff;
+		font-size: 10px;
+		font-weight: 800;
+		letter-spacing: 0.15em;
+	}
+	.item-manager-heading h3 {
+		margin: 6px 0 0;
+		font-size: 21px;
+	}
+	.item-manager-heading small {
+		color: #747d8d;
+		font-size: 12px;
+	}
+	.card .item-form {
+		max-width: none;
+		grid-template-columns: 120px minmax(180px, 1fr) 1.5fr auto;
+		align-items: end;
+		margin-top: 20px;
+	}
+	.item-form textarea {
+		display: block;
+		width: 100%;
+		min-height: 74px;
+		margin-top: 7px;
+		resize: vertical;
+	}
+	.item-form button {
+		min-height: 74px;
+	}
+	.emoji-field input {
+		font-size: 22px;
+		text-align: center;
+	}
+	.item-list {
+		display: grid;
+		gap: 8px;
+		margin-top: 22px;
+	}
+	.item-list article {
+		display: grid;
+		grid-template-columns: 48px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 14px;
+		padding: 13px 15px;
+		background: #141820;
+		border: 1px solid #292f3a;
+		border-radius: 11px;
+	}
+	.item-list article.inactive {
+		opacity: 0.6;
+	}
+	.item-emoji {
+		display: grid;
+		place-items: center;
+		width: 46px;
+		height: 46px;
+		background: #211b3a;
+		border-radius: 13px;
+		font-size: 25px;
+	}
+	.item-list article > div {
+		display: grid;
+		gap: 4px;
+	}
+	.item-list p {
+		margin: 0;
+		color: #747d8d;
+		font-size: 12px;
+		line-height: 1.45;
+	}
 	.role-plans {
 		margin: 28px 0 34px;
 		padding: 24px;
@@ -459,20 +627,34 @@
 		color: #7e8797;
 		font-size: 10px;
 		font-weight: 800;
-		letter-spacing: .15em;
+		letter-spacing: 0.15em;
 	}
-	.role-plan-heading h3 { margin: 6px 0 0; font-size: 21px; }
+	.role-plan-heading h3 {
+		margin: 6px 0 0;
+		font-size: 21px;
+	}
 	.role-plan-heading small,
-	.role-plan-description { color: #747d8d; font-size: 12px; }
-	.role-plan-description { margin: 10px 0 0; }
+	.role-plan-description {
+		color: #747d8d;
+		font-size: 12px;
+	}
+	.role-plan-description {
+		margin: 10px 0 0;
+	}
 	.card .role-plan-form {
 		max-width: none;
 		grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
 		align-items: end;
 		margin-top: 20px;
 	}
-	.role-plan-form button { min-width: 120px; }
-	.plan-list { display: grid; gap: 8px; margin-top: 22px; }
+	.role-plan-form button {
+		min-width: 120px;
+	}
+	.plan-list {
+		display: grid;
+		gap: 8px;
+		margin-top: 22px;
+	}
 	.plan-row {
 		display: grid;
 		grid-template-columns: 12px minmax(0, 1fr) auto auto auto;
@@ -484,7 +666,9 @@
 		border: 1px solid #292f3a;
 		border-radius: 11px;
 	}
-	.plan-row.inactive { opacity: .6; }
+	.plan-row.inactive {
+		opacity: 0.6;
+	}
 	.plan-row > i {
 		width: 10px;
 		height: 38px;
@@ -493,15 +677,49 @@
 		box-shadow: 0 0 18px color-mix(in srgb, var(--role-color) 50%, transparent);
 	}
 	.plan-info,
-	.plan-price { display: grid; gap: 4px; }
+	.plan-price {
+		display: grid;
+		gap: 4px;
+	}
 	.plan-info span,
-	.plan-price span { color: #747d8d; font-size: 11px; }
-	.plan-price { text-align: right; font-variant-numeric: tabular-nums; }
-	.status { padding: 5px 8px; border-radius: 999px; background: #282d36; color: #929aa8; font-size: 10px; font-weight: 800; }
-	.status.active { color: #75dbb0; background: #153c32; }
-	.card .plan-row form { display: block; max-width: none; margin: 0; }
-	.plan-disable { min-height: 36px; padding: 0 11px; color: #ef9eac; background: #3c1d25; }
-	.plan-empty { padding: 25px; border: 1px dashed #303744; border-radius: 10px; color: #747d8d; text-align: center; }
+	.plan-price span {
+		color: #747d8d;
+		font-size: 11px;
+	}
+	.plan-price {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.status {
+		padding: 5px 8px;
+		border-radius: 999px;
+		background: #282d36;
+		color: #929aa8;
+		font-size: 10px;
+		font-weight: 800;
+	}
+	.status.active {
+		color: #75dbb0;
+		background: #153c32;
+	}
+	.card .plan-row form {
+		display: block;
+		max-width: none;
+		margin: 0;
+	}
+	.plan-disable {
+		min-height: 36px;
+		padding: 0 11px;
+		color: #ef9eac;
+		background: #3c1d25;
+	}
+	.plan-empty {
+		padding: 25px;
+		border: 1px dashed #303744;
+		border-radius: 10px;
+		color: #747d8d;
+		text-align: center;
+	}
 	.issuance {
 		border-top: 1px solid #292e39;
 		padding-top: 26px;
@@ -737,11 +955,23 @@
 		.settings-grid {
 			grid-template-columns: 1fr;
 		}
-		.card .role-plan-form { grid-template-columns: 1fr; }
-		.plan-row { grid-template-columns: 10px minmax(0, 1fr) auto; }
-		.plan-price { grid-column: 2; text-align: left; }
-		.status { grid-column: 3; grid-row: 1; }
-		.plan-row form { grid-column: 2 / -1; }
+		.card .role-plan-form {
+			grid-template-columns: 1fr;
+		}
+		.plan-row {
+			grid-template-columns: 10px minmax(0, 1fr) auto;
+		}
+		.plan-price {
+			grid-column: 2;
+			text-align: left;
+		}
+		.status {
+			grid-column: 3;
+			grid-row: 1;
+		}
+		.plan-row form {
+			grid-column: 2 / -1;
+		}
 	}
 	.notifications h3 {
 		margin: 0;
@@ -786,6 +1016,7 @@
 	}
 	input,
 	select,
+	textarea,
 	button {
 		font: inherit;
 		border: 1px solid #303744;
@@ -803,7 +1034,8 @@
 		cursor: not-allowed;
 	}
 	input,
-	select {
+	select,
+	textarea {
 		background: #090b0f;
 		color: #fff;
 		width: 100%;
@@ -857,6 +1089,16 @@
 		.log-heading {
 			align-items: start;
 			flex-direction: column;
+		}
+		.item-manager-heading {
+			align-items: start;
+			flex-direction: column;
+		}
+		.card .item-form {
+			grid-template-columns: 1fr;
+		}
+		.item-form button {
+			min-height: 42px;
 		}
 	}
 </style>

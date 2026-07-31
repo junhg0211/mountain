@@ -92,9 +92,14 @@
 		if (transaction.type === 'bet_refund')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 환불`;
 		if (transaction.type === 'bet_fund') return `#${transaction.bettingPool?.id} 판 자금 충전`;
-		if (transaction.type === 'bet_house_cover') return `#${transaction.bettingPool?.id} 판 자금 자동 보충`;
-		if (transaction.type === 'bet_house_refund') return `#${transaction.bettingPool?.id} 남은 판 자금 반환`;
-		if (transaction.type === 'bet_weighted') return transaction.direction === 'credit' ? `#${transaction.bettingPool?.id} 가중치 정산 수령` : `#${transaction.bettingPool?.id} 가중치 정산 지급`;
+		if (transaction.type === 'bet_house_cover')
+			return `#${transaction.bettingPool?.id} 판 자금 자동 보충`;
+		if (transaction.type === 'bet_house_refund')
+			return `#${transaction.bettingPool?.id} 남은 판 자금 반환`;
+		if (transaction.type === 'bet_weighted')
+			return transaction.direction === 'credit'
+				? `#${transaction.bettingPool?.id} 가중치 정산 수령`
+				: `#${transaction.bettingPool?.id} 가중치 정산 지급`;
 		return transaction.direction === 'credit'
 			? `${transaction.counterparty}님에게서 받음`
 			: `${transaction.counterparty}님에게 송금`;
@@ -118,7 +123,9 @@
 		{#if data.user}
 			<div class="user">
 				<span>{data.user.username}</span>
-				{#if selectedGuild}<a class="admin-button" href={`/payments?guild=${selectedGuild.id}`}>자동 결제</a>{/if}
+				{#if selectedGuild}<a class="admin-button" href={`/payments?guild=${selectedGuild.id}`}
+						>자동 결제</a
+					>{/if}
 				{#if selectedGuild?.canManage}<a
 						class="admin-button"
 						href={`/admin?guild=${selectedGuild.id}`}>서버 관리</a
@@ -188,6 +195,38 @@
 						>
 					</div>
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
+				</section>
+
+				<section class="card inventory-card">
+					<div class="inventory-heading">
+						<div>
+							<p class="card-label">MY INVENTORY</p>
+							<h3>보유 아이템</h3>
+						</div>
+						<span>{data.inventory.length}종 보유</span>
+					</div>
+					{#if data.inventory.length}
+						<div class="inventory-grid">
+							{#each data.inventory as entry}
+								<article>
+									<span class="inventory-icon">{entry.item.iconEmoji}</span>
+									<div>
+										<strong>{entry.item.name}</strong>
+										<p>{entry.item.description}</p>
+									</div>
+									<b>× {entry.quantity}</b>
+								</article>
+							{/each}
+						</div>
+					{:else}
+						<div class="inventory-empty">
+							<span>🎒</span>
+							<div>
+								<strong>아직 보유한 아이템이 없습니다.</strong>
+								<p>아이템을 획득하면 여기에 표시됩니다.</p>
+							</div>
+						</div>
+					{/if}
 				</section>
 
 				{#if selectedGuild.voiceActivity}
@@ -690,6 +729,83 @@
 		font-size: 13px;
 		max-width: 240px;
 	}
+	.inventory-card {
+		grid-column: 1 / -1;
+	}
+	.inventory-heading {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 16px;
+		margin-bottom: 18px;
+	}
+	.inventory-heading h3 {
+		margin: 0;
+		font-size: 22px;
+	}
+	.inventory-heading > span {
+		color: #8f82e8;
+		font-size: 12px;
+		font-weight: 800;
+	}
+	.inventory-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 9px;
+	}
+	.inventory-grid article {
+		display: grid;
+		grid-template-columns: 54px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 13px;
+		padding: 14px;
+		background: #0c0f14;
+		border: 1px solid #292e39;
+		border-radius: 12px;
+	}
+	.inventory-icon {
+		display: grid;
+		place-items: center;
+		width: 52px;
+		height: 52px;
+		background: #211b3a;
+		border-radius: 14px;
+		font-size: 28px;
+	}
+	.inventory-grid article > div {
+		display: grid;
+		gap: 4px;
+		min-width: 0;
+	}
+	.inventory-grid p,
+	.inventory-empty p {
+		margin: 0;
+		color: #7f8796;
+		font-size: 12px;
+		line-height: 1.45;
+	}
+	.inventory-grid article > b {
+		color: #b8adff;
+		font-size: 13px;
+		white-space: nowrap;
+	}
+	.inventory-empty {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 14px;
+		min-height: 110px;
+		padding: 20px;
+		border: 1px dashed #303744;
+		border-radius: 12px;
+	}
+	.inventory-empty > span {
+		font-size: 32px;
+	}
+	.inventory-empty > div {
+		display: grid;
+		gap: 5px;
+	}
 	.reward-card {
 		grid-column: 1 / -1;
 		background: linear-gradient(120deg, #17213a, #11141a 62%);
@@ -1178,6 +1294,9 @@
 			width: 100%;
 		}
 		.dashboard {
+			grid-template-columns: 1fr;
+		}
+		.inventory-grid {
 			grid-template-columns: 1fr;
 		}
 		.attendance-grid {

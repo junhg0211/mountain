@@ -80,7 +80,8 @@ validation or balance failure rolls back the refunds and the entire settlement t
 Item definitions are guild-scoped rows in `items`; `item_key` is stable code identity and is unique
 inside a guild. Display fields are kept separate from behavior fields, while type-specific effect
 configuration is stored as validated JSON. Existing definitions should be disabled with `active`
-instead of deleted after users have acquired them.
+instead of deleted after users have acquired them. Item names and descriptions are required, and
+`icon_emoji` accepts one Unicode emoji grapheme for consistent dashboard rendering.
 
 `inventories` stores one positive, stackable quantity per `(guild_id, user_id, item_id)`. The
 composite item foreign key prevents an inventory row from referencing another guild's definition.

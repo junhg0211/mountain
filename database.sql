@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS items (
     description VARCHAR(500) NOT NULL DEFAULT '',
     item_type VARCHAR(32) NOT NULL,
     rarity VARCHAR(16) NOT NULL DEFAULT 'common',
-    icon_url VARCHAR(2048),
+    icon_emoji VARCHAR(32) NOT NULL,
     stackable BOOLEAN NOT NULL DEFAULT TRUE,
     max_stack INT,
     tradable BOOLEAN NOT NULL DEFAULT FALSE,

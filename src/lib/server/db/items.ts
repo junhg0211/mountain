@@ -30,7 +30,7 @@ export type ItemDefinitionInput = {
 	description?: string;
 	type: ItemType;
 	rarity?: ItemRarity;
-	iconUrl?: string | null;
+	iconEmoji: string;
 	stackable?: boolean;
 	maxStack?: number | null;
 	tradable?: boolean;
@@ -52,12 +52,12 @@ export async function createItemDefinition(guildId: string, input: ItemDefinitio
 	const db = await getDB();
 	const result = await db`
 		INSERT INTO items (
-			guild_id, item_key, name, description, item_type, rarity, icon_url,
+			guild_id, item_key, name, description, item_type, rarity, icon_emoji,
 			stackable, max_stack, tradable, usable, consumed_on_use,
 			purchase_price, sell_price, effect_type, effect_config, active
 		) VALUES (
 			${guildId}, ${item.key}, ${item.name}, ${item.description}, ${item.type},
-			${item.rarity}, ${item.iconUrl}, ${item.stackable}, ${item.maxStack},
+			${item.rarity}, ${item.iconEmoji}, ${item.stackable}, ${item.maxStack},
 			${item.tradable}, ${item.usable}, ${item.consumedOnUse},
 			${item.purchasePrice}, ${item.sellPrice}, ${item.effect?.type ?? null},
 			${item.effect ? JSON.stringify(effectConfig(item.effect)) : null}, ${item.active}
@@ -84,7 +84,7 @@ export async function updateItemDefinition(
 		if (nextLimit !== null && largestStack > nextLimit) throw new ItemStackLimitError();
 		await tx`
 			UPDATE items SET item_key=${item.key}, name=${item.name}, description=${item.description},
-				item_type=${item.type}, rarity=${item.rarity}, icon_url=${item.iconUrl},
+				item_type=${item.type}, rarity=${item.rarity}, icon_emoji=${item.iconEmoji},
 				stackable=${item.stackable}, max_stack=${item.maxStack}, tradable=${item.tradable},
 				usable=${item.usable}, consumed_on_use=${item.consumedOnUse},
 				purchase_price=${item.purchasePrice}, sell_price=${item.sellPrice},
@@ -222,8 +222,8 @@ function validateDefinition(input: ItemDefinitionInput) {
 		);
 	if (name.length < 1 || name.length > 80)
 		throw new TypeError('Item name must be 1-80 characters.');
-	if (description.length > 500)
-		throw new TypeError('Item description may not exceed 500 characters.');
+	if (description.length < 1 || description.length > 500)
+		throw new TypeError('Item description must be 1-500 characters.');
 	if (!ITEM_TYPES.includes(input.type)) throw new TypeError('Unsupported item type.');
 	const rarity = input.rarity ?? 'common';
 	if (!ITEM_RARITIES.includes(rarity)) throw new TypeError('Unsupported item rarity.');
@@ -233,9 +233,8 @@ function validateDefinition(input: ItemDefinitionInput) {
 		throw new TypeError('Maximum stack must be a positive integer.');
 	if (!stackable && maxStack !== null && maxStack !== 1)
 		throw new TypeError('A non-stackable item may only have a maximum stack of 1.');
-	const iconUrl = input.iconUrl?.trim() || null;
-	if (iconUrl && (iconUrl.length > 2048 || !isHttpUrl(iconUrl)))
-		throw new TypeError('Item icon must be a valid HTTP(S) URL no longer than 2048 characters.');
+	const iconEmoji = input.iconEmoji.trim();
+	if (!isSingleEmoji(iconEmoji)) throw new TypeError('Item icon must be a single emoji.');
 	const purchasePrice = validateOptionalMoney(input.purchasePrice, 'purchase price');
 	const sellPrice = validateOptionalMoney(input.sellPrice, 'sell price');
 	if (input.effect) validateEffect(input.effect);
@@ -245,7 +244,7 @@ function validateDefinition(input: ItemDefinitionInput) {
 		description,
 		type: input.type,
 		rarity,
-		iconUrl,
+		iconEmoji,
 		stackable,
 		maxStack: stackable ? maxStack : 1,
 		tradable: input.tradable ?? false,
@@ -300,7 +299,7 @@ function mapItem(row: Record<string, unknown>) {
 		description: String(row.description),
 		type: String(row.item_type) as ItemType,
 		rarity: String(row.rarity) as ItemRarity,
-		iconUrl: row.icon_url == null ? null : String(row.icon_url),
+		iconEmoji: String(row.icon_emoji),
 		stackable: Boolean(row.stackable),
 		maxStack: row.max_stack == null ? null : Number(row.max_stack),
 		tradable: Boolean(row.tradable),
@@ -340,13 +339,13 @@ function validateReference(value: string | null | undefined, max: number, label:
 	if (value != null && (value.length < 1 || value.length > max))
 		throw new TypeError(`${label} must be 1-${max} characters when provided.`);
 }
-function isHttpUrl(value: string): boolean {
-	try {
-		const url = new URL(value);
-		return url.protocol === 'http:' || url.protocol === 'https:';
-	} catch {
-		return false;
-	}
+function isSingleEmoji(value: string): boolean {
+	if (!value || value.length > 32) return false;
+	const segments = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)];
+	return (
+		segments.length === 1 &&
+		/(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[#*0-9]\uFE0F?\u20E3)/u.test(value)
+	);
 }
 function toIso(value: unknown): string {
 	return new Date(value as string | number | Date).toISOString();
