@@ -228,6 +228,13 @@ export const actions: Actions = {
 		const iconEmoji = String(form.get('iconEmoji') || '').trim();
 		const name = String(form.get('name') || '').trim();
 		const description = String(form.get('description') || '').trim();
+		const itemKind = String(form.get('itemKind') || 'collectible');
+		if (itemKind !== 'collectible' && itemKind !== 'currency')
+			return fail(400, { message: '지원하는 아이템 종류를 선택해 주세요.' });
+		const rewardAmount =
+			itemKind === 'currency' ? parseMoney(String(form.get('rewardAmount') || '').trim()) : null;
+		if (itemKind === 'currency' && !rewardAmount)
+			return fail(400, { message: '화폐 보상은 0.01 이상의 금액으로 입력해 주세요.' });
 		const db = await getDB();
 		const permission = await db`
 			SELECT permissions FROM user_guilds
@@ -241,7 +248,10 @@ export const actions: Actions = {
 				name,
 				description,
 				iconEmoji,
-				type: 'collectible'
+				type: itemKind === 'currency' ? 'consumable' : 'collectible',
+				usable: itemKind === 'currency',
+				consumedOnUse: true,
+				effect: itemKind === 'currency' ? { type: 'currency', amount: rewardAmount! } : null
 			});
 			return { success: true, message: `${iconEmoji} ${name} 아이템을 만들었습니다.` };
 		} catch (error) {

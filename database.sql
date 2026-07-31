@@ -102,6 +102,25 @@ CREATE TABLE IF NOT EXISTS item_movements (
     CHECK (quantity_delta <> 0)
 );
 
+CREATE TABLE IF NOT EXISTS item_uses (
+    id CHAR(36) PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    item_id BIGINT NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    effect_type VARCHAR(32) NOT NULL,
+    effect_config JSON NOT NULL,
+    error_message VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL,
+    INDEX item_uses_user_idx (guild_id, user_id, created_at),
+    INDEX item_uses_item_fk (guild_id, item_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (guild_id, item_id) REFERENCES items(guild_id, id) ON DELETE RESTRICT,
+    CHECK (quantity >= 1)
+);
+
 CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id VARCHAR(255) PRIMARY KEY,
     currency_unit VARCHAR(16) NOT NULL DEFAULT 'coin',
@@ -319,13 +338,16 @@ CREATE TABLE IF NOT EXISTS transactions (
     amount DECIMAL(15, 2) NOT NULL,
     transaction_type VARCHAR(32) NOT NULL,
     betting_pool_id BIGINT,
+    item_use_id CHAR(36),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX transactions_guild_created_idx (guild_id, created_at),
     INDEX transactions_sender_idx (sender_id),
     INDEX transactions_recipient_idx (recipient_id),
     INDEX transactions_betting_pool_idx (betting_pool_id),
+    INDEX transactions_item_use_idx (item_use_id),
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (betting_pool_id) REFERENCES betting_pools(id) ON DELETE SET NULL,
+    CONSTRAINT transactions_item_use_fk FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL,
     CHECK (amount >= 0.01)
 );

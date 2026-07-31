@@ -8,7 +8,13 @@ import {
 	transferBalance
 } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
-import { getInventory } from '$lib/server/db/items';
+import {
+	getInventory,
+	InsufficientItemQuantityError,
+	ItemNotFoundError,
+	ItemNotUsableError,
+	useCurrencyItem
+} from '$lib/server/db/items';
 import {
 	AttendanceAlreadyClaimedError,
 	AttendanceDisabledError,
@@ -175,6 +181,39 @@ export const actions: Actions = {
 	logout: async ({ cookies }) => {
 		await deleteSession(cookies);
 		redirect(303, '/');
+	},
+	useItem: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const itemId = String(form.get('itemId') || '');
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership)
+			return fail(401, { message: '로그인이 필요하거나 서버 접근 권한이 없습니다.' });
+		if (!/^\d+$/.test(itemId)) return fail(400, { message: '사용할 아이템을 선택해 주세요.' });
+		const member = await getGuildMember(guildId, membership.user.id);
+		if (!member || member.user.bot)
+			return fail(403, { message: '현재 Discord 서버에 참여 중인 사용자만 사용할 수 있습니다.' });
+		try {
+			const result = await useCurrencyItem(guildId, membership.user.id, itemId);
+			const unit = await getCurrencyUnit(guildId);
+			await sendTransactionNotification(
+				guildId,
+				`${result.item.iconEmoji} **아이템 사용**\n사용자: <@${membership.user.id}>\n아이템: **${result.item.name}**\n보상: **${formatMoneyDisplay(result.reward)} ${unit}**\n사용 후 잔액: **${formatMoneyDisplay(result.balance)} ${unit}**`
+			);
+			redirectToDashboard(
+				cookies,
+				guildId,
+				`${result.item.iconEmoji} ${result.item.name}을(를) 사용해 ${formatMoneyDisplay(result.reward)} ${unit}을(를) 받았습니다.`
+			);
+		} catch (error) {
+			if (error instanceof ItemNotFoundError)
+				return fail(404, { message: '이 서버에 존재하지 않는 아이템입니다.' });
+			if (error instanceof ItemNotUsableError)
+				return fail(400, { message: '현재 사용할 수 없는 아이템입니다.' });
+			if (error instanceof InsufficientItemQuantityError)
+				return fail(409, { message: '아이템을 보유하고 있지 않습니다.' });
+			throw error;
+		}
 	},
 	transfer: async ({ cookies, request }) => {
 		const form = await request.formData();

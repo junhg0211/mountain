@@ -18,7 +18,8 @@ export type TransactionType =
 	| 'voice_activity'
 	| 'monthly_burn'
 	| 'role_subscription'
-	| 'scheduled_transfer';
+	| 'scheduled_transfer'
+	| 'item_use';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = await getDB();
@@ -99,8 +100,10 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'bet_refund' ||
 			type === 'attendance' ||
 			type === 'voice_activity' ||
+			type === 'item_use' ||
 			type === 'bet_house_refund' ||
-			(!outgoing && (type === 'transfer' || type === 'scheduled_transfer' || type === 'bet_weighted'));
+			(!outgoing &&
+				(type === 'transfer' || type === 'scheduled_transfer' || type === 'bet_weighted'));
 		const balanceAfter = centsToMoney(runningBalance);
 		const amount = moneyToCents(formatBalance(row.amount));
 		runningBalance = credit ? runningBalance - amount : runningBalance + amount;

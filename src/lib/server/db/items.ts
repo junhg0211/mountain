@@ -1,5 +1,5 @@
 import { getDB } from '$lib/server/db';
-import { parseMoney } from '$lib/server/economy/money';
+import { centsToMoney, moneyToCents, parseMoney } from '$lib/server/economy/money';
 
 export const ITEM_TYPES = ['consumable', 'collectible', 'box', 'role', 'coupon'] as const;
 export const ITEM_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'] as const;
@@ -46,6 +46,7 @@ export type ItemDefinition = ReturnType<typeof mapItem>;
 export class ItemNotFoundError extends Error {}
 export class InsufficientItemQuantityError extends Error {}
 export class ItemStackLimitError extends Error {}
+export class ItemNotUsableError extends Error {}
 
 export async function createItemDefinition(guildId: string, input: ItemDefinitionInput) {
 	const item = validateDefinition(input);
@@ -212,6 +213,73 @@ export async function getItemMovements(guildId: string, userId: string, limit = 
 	}));
 }
 
+export async function useCurrencyItem(guildId: string, userId: string, itemId: string) {
+	const useId = crypto.randomUUID();
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const itemRows = await tx`
+			SELECT name, icon_emoji, active, usable, consumed_on_use, effect_type, effect_config
+			FROM items WHERE guild_id=${guildId} AND id=${itemId} FOR UPDATE
+		`;
+		if (itemRows.length !== 1) throw new ItemNotFoundError('Item definition was not found.');
+		const item = itemRows[0] as Record<string, unknown>;
+		if (!Boolean(item.active) || !Boolean(item.usable) || !Boolean(item.consumed_on_use)) {
+			throw new ItemNotUsableError('Item cannot be used.');
+		}
+		if (String(item.effect_type) !== 'currency') {
+			throw new ItemNotUsableError('Item effect is not supported.');
+		}
+		const effectConfig = parseJsonObject(item.effect_config);
+		const reward = parseMoney(String(effectConfig.amount ?? ''));
+		if (!reward) throw new ItemNotUsableError('Item reward is invalid.');
+
+		const inventoryRows = await tx`
+			SELECT quantity FROM inventories
+			WHERE guild_id=${guildId} AND user_id=${userId} AND item_id=${itemId} FOR UPDATE
+		`;
+		if (inventoryRows.length !== 1 || Number(inventoryRows[0].quantity) < 1) {
+			throw new InsufficientItemQuantityError();
+		}
+		const remainingQuantity = Number(inventoryRows[0].quantity) - 1;
+		await tx`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${guildId}, ${userId})`;
+		const accountRows =
+			await tx`SELECT balance FROM accounts WHERE guild_id=${guildId} AND user_id=${userId} FOR UPDATE`;
+		if (accountRows.length !== 1) throw new Error('Account could not be loaded.');
+		const nextBalance =
+			moneyToCents(formatMoneyValue(accountRows[0].balance)) + moneyToCents(reward);
+
+		await tx`
+			INSERT INTO item_uses (
+				id, guild_id, user_id, item_id, quantity, status, effect_type, effect_config
+			) VALUES (${useId}, ${guildId}, ${userId}, ${itemId}, 1, 'pending', 'currency', ${JSON.stringify(effectConfig)})
+		`;
+		if (remainingQuantity === 0) {
+			await tx`DELETE FROM inventories WHERE guild_id=${guildId} AND user_id=${userId} AND item_id=${itemId}`;
+		} else {
+			await tx`UPDATE inventories SET quantity=${remainingQuantity} WHERE guild_id=${guildId} AND user_id=${userId} AND item_id=${itemId}`;
+		}
+		await tx`
+			INSERT INTO item_movements (
+				guild_id, user_id, item_id, quantity_delta, movement_type, reference_type, reference_id
+			) VALUES (${guildId}, ${userId}, ${itemId}, -1, 'use', 'item_use', ${useId})
+		`;
+		await tx`UPDATE accounts SET balance=${centsToMoney(nextBalance)} WHERE guild_id=${guildId} AND user_id=${userId}`;
+		await tx`
+			INSERT INTO transactions (
+				guild_id, sender_id, recipient_id, amount, transaction_type, item_use_id
+			) VALUES (${guildId}, ${null}, ${userId}, ${reward}, 'item_use', ${useId})
+		`;
+		await tx`UPDATE item_uses SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE id=${useId}`;
+		return {
+			useId,
+			item: { id: itemId, name: String(item.name), iconEmoji: String(item.icon_emoji) },
+			reward,
+			balance: centsToMoney(nextBalance),
+			remainingQuantity
+		};
+	});
+}
+
 function validateDefinition(input: ItemDefinitionInput) {
 	const key = input.key.trim(),
 		name = input.name.trim(),
@@ -324,6 +392,9 @@ function formatOptionalMoney(value: unknown): string | null {
 	if (value == null) return null;
 	const [integer, fraction = ''] = String(value).split('.');
 	return `${integer}.${fraction.padEnd(2, '0').slice(0, 2)}`;
+}
+function formatMoneyValue(value: unknown): string {
+	return formatOptionalMoney(value) ?? '0.00';
 }
 function validateQuantityDelta(delta: number): void {
 	if (!Number.isSafeInteger(delta) || delta === 0)

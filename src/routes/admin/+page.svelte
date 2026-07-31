@@ -47,6 +47,7 @@
 	let itemMemberSearching = $state(false);
 	let itemSearchSequence = 0;
 	let itemSearchTimer: ReturnType<typeof setTimeout>;
+	let newItemKind = $state<'collectible' | 'currency'>('collectible');
 	function scheduleItemMemberSearch() {
 		itemRecipient = null;
 		clearTimeout(itemSearchTimer);
@@ -92,7 +93,8 @@
 		voice_activity: '음성 활동 보상',
 		monthly_burn: '월간 소각',
 		role_subscription: '역할 구독',
-		scheduled_transfer: '자동 송금'
+		scheduled_transfer: '자동 송금',
+		item_use: '아이템 사용'
 	};
 	function transactionRoute(transaction: Transaction) {
 		const sender = transaction.sender?.name || '시스템';
@@ -151,6 +153,12 @@
 				</div>
 				<form class="item-form" method="POST" action={`?/createItem&guild=${selectedGuild.id}`}>
 					<input type="hidden" name="guildId" value={selectedGuild.id} />
+					<label
+						>종류<select name="itemKind" bind:value={newItemKind}>
+							<option value="collectible">수집품</option>
+							<option value="currency">화폐 지급</option>
+						</select></label
+					>
 					<label class="emoji-field"
 						>아이콘 이모지<input name="iconEmoji" placeholder="🎁" maxlength="32" required /></label
 					>
@@ -171,13 +179,29 @@
 							required
 						></textarea></label
 					>
+					{#if newItemKind === 'currency'}<label
+							>보상액 ({selectedGuild.currencyUnit})<input
+								name="rewardAmount"
+								inputmode="decimal"
+								placeholder="100.00"
+								required
+							/></label
+						>
+					{/if}
 					<button>아이템 만들기</button>
 				</form>
 				<div class="item-grant-heading">
-					<div><span>ADMIN GRANT</span><h3>아이템 지급</h3></div>
+					<div>
+						<span>ADMIN GRANT</span>
+						<h3>아이템 지급</h3>
+					</div>
 					<small>서버 구성원의 인벤토리에 아이템을 바로 지급합니다.</small>
 				</div>
-				<form class="item-grant-form" method="POST" action={`?/grantItem&guild=${selectedGuild.id}`}>
+				<form
+					class="item-grant-form"
+					method="POST"
+					action={`?/grantItem&guild=${selectedGuild.id}`}
+				>
 					<input type="hidden" name="guildId" value={selectedGuild.id} />
 					<input type="hidden" name="targetId" value={itemRecipient?.id || ''} />
 					<label class="search"
@@ -186,28 +210,49 @@
 							oninput={scheduleItemMemberSearch}
 							autocomplete="off"
 							placeholder="닉네임 또는 사용자 이름 검색"
-						/>{#if itemMemberSearching}<span class="search-state">검색 중…</span>{/if}{#if itemMemberResults.length}<div class="results">
-							{#each itemMemberResults as member}<button type="button" onclick={() => chooseItemRecipient(member)}
-									>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i>{member.username.slice(0, 1)}</i>{/if}<span>{member.username}</span></button
-								>{/each}
-						</div>{/if}</label
+						/>{#if itemMemberSearching}<span class="search-state">검색 중…</span
+							>{/if}{#if itemMemberResults.length}<div class="results">
+								{#each itemMemberResults as member}<button
+										type="button"
+										onclick={() => chooseItemRecipient(member)}
+										>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i
+												>{member.username.slice(0, 1)}</i
+											>{/if}<span>{member.username}</span></button
+									>{/each}
+							</div>{/if}</label
 					>
 					<label
 						>아이템<select name="itemId" required>
 							<option value="">선택</option>
 							{#each data.items.filter((item: Item) => item.active) as item}<option value={item.id}
-								>{item.iconEmoji} {item.name}</option
-							>{/each}
+									>{item.iconEmoji} {item.name}</option
+								>{/each}
 						</select></label
 					>
 					<label
-						>수량<input name="quantity" type="number" min="1" max="999999999" step="1" value="1" required /></label
+						>수량<input
+							name="quantity"
+							type="number"
+							min="1"
+							max="999999999"
+							step="1"
+							value="1"
+							required
+						/></label
 					>
-					<button disabled={!itemRecipient || !data.items.some((item: Item) => item.active)}>지급하기</button>
+					<button disabled={!itemRecipient || !data.items.some((item: Item) => item.active)}
+						>지급하기</button
+					>
 				</form>
 				{#if itemRecipient}<div class="selected-user item-recipient">
-						{#if itemRecipient.avatarUrl}<img src={itemRecipient.avatarUrl} alt="" />{:else}<i>{itemRecipient.username.slice(0, 1)}</i>{/if}
-						<div><small>지급 대상</small><strong>{itemRecipient.username}</strong><code>{itemRecipient.id}</code></div>
+						{#if itemRecipient.avatarUrl}<img src={itemRecipient.avatarUrl} alt="" />{:else}<i
+								>{itemRecipient.username.slice(0, 1)}</i
+							>{/if}
+						<div>
+							<small>지급 대상</small><strong>{itemRecipient.username}</strong><code
+								>{itemRecipient.id}</code
+							>
+						</div>
 						<span>선택됨 ✓</span>
 					</div>{/if}
 				<div class="item-list">
@@ -651,7 +696,7 @@
 	}
 	.card .item-form {
 		max-width: none;
-		grid-template-columns: 120px minmax(180px, 1fr) 1.5fr auto;
+		grid-template-columns: 130px 100px minmax(150px, 1fr) 1.3fr 150px auto;
 		align-items: end;
 		margin-top: 20px;
 	}
@@ -663,6 +708,7 @@
 		resize: vertical;
 	}
 	.item-form button {
+		grid-column: -2 / -1;
 		min-height: 74px;
 	}
 	.card .item-grant-form {
@@ -1213,6 +1259,7 @@
 			grid-template-columns: 1fr;
 		}
 		.item-form button {
+			grid-column: auto;
 			min-height: 42px;
 		}
 	}

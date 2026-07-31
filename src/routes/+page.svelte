@@ -17,6 +17,11 @@
 	let searching = $state(false);
 	let searchSequence = 0;
 	let searchTimer: ReturnType<typeof setTimeout>;
+	type InventoryEntry = (typeof data.inventory)[number];
+	let itemUseConfirmationOpen = $state(false);
+	let itemUseForm = $state<HTMLFormElement>();
+	let itemToUse = $state<InventoryEntry | null>(null);
+	let itemUseConfirmed = false;
 	function scheduleMemberSearch() {
 		selectedRecipient = null;
 		clearTimeout(searchTimer);
@@ -58,6 +63,21 @@
 		transferConfirmed = true;
 		transferForm?.requestSubmit();
 	}
+	function confirmItemUse(event: SubmitEvent, entry: InventoryEntry) {
+		if (itemUseConfirmed) {
+			itemUseConfirmed = false;
+			return;
+		}
+		event.preventDefault();
+		itemUseForm = event.currentTarget as HTMLFormElement;
+		itemToUse = entry;
+		itemUseConfirmationOpen = true;
+	}
+	function submitConfirmedItemUse() {
+		itemUseConfirmationOpen = false;
+		itemUseConfirmed = true;
+		itemUseForm?.requestSubmit();
+	}
 	function transactionTitle(transaction: {
 		type:
 			| 'transfer'
@@ -74,7 +94,8 @@
 			| 'voice_activity'
 			| 'monthly_burn'
 			| 'role_subscription'
-			| 'scheduled_transfer';
+			| 'scheduled_transfer'
+			| 'item_use';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
@@ -85,6 +106,7 @@
 		if (transaction.type === 'voice_activity') return '음성 활동 보상';
 		if (transaction.type === 'monthly_burn') return '월간 보유금 소각';
 		if (transaction.type === 'role_subscription') return '역할 구독 결제';
+		if (transaction.type === 'item_use') return '아이템 사용 보상';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')
@@ -215,6 +237,15 @@
 										<p>{entry.item.description}</p>
 									</div>
 									<b>× {entry.quantity}</b>
+									{#if entry.item.usable}<form
+											method="POST"
+											action={`?/useItem&guild=${selectedGuild.id}`}
+											onsubmit={(event) => confirmItemUse(event, entry)}
+										>
+											<input type="hidden" name="guildId" value={selectedGuild.id} />
+											<input type="hidden" name="itemId" value={entry.item.id} />
+											<button>사용하기</button>
+										</form>{/if}
 								</article>
 							{/each}
 						</div>
@@ -478,6 +509,25 @@
 			<div>
 				<span>송금 금액</span><strong>{transferAmount.trim()} {selectedGuild.currencyUnit}</strong>
 			</div>
+		</div>
+	{/if}
+</ConfirmDialog>
+
+<ConfirmDialog
+	open={itemUseConfirmationOpen}
+	title="아이템을 사용할까요?"
+	description="사용하면 아이템 1개가 소모되고 보상이 즉시 지급됩니다."
+	confirmLabel="사용하기"
+	onconfirm={submitConfirmedItemUse}
+	oncancel={() => (itemUseConfirmationOpen = false)}
+>
+	{#if itemToUse && selectedGuild}
+		<div class="item-use-summary">
+			<span>{itemToUse.item.iconEmoji}</span>
+			<div><strong>{itemToUse.item.name}</strong><small>{itemToUse.item.description}</small></div>
+			{#if itemToUse.item.effect?.type === 'currency'}<b
+					>+{formatMoneyDisplay(itemToUse.item.effect.amount)} {selectedGuild.currencyUnit}</b
+				>{/if}
 		</div>
 	{/if}
 </ConfirmDialog>
@@ -755,7 +805,7 @@
 	}
 	.inventory-grid article {
 		display: grid;
-		grid-template-columns: 54px minmax(0, 1fr) auto;
+		grid-template-columns: 54px minmax(0, 1fr) auto auto;
 		align-items: center;
 		gap: 13px;
 		padding: 14px;
@@ -788,6 +838,16 @@
 		color: #b8adff;
 		font-size: 13px;
 		white-space: nowrap;
+	}
+	.inventory-grid form {
+		margin: 0;
+	}
+	.inventory-grid button {
+		padding: 8px 11px;
+		background: #7657ff;
+		color: #fff;
+		font-size: 11px;
+		font-weight: 800;
 	}
 	.inventory-empty {
 		display: flex;
@@ -1260,6 +1320,37 @@
 		color: #f3f1ff;
 		font-size: 13px;
 		text-align: right;
+	}
+	.item-use-summary {
+		display: grid;
+		grid-template-columns: 48px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 12px;
+		padding: 14px;
+		background: #0d1016;
+		border: 1px solid #292e3a;
+		border-radius: 12px;
+	}
+	.item-use-summary > span {
+		display: grid;
+		place-items: center;
+		width: 46px;
+		height: 46px;
+		background: #211b3a;
+		border-radius: 12px;
+		font-size: 25px;
+	}
+	.item-use-summary > div {
+		display: grid;
+		gap: 4px;
+	}
+	.item-use-summary small {
+		color: #858d9d;
+	}
+	.item-use-summary b {
+		color: #79dfb7;
+		font-size: 13px;
+		white-space: nowrap;
 	}
 	.empty {
 		text-align: center;

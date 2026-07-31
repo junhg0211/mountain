@@ -63,6 +63,7 @@ must insert exactly one row in the same database transaction as its balance upda
 | Monthly burn   | debited user | `NULL`         | `monthly_burn`     |
 | Role renewal   | subscriber   | `NULL`         | `role_subscription` |
 | Scheduled pay  | sender       | recipient      | `scheduled_transfer` |
+| Item use       | `NULL`       | rewarded user  | `item_use`         |
 
 Signed weighted settlement is owner-only and uses an integer weight for every pool member. The
 service centers all weights around their arithmetic mean, treating that mean as zero, so the raw
@@ -91,6 +92,12 @@ inventory row; movement history remains append-only. Money charged or rewarded b
 operation must additionally follow the balance ledger rules above in that same transaction.
 Administrator grants must re-check manage-guild permission and live Discord membership, reject
 bots and inactive items, and record the acting administrator as the movement reference.
+
+Currency items are consumed through a single transaction that locks the item, inventory, and
+account; inserts a pending `item_uses` snapshot; decrements inventory with a `use` movement; credits
+the account with an `item_use` money ledger row; and marks the use completed. Clients submit only
+the item ID—effect type and reward amount must always be reloaded and validated from the server-side
+item definition.
 
 ## Automatic payments and role subscriptions
 
