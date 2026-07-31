@@ -154,6 +154,18 @@
 			minute: '2-digit'
 		}).format(new Date(value));
 	}
+	type ItemMovement = (typeof data.itemMovements)[number];
+	const itemMovementLabels: Record<ItemMovement['type'], string> = {
+		grant: '관리자 지급',
+		purchase: '구매',
+		use: '사용',
+		discard: '버림',
+		transfer_in: '받음',
+		transfer_out: '보냄',
+		refund: '환불',
+		expire: '만료',
+		revoke: '관리자 회수'
+	};
 </script>
 
 <svelte:head><title>Mountain Economy</title></svelte:head>
@@ -288,6 +300,26 @@
 							</div>
 						</div>
 					{/if}
+					<div class="item-history">
+						<div class="item-history-heading">
+							<strong>최근 아이템 활동</strong><span>최근 10건</span>
+						</div>
+						{#if data.itemMovements.length}<ul>
+								{#each data.itemMovements as movement}<li>
+										<span class="movement-icon">{movement.item.iconEmoji}</span>
+										<div>
+											<strong>{movement.item.name}</strong><small
+												>{itemMovementLabels[movement.type]} · {formatTransactionTime(
+													movement.createdAt
+												)}</small
+											>
+										</div>
+										<b class:credit={movement.quantityDelta > 0}
+											>{movement.quantityDelta > 0 ? '+' : ''}{movement.quantityDelta}</b
+										>
+									</li>{/each}
+							</ul>{:else}<p>아직 아이템 활동 기록이 없습니다.</p>{/if}
+					</div>
 				</section>
 
 				{#if selectedGuild.voiceActivity}
@@ -923,6 +955,69 @@
 	.inventory-empty > div {
 		display: grid;
 		gap: 5px;
+	}
+	.item-history {
+		margin-top: 22px;
+		padding-top: 18px;
+		border-top: 1px solid #292e39;
+	}
+	.item-history-heading {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+	.item-history-heading strong {
+		font-size: 13px;
+	}
+	.item-history-heading span,
+	.item-history > p {
+		color: #747d8d;
+		font-size: 11px;
+	}
+	.item-history > p {
+		margin: 18px 0 4px;
+		text-align: center;
+	}
+	.item-history ul {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
+	.item-history li {
+		display: grid;
+		grid-template-columns: 36px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 10px;
+		padding: 10px 0;
+		border-top: 1px solid #20252e;
+	}
+	.movement-icon {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		background: #1b182a;
+		border-radius: 9px;
+		font-size: 18px;
+	}
+	.item-history li > div {
+		display: grid;
+		gap: 3px;
+	}
+	.item-history li strong {
+		font-size: 12px;
+	}
+	.item-history li small {
+		color: #747d8d;
+		font-size: 10px;
+	}
+	.item-history li > b {
+		color: #ff9fae;
+		font-size: 12px;
+	}
+	.item-history li > b.credit {
+		color: #79dfb7;
 	}
 	.reward-card {
 		grid-column: 1 / -1;

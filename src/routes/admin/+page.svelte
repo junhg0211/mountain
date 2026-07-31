@@ -192,10 +192,10 @@
 				</form>
 				<div class="item-grant-heading">
 					<div>
-						<span>ADMIN GRANT</span>
-						<h3>아이템 지급</h3>
+						<span>ADMIN INVENTORY</span>
+						<h3>아이템 지급 및 회수</h3>
 					</div>
-					<small>서버 구성원의 인벤토리에 아이템을 바로 지급합니다.</small>
+					<small>서버 구성원의 인벤토리 수량을 원장과 함께 관리합니다.</small>
 				</div>
 				<form
 					class="item-grant-form"
@@ -224,8 +224,8 @@
 					<label
 						>아이템<select name="itemId" required>
 							<option value="">선택</option>
-							{#each data.items.filter((item: Item) => item.active) as item}<option value={item.id}
-									>{item.iconEmoji} {item.name}</option
+							{#each data.items as item}<option value={item.id}
+									>{item.iconEmoji} {item.name}{item.active ? '' : ' · 비활성'}</option
 								>{/each}
 						</select></label
 					>
@@ -240,9 +240,15 @@
 							required
 						/></label
 					>
-					<button disabled={!itemRecipient || !data.items.some((item: Item) => item.active)}
-						>지급하기</button
-					>
+					<div class="item-inventory-buttons">
+						<button disabled={!itemRecipient || !data.items.some((item: Item) => item.active)}
+							>지급하기</button
+						><button
+							class="revoke-button"
+							disabled={!itemRecipient || !data.items.length}
+							formaction={`?/revokeItem&guild=${selectedGuild.id}`}>회수하기</button
+						>
+					</div>
 				</form>
 				{#if itemRecipient}<div class="selected-user item-recipient">
 						{#if itemRecipient.avatarUrl}<img src={itemRecipient.avatarUrl} alt="" />{:else}<i
@@ -771,6 +777,14 @@
 	}
 	.item-grant-form button {
 		min-width: 100px;
+	}
+	.item-inventory-buttons {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 6px;
+	}
+	.item-inventory-buttons .revoke-button {
+		background: #842f43;
 	}
 	.item-recipient {
 		margin-top: 12px;

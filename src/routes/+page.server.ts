@@ -12,6 +12,7 @@ import {
 	changeInventoryQuantity,
 	getItemDefinition,
 	getInventory,
+	getItemMovements,
 	InsufficientItemQuantityError,
 	ItemNotFoundError,
 	ItemNotUsableError,
@@ -65,7 +66,15 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const notice = readDashboardNotice(cookies);
 	const user = await getSessionUser(cookies);
 	if (!user)
-		return { user, guilds: [], selectedGuildId: null, botConnected: false, inventory: [], notice };
+		return {
+			user,
+			guilds: [],
+			selectedGuildId: null,
+			botConnected: false,
+			inventory: [],
+			itemMovements: [],
+			notice
+		};
 
 	const db = await getDB();
 	const guildRows = await db`
@@ -126,7 +135,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		attendance,
 		attendanceLeaderboard,
 		voiceRewardRemaining,
-		inventory
+		inventory,
+		itemMovements
 	] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
@@ -134,9 +144,10 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				getAttendanceStatus(selectedGuildId, user.id),
 				getAttendanceLeaderboard(selectedGuildId),
 				getVoiceActivityRemaining(selectedGuildId, user.id),
-				getInventory(selectedGuildId, user.id)
+				getInventory(selectedGuildId, user.id),
+				getItemMovements(selectedGuildId, user.id, 10)
 			])
-		: [[], [], null, [], '0.00', []];
+		: [[], [], null, [], '0.00', [], []];
 	return {
 		user,
 		guilds,
@@ -148,6 +159,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		attendanceLeaderboard,
 		voiceRewardRemaining,
 		inventory,
+		itemMovements,
 		notice
 	};
 };

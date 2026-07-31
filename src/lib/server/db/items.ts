@@ -197,7 +197,8 @@ export async function getItemMovements(guildId: string, userId: string, limit = 
 	const rows = await db`
 		SELECT item_movements.id, item_movements.item_id, item_movements.quantity_delta,
 			item_movements.movement_type, item_movements.reference_type,
-			item_movements.reference_id, item_movements.created_at, items.item_key, items.name
+			item_movements.reference_id, item_movements.created_at,
+			items.item_key, items.name, items.icon_emoji
 		FROM item_movements
 		JOIN items ON items.guild_id=item_movements.guild_id AND items.id=item_movements.item_id
 		WHERE item_movements.guild_id=${guildId} AND item_movements.user_id=${userId}
@@ -205,7 +206,12 @@ export async function getItemMovements(guildId: string, userId: string, limit = 
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
 		id: String(row.id),
-		item: { id: String(row.item_id), key: String(row.item_key), name: String(row.name) },
+		item: {
+			id: String(row.item_id),
+			key: String(row.item_key),
+			name: String(row.name),
+			iconEmoji: String(row.icon_emoji)
+		},
 		quantityDelta: Number(row.quantity_delta),
 		type: String(row.movement_type) as ItemMovementType,
 		referenceType: row.reference_type == null ? null : String(row.reference_type),

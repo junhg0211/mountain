@@ -12,6 +12,7 @@ import {
 	changeInventoryQuantity,
 	createItemDefinition,
 	getItemDefinition,
+	InsufficientItemQuantityError,
 	ItemNotFoundError,
 	ItemStackLimitError,
 	listItemDefinitions,
@@ -218,6 +219,53 @@ export const actions: Actions = {
 			if (error instanceof ItemStackLimitError)
 				return fail(400, { message: '현재 보유 수량보다 최대 스택을 낮출 수 없습니다.' });
 			if (error instanceof TypeError) return fail(400, { message: error.message });
+			throw error;
+		}
+	},
+	revokeItem: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const targetId = String(form.get('targetId') || '');
+		const itemId = String(form.get('itemId') || '');
+		const rawQuantity = String(form.get('quantity') || '').trim();
+		if (!/^\d{17,20}$/.test(targetId))
+			return fail(400, { message: '검색 결과에서 회수 대상을 선택해 주세요.' });
+		if (!/^\d+$/.test(itemId)) return fail(400, { message: '회수할 아이템을 선택해 주세요.' });
+		if (!/^[1-9]\d{0,8}$/.test(rawQuantity))
+			return fail(400, { message: '회수 수량은 1~999,999,999 사이의 정수여야 합니다.' });
+		const db = await getDB();
+		const permission = await db`
+			SELECT permissions FROM user_guilds
+			WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1
+		`;
+		if (permission.length !== 1 || !canManageGuild(String(permission[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		const member = await getGuildMember(guildId, targetId);
+		if (!member || member.user.bot)
+			return fail(400, { message: '같은 서버의 사용자를 선택해 주세요.' });
+		try {
+			const item = await getItemDefinition(guildId, itemId);
+			const quantity = Number(rawQuantity);
+			const totalQuantity = await changeInventoryQuantity({
+				guildId,
+				userId: targetId,
+				itemId,
+				delta: -quantity,
+				type: 'revoke',
+				referenceType: 'admin_revoke',
+				referenceId: user.id
+			});
+			return {
+				success: true,
+				message: `${member.nick || member.user.username}님에게서 ${item.iconEmoji} ${item.name} ${quantity}개를 회수했습니다. 현재 보유 수량: ${totalQuantity}개`
+			};
+		} catch (error) {
+			if (error instanceof ItemNotFoundError)
+				return fail(400, { message: '이 서버에 존재하는 아이템을 선택해 주세요.' });
+			if (error instanceof InsufficientItemQuantityError)
+				return fail(400, { message: '대상 사용자의 보유 수량보다 많이 회수할 수 없습니다.' });
 			throw error;
 		}
 	},
