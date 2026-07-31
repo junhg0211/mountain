@@ -348,12 +348,27 @@ const REPAIRS = [
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_recipient_idx (recipient_id)`,
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_betting_pool_idx (betting_pool_id)`,
 	`ALTER TABLE transactions ADD INDEX IF NOT EXISTS transactions_item_use_idx (item_use_id)`,
-	`ALTER TABLE transactions ADD CONSTRAINT IF NOT EXISTS transactions_item_use_fk FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL`,
 	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS betting_mode VARCHAR(16) NOT NULL DEFAULT 'legacy'`,
 	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS winning_option VARCHAR(1)`,
 	`ALTER TABLE betting_pools ADD COLUMN IF NOT EXISTS house_balance DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
 	`ALTER TABLE betting_entries ADD COLUMN IF NOT EXISTS option_key VARCHAR(1)`
 ] as const;
+
+async function repairItemUseForeignKey(connection: SQL, databaseName: string): Promise<void> {
+	const rows = await connection`
+		SELECT 1
+		FROM information_schema.TABLE_CONSTRAINTS
+		WHERE CONSTRAINT_SCHEMA=${databaseName}
+			AND TABLE_NAME='transactions'
+			AND CONSTRAINT_NAME='transactions_item_use_fk'
+			AND CONSTRAINT_TYPE='FOREIGN KEY'
+		LIMIT 1
+	`;
+	if (rows.length > 0) return;
+	await connection.unsafe(
+		'ALTER TABLE transactions ADD CONSTRAINT transactions_item_use_fk FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL'
+	);
+}
 
 function databaseUrl(databaseName?: string): string {
 	const required = ['DB_USER', 'DB_PASS', 'DB_HOST', 'DB_PORT', 'DB_NAME'] as const;
@@ -394,6 +409,7 @@ async function initializeDatabase(): Promise<SQL> {
 	try {
 		for (const statement of TABLES) await connection.unsafe(statement);
 		for (const statement of REPAIRS) await connection.unsafe(statement);
+		await repairItemUseForeignKey(connection, databaseName);
 		return connection;
 	} catch (error) {
 		await connection.close();
