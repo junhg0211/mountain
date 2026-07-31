@@ -7,6 +7,7 @@
 		description?: string;
 		confirmLabel?: string;
 		cancelLabel?: string;
+		danger?: boolean;
 		children?: Snippet;
 		onconfirm: () => void;
 		oncancel: () => void;
@@ -18,6 +19,7 @@
 		description,
 		confirmLabel = '확인',
 		cancelLabel = '취소',
+		danger = false,
 		children,
 		onconfirm,
 		oncancel
@@ -53,7 +55,7 @@
 	</div>
 	<div class="actions">
 		<button type="button" class="cancel" onclick={oncancel}>{cancelLabel}</button>
-		<button type="button" class="confirm" onclick={onconfirm}>{confirmLabel}</button>
+		<button type="button" class="confirm" class:danger onclick={onconfirm}>{confirmLabel}</button>
 	</div>
 </dialog>
 
@@ -142,6 +144,10 @@
 		color: #fff;
 		background: #7657ff;
 		box-shadow: 0 8px 22px #7657ff3d;
+	}
+	.confirm.danger {
+		background: #842f43;
+		box-shadow: 0 8px 22px #842f433d;
 	}
 	button:hover {
 		filter: brightness(1.1);

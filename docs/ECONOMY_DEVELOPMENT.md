@@ -92,6 +92,8 @@ inventory row; movement history remains append-only. Money charged or rewarded b
 operation must additionally follow the balance ledger rules above in that same transaction.
 Administrator grants must re-check manage-guild permission and live Discord membership, reject
 bots and inactive items, and record the acting administrator as the movement reference.
+User discards also re-check live membership, decrement exactly one owned item under the same row
+locks, and record a negative `discard` movement; inactive items may still be discarded.
 
 Currency items are consumed through a single transaction that locks the item, inventory, and
 account; inserts a pending `item_uses` snapshot; decrements inventory with a `use` movement; credits

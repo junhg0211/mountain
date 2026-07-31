@@ -22,6 +22,10 @@
 	let itemUseForm = $state<HTMLFormElement>();
 	let itemToUse = $state<InventoryEntry | null>(null);
 	let itemUseConfirmed = false;
+	let discardConfirmationOpen = $state(false);
+	let discardForm = $state<HTMLFormElement>();
+	let itemToDiscard = $state<InventoryEntry | null>(null);
+	let discardConfirmed = false;
 	function scheduleMemberSearch() {
 		selectedRecipient = null;
 		clearTimeout(searchTimer);
@@ -77,6 +81,21 @@
 		itemUseConfirmationOpen = false;
 		itemUseConfirmed = true;
 		itemUseForm?.requestSubmit();
+	}
+	function confirmDiscard(event: SubmitEvent, entry: InventoryEntry) {
+		if (discardConfirmed) {
+			discardConfirmed = false;
+			return;
+		}
+		event.preventDefault();
+		discardForm = event.currentTarget as HTMLFormElement;
+		itemToDiscard = entry;
+		discardConfirmationOpen = true;
+	}
+	function submitConfirmedDiscard() {
+		discardConfirmationOpen = false;
+		discardConfirmed = true;
+		discardForm?.requestSubmit();
 	}
 	function transactionTitle(transaction: {
 		type:
@@ -237,15 +256,26 @@
 										<p>{entry.item.description}</p>
 									</div>
 									<b>× {entry.quantity}</b>
-									{#if entry.item.usable}<form
+									<div class="inventory-actions">
+										{#if entry.item.usable}<form
+												method="POST"
+												action={`?/useItem&guild=${selectedGuild.id}`}
+												onsubmit={(event) => confirmItemUse(event, entry)}
+											>
+												<input type="hidden" name="guildId" value={selectedGuild.id} />
+												<input type="hidden" name="itemId" value={entry.item.id} />
+												<button>사용하기</button>
+											</form>{/if}
+										<form
 											method="POST"
-											action={`?/useItem&guild=${selectedGuild.id}`}
-											onsubmit={(event) => confirmItemUse(event, entry)}
+											action={`?/discardItem&guild=${selectedGuild.id}`}
+											onsubmit={(event) => confirmDiscard(event, entry)}
 										>
 											<input type="hidden" name="guildId" value={selectedGuild.id} />
 											<input type="hidden" name="itemId" value={entry.item.id} />
-											<button>사용하기</button>
-										</form>{/if}
+											<button class="discard-button">버리기</button>
+										</form>
+									</div>
 								</article>
 							{/each}
 						</div>
@@ -528,6 +558,26 @@
 			{#if itemToUse.item.effect?.type === 'currency'}<b
 					>+{formatMoneyDisplay(itemToUse.item.effect.amount)} {selectedGuild.currencyUnit}</b
 				>{/if}
+		</div>
+	{/if}
+</ConfirmDialog>
+
+<ConfirmDialog
+	open={discardConfirmationOpen}
+	title="아이템을 버릴까요?"
+	description="버린 아이템은 자동으로 복구되지 않습니다. 아이템 1개가 인벤토리에서 사라집니다."
+	confirmLabel="1개 버리기"
+	danger
+	onconfirm={submitConfirmedDiscard}
+	oncancel={() => (discardConfirmationOpen = false)}
+>
+	{#if itemToDiscard}
+		<div class="item-use-summary discard-summary">
+			<span>{itemToDiscard.item.iconEmoji}</span>
+			<div>
+				<strong>{itemToDiscard.item.name}</strong><small>{itemToDiscard.item.description}</small>
+			</div>
+			<b>보유 {itemToDiscard.quantity}개</b>
 		</div>
 	{/if}
 </ConfirmDialog>
@@ -842,12 +892,20 @@
 	.inventory-grid form {
 		margin: 0;
 	}
+	.inventory-grid .inventory-actions {
+		display: flex;
+		gap: 6px;
+	}
 	.inventory-grid button {
 		padding: 8px 11px;
 		background: #7657ff;
 		color: #fff;
 		font-size: 11px;
 		font-weight: 800;
+	}
+	.inventory-grid .discard-button {
+		background: #321923;
+		color: #ff9fae;
 	}
 	.inventory-empty {
 		display: flex;
@@ -1351,6 +1409,9 @@
 		color: #79dfb7;
 		font-size: 13px;
 		white-space: nowrap;
+	}
+	.discard-summary b {
+		color: #ff9fae;
 	}
 	.empty {
 		text-align: center;

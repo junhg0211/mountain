@@ -9,6 +9,8 @@ import {
 } from '$lib/server/db/accounts';
 import { getDB } from '$lib/server/db';
 import {
+	changeInventoryQuantity,
+	getItemDefinition,
 	getInventory,
 	InsufficientItemQuantityError,
 	ItemNotFoundError,
@@ -212,6 +214,41 @@ export const actions: Actions = {
 				return fail(400, { message: '현재 사용할 수 없는 아이템입니다.' });
 			if (error instanceof InsufficientItemQuantityError)
 				return fail(409, { message: '아이템을 보유하고 있지 않습니다.' });
+			throw error;
+		}
+	},
+	discardItem: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const itemId = String(form.get('itemId') || '');
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership)
+			return fail(401, { message: '로그인이 필요하거나 서버 접근 권한이 없습니다.' });
+		if (!/^\d+$/.test(itemId)) return fail(400, { message: '버릴 아이템을 선택해 주세요.' });
+		const member = await getGuildMember(guildId, membership.user.id);
+		if (!member || member.user.bot)
+			return fail(403, { message: '현재 Discord 서버에 참여 중인 사용자만 이용할 수 있습니다.' });
+		try {
+			const item = await getItemDefinition(guildId, itemId);
+			const remainingQuantity = await changeInventoryQuantity({
+				guildId,
+				userId: membership.user.id,
+				itemId,
+				delta: -1,
+				type: 'discard',
+				referenceType: 'user_discard',
+				referenceId: membership.user.id
+			});
+			redirectToDashboard(
+				cookies,
+				guildId,
+				`${item.iconEmoji} ${item.name} 1개를 버렸습니다. 남은 수량: ${remainingQuantity}개`
+			);
+		} catch (error) {
+			if (error instanceof ItemNotFoundError)
+				return fail(404, { message: '이 서버에 존재하지 않는 아이템입니다.' });
+			if (error instanceof InsufficientItemQuantityError)
+				return fail(409, { message: '버릴 아이템을 보유하고 있지 않습니다.' });
 			throw error;
 		}
 	},

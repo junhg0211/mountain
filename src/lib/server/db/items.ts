@@ -8,6 +8,7 @@ export const ITEM_MOVEMENT_TYPES = [
 	'grant',
 	'purchase',
 	'use',
+	'discard',
 	'transfer_in',
 	'transfer_out',
 	'refund',
