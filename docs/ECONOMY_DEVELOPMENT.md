@@ -89,6 +89,8 @@ Every quantity change locks the item and inventory rows, verifies the stack and 
 and writes exactly one `item_movements` row in the same transaction. A zero result removes the
 inventory row; movement history remains append-only. Money charged or rewarded by a future item
 operation must additionally follow the balance ledger rules above in that same transaction.
+Administrator grants must re-check manage-guild permission and live Discord membership, reject
+bots and inactive items, and record the acting administrator as the movement reference.
 
 ## Automatic payments and role subscriptions
 

@@ -5,6 +5,7 @@
 		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
 	);
 	type Member = { id: string; username: string; avatarUrl: string | null };
+	type Item = (typeof data.items)[number];
 	let query = $state('');
 	let results = $state<Member[]>([]);
 	let target = $state<Member | null>(null);
@@ -39,6 +40,41 @@
 		target = member;
 		query = member.username;
 		results = [];
+	}
+	let itemMemberQuery = $state('');
+	let itemMemberResults = $state<Member[]>([]);
+	let itemRecipient = $state<Member | null>(null);
+	let itemMemberSearching = $state(false);
+	let itemSearchSequence = 0;
+	let itemSearchTimer: ReturnType<typeof setTimeout>;
+	function scheduleItemMemberSearch() {
+		itemRecipient = null;
+		clearTimeout(itemSearchTimer);
+		itemSearchTimer = setTimeout(searchItemMembers, 250);
+	}
+	async function searchItemMembers() {
+		itemRecipient = null;
+		const memberQuery = itemMemberQuery.trim();
+		const sequence = ++itemSearchSequence;
+		if (!selectedGuild || !memberQuery) {
+			itemMemberResults = [];
+			itemMemberSearching = false;
+			return;
+		}
+		itemMemberSearching = true;
+		const response = await fetch(
+			`/api/guilds/${selectedGuild.id}/members?q=${encodeURIComponent(memberQuery)}&includeSelf=true`
+		);
+		const body = response.ok ? await response.json() : { members: [] };
+		if (sequence === itemSearchSequence) {
+			itemMemberResults = body.members;
+			itemMemberSearching = false;
+		}
+	}
+	function chooseItemRecipient(member: Member) {
+		itemRecipient = member;
+		itemMemberQuery = member.username;
+		itemMemberResults = [];
 	}
 	type Transaction = (typeof data.transactions)[number];
 	const transactionLabels: Record<Transaction['type'], string> = {
@@ -137,6 +173,43 @@
 					>
 					<button>아이템 만들기</button>
 				</form>
+				<div class="item-grant-heading">
+					<div><span>ADMIN GRANT</span><h3>아이템 지급</h3></div>
+					<small>서버 구성원의 인벤토리에 아이템을 바로 지급합니다.</small>
+				</div>
+				<form class="item-grant-form" method="POST" action={`?/grantItem&guild=${selectedGuild.id}`}>
+					<input type="hidden" name="guildId" value={selectedGuild.id} />
+					<input type="hidden" name="targetId" value={itemRecipient?.id || ''} />
+					<label class="search"
+						>지급 대상<input
+							bind:value={itemMemberQuery}
+							oninput={scheduleItemMemberSearch}
+							autocomplete="off"
+							placeholder="닉네임 또는 사용자 이름 검색"
+						/>{#if itemMemberSearching}<span class="search-state">검색 중…</span>{/if}{#if itemMemberResults.length}<div class="results">
+							{#each itemMemberResults as member}<button type="button" onclick={() => chooseItemRecipient(member)}
+									>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i>{member.username.slice(0, 1)}</i>{/if}<span>{member.username}</span></button
+								>{/each}
+						</div>{/if}</label
+					>
+					<label
+						>아이템<select name="itemId" required>
+							<option value="">선택</option>
+							{#each data.items.filter((item: Item) => item.active) as item}<option value={item.id}
+								>{item.iconEmoji} {item.name}</option
+							>{/each}
+						</select></label
+					>
+					<label
+						>수량<input name="quantity" type="number" min="1" max="999999999" step="1" value="1" required /></label
+					>
+					<button disabled={!itemRecipient || !data.items.some((item: Item) => item.active)}>지급하기</button>
+				</form>
+				{#if itemRecipient}<div class="selected-user item-recipient">
+						{#if itemRecipient.avatarUrl}<img src={itemRecipient.avatarUrl} alt="" />{:else}<i>{itemRecipient.username.slice(0, 1)}</i>{/if}
+						<div><small>지급 대상</small><strong>{itemRecipient.username}</strong><code>{itemRecipient.id}</code></div>
+						<span>선택됨 ✓</span>
+					</div>{/if}
 				<div class="item-list">
 					{#each data.items as item}
 						<article class:inactive={!item.active}>
@@ -553,6 +626,29 @@
 		color: #747d8d;
 		font-size: 12px;
 	}
+	.item-grant-heading {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 18px;
+		margin-top: 28px;
+		padding-top: 24px;
+		border-top: 1px solid #30294d;
+	}
+	.item-grant-heading span {
+		color: #79dfb7;
+		font-size: 10px;
+		font-weight: 800;
+		letter-spacing: 0.15em;
+	}
+	.item-grant-heading h3 {
+		margin: 6px 0 0;
+		font-size: 21px;
+	}
+	.item-grant-heading small {
+		color: #747d8d;
+		font-size: 12px;
+	}
 	.card .item-form {
 		max-width: none;
 		grid-template-columns: 120px minmax(180px, 1fr) 1.5fr auto;
@@ -568,6 +664,18 @@
 	}
 	.item-form button {
 		min-height: 74px;
+	}
+	.card .item-grant-form {
+		max-width: none;
+		grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 1fr) 110px auto;
+		align-items: end;
+		margin-top: 20px;
+	}
+	.item-grant-form button {
+		min-width: 100px;
+	}
+	.item-recipient {
+		margin-top: 12px;
 	}
 	.emoji-field input {
 		font-size: 22px;
@@ -1094,7 +1202,14 @@
 			align-items: start;
 			flex-direction: column;
 		}
+		.item-grant-heading {
+			align-items: start;
+			flex-direction: column;
+		}
 		.card .item-form {
+			grid-template-columns: 1fr;
+		}
+		.card .item-grant-form {
 			grid-template-columns: 1fr;
 		}
 		.item-form button {
