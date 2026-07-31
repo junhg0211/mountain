@@ -348,6 +348,6 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (betting_pool_id) REFERENCES betting_pools(id) ON DELETE SET NULL,
-    CONSTRAINT transactions_item_use_fk FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL,
+    FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL,
     CHECK (amount >= 0.01)
 );

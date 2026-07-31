@@ -305,7 +305,7 @@ const TABLES = [
 		FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE SET NULL,
 		FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE SET NULL,
 		FOREIGN KEY (betting_pool_id) REFERENCES betting_pools(id) ON DELETE SET NULL,
-		CONSTRAINT transactions_item_use_fk FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL,
+		FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL,
 		CHECK (amount >= 0.01)
 	)`
 ] as const;
@@ -357,16 +357,18 @@ const REPAIRS = [
 async function repairItemUseForeignKey(connection: SQL, databaseName: string): Promise<void> {
 	const rows = await connection`
 		SELECT 1
-		FROM information_schema.TABLE_CONSTRAINTS
-		WHERE CONSTRAINT_SCHEMA=${databaseName}
+		FROM information_schema.KEY_COLUMN_USAGE
+		WHERE TABLE_SCHEMA=${databaseName}
 			AND TABLE_NAME='transactions'
-			AND CONSTRAINT_NAME='transactions_item_use_fk'
-			AND CONSTRAINT_TYPE='FOREIGN KEY'
+			AND COLUMN_NAME='item_use_id'
+			AND REFERENCED_TABLE_SCHEMA=${databaseName}
+			AND REFERENCED_TABLE_NAME='item_uses'
+			AND REFERENCED_COLUMN_NAME='id'
 		LIMIT 1
 	`;
 	if (rows.length > 0) return;
 	await connection.unsafe(
-		'ALTER TABLE transactions ADD CONSTRAINT transactions_item_use_fk FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL'
+		'ALTER TABLE transactions ADD FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL'
 	);
 }
 
