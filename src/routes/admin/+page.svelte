@@ -262,10 +262,62 @@
 							<div>
 								<strong>{item.name}</strong>
 								<p>{item.description}</p>
+								<small class="item-effect"
+									>{item.effect?.type === 'currency'
+										? `사용 시 ${item.effect.amount} ${selectedGuild.currencyUnit} 지급`
+										: '수집품'}</small
+								>
 							</div>
 							<span class:active={item.active} class="status"
 								>{item.active ? '활성' : '비활성'}</span
 							>
+							<details class="item-editor">
+								<summary>속성 편집</summary>
+								<form method="POST" action={`?/editItem&guild=${selectedGuild.id}`}>
+									<input type="hidden" name="guildId" value={selectedGuild.id} />
+									<input type="hidden" name="itemId" value={item.id} />
+									<label
+										>종류<select name="itemKind">
+											<option value="collectible" selected={item.effect?.type !== 'currency'}
+												>수집품</option
+											>
+											<option value="currency" selected={item.effect?.type === 'currency'}
+												>화폐 지급</option
+											>
+										</select></label
+									>
+									<label class="emoji-field"
+										>이모지<input
+											name="iconEmoji"
+											value={item.iconEmoji}
+											maxlength="32"
+											required
+										/></label
+									>
+									<label>이름<input name="name" value={item.name} maxlength="80" required /></label>
+									<label
+										>화폐 보상액 ({selectedGuild.currencyUnit})<input
+											name="rewardAmount"
+											inputmode="decimal"
+											value={item.effect?.type === 'currency' ? item.effect.amount : ''}
+											placeholder="화폐 지급형일 때 필수"
+										/></label
+									>
+									<label class="edit-description"
+										>설명<textarea name="description" maxlength="500" rows="3" required
+											>{item.description}</textarea
+										></label
+									>
+									<label class="edit-active"
+										><input type="checkbox" name="active" checked={item.active} /><span
+											><b>활성 아이템</b><small
+												>비활성화하면 새로 지급하거나 사용할 수 없습니다.</small
+											></span
+										></label
+									>
+									<button>수정사항 저장</button>
+								</form>
+							</details>
 						</article>
 					{:else}
 						<div class="plan-empty">아직 만들어진 아이템이 없습니다.</div>
@@ -764,6 +816,69 @@
 		font-size: 12px;
 		line-height: 1.45;
 	}
+	.item-effect {
+		color: #9585ff;
+		font-size: 11px;
+	}
+	.item-editor {
+		grid-column: 1 / -1;
+		width: 100%;
+		padding-top: 10px;
+		border-top: 1px solid #292f3a;
+	}
+	.item-editor summary {
+		width: max-content;
+		color: #a99bff;
+		font-size: 12px;
+		font-weight: 750;
+		cursor: pointer;
+	}
+	.card .item-editor form {
+		max-width: none;
+		grid-template-columns: 140px 100px minmax(170px, 1fr) minmax(170px, 1fr);
+		align-items: end;
+		margin-top: 16px;
+		padding: 18px;
+		background: #0c0f14;
+		border-radius: 10px;
+	}
+	.item-editor textarea {
+		display: block;
+		width: 100%;
+		min-height: 74px;
+		margin-top: 7px;
+		resize: vertical;
+	}
+	.edit-description {
+		grid-column: 1 / 4;
+	}
+	.edit-active {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-height: 74px;
+		padding: 12px;
+		background: #141820;
+		border-radius: 9px;
+	}
+	.edit-active input {
+		width: 18px;
+		margin: 0;
+	}
+	.edit-active span {
+		display: grid;
+		gap: 4px;
+	}
+	.edit-active b {
+		color: #f2f3f5;
+	}
+	.edit-active small {
+		color: #747d8d;
+		line-height: 1.35;
+	}
+	.item-editor form > button {
+		grid-column: 4;
+	}
 	.role-plans {
 		margin: 28px 0 34px;
 		padding: 24px;
@@ -1257,6 +1372,13 @@
 		}
 		.card .item-grant-form {
 			grid-template-columns: 1fr;
+		}
+		.card .item-editor form {
+			grid-template-columns: 1fr;
+		}
+		.edit-description,
+		.item-editor form > button {
+			grid-column: auto;
 		}
 		.item-form button {
 			grid-column: auto;

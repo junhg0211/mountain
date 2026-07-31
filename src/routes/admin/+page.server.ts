@@ -14,7 +14,8 @@ import {
 	getItemDefinition,
 	ItemNotFoundError,
 	ItemStackLimitError,
-	listItemDefinitions
+	listItemDefinitions,
+	updateItemDefinition
 } from '$lib/server/db/items';
 import {
 	setAttendanceReward,
@@ -167,6 +168,59 @@ async function handleAdjustment(cookies: Cookies, request: Request, type: Balanc
 }
 
 export const actions: Actions = {
+	editItem: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const itemId = String(form.get('itemId') || '');
+		if (!/^\d+$/.test(itemId)) return fail(400, { message: '수정할 아이템을 선택해 주세요.' });
+		const itemKind = String(form.get('itemKind') || 'collectible');
+		if (itemKind !== 'collectible' && itemKind !== 'currency')
+			return fail(400, { message: '지원하는 아이템 종류를 선택해 주세요.' });
+		const rewardAmount =
+			itemKind === 'currency' ? parseMoney(String(form.get('rewardAmount') || '').trim()) : null;
+		if (itemKind === 'currency' && !rewardAmount)
+			return fail(400, { message: '화폐 보상은 0.01 이상의 금액으로 입력해 주세요.' });
+		const db = await getDB();
+		const permission = await db`
+			SELECT permissions FROM user_guilds
+			WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1
+		`;
+		if (permission.length !== 1 || !canManageGuild(String(permission[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		try {
+			const current = await getItemDefinition(guildId, itemId);
+			const updated = await updateItemDefinition(guildId, itemId, {
+				key: current.key,
+				name: String(form.get('name') || '').trim(),
+				description: String(form.get('description') || '').trim(),
+				iconEmoji: String(form.get('iconEmoji') || '').trim(),
+				type: itemKind === 'currency' ? 'consumable' : 'collectible',
+				rarity: current.rarity,
+				stackable: current.stackable,
+				maxStack: current.maxStack,
+				tradable: current.tradable,
+				usable: itemKind === 'currency',
+				consumedOnUse: true,
+				purchasePrice: current.purchasePrice,
+				sellPrice: current.sellPrice,
+				effect: itemKind === 'currency' ? { type: 'currency', amount: rewardAmount! } : null,
+				active: form.get('active') === 'on'
+			});
+			return {
+				success: true,
+				message: `${updated.iconEmoji} ${updated.name} 아이템을 수정했습니다.`
+			};
+		} catch (error) {
+			if (error instanceof ItemNotFoundError)
+				return fail(404, { message: '이 서버에 존재하지 않는 아이템입니다.' });
+			if (error instanceof ItemStackLimitError)
+				return fail(400, { message: '현재 보유 수량보다 최대 스택을 낮출 수 없습니다.' });
+			if (error instanceof TypeError) return fail(400, { message: error.message });
+			throw error;
+		}
+	},
 	grantItem: async ({ cookies, request }) => {
 		const user = await getSessionUser(cookies);
 		if (!user) return fail(401, { message: '로그인이 필요합니다.' });

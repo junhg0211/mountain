@@ -100,6 +100,10 @@ account; inserts a pending `item_uses` snapshot; decrements inventory with a `us
 the account with an `item_use` money ledger row; and marks the use completed. Clients submit only
 the item ID—effect type and reward amount must always be reloaded and validated from the server-side
 item definition.
+Definition edits must stay guild-scoped and preserve the stable `item_key`, current inventory rows,
+and movement history. Changing an effect only affects future uses because each completed use keeps
+its own effect snapshot. Deactivating an item blocks grants and uses without preventing owners from
+viewing or discarding it.
 
 ## Automatic payments and role subscriptions
 
