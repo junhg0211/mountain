@@ -505,22 +505,47 @@ function basecampWallBlocksMovement(
 ) {
 	const radius = 0.32;
 	return walls.some((wall) => {
-		const horizontal = wall.orientation === 'horizontal';
-		if (horizontal) {
-			const line = wall.y;
-			const overlaps = toX + radius > wall.x && toX - radius < wall.x + wall.width;
-			if (!overlaps || Math.abs(fromY - line) < radius) return false;
-			return toY > fromY
-				? fromY + radius <= line && toY + radius > line
-				: fromY - radius >= line && toY - radius < line;
-		}
-		const line = wall.x;
-		const overlaps = toY + radius > wall.y && toY - radius < wall.y + wall.height;
-		if (!overlaps || Math.abs(fromX - line) < radius) return false;
-		return toX > fromX
-			? fromX + radius <= line && toX + radius > line
-			: fromX - radius >= line && toX - radius < line;
+		const wallEndX = wall.orientation === 'horizontal' ? wall.x + wall.width : wall.x;
+		const wallEndY = wall.orientation === 'vertical' ? wall.y + wall.height : wall.y;
+		const startDistance = basecampPointSegmentDistanceSquared(fromX, fromY, wall.x, wall.y, wallEndX, wallEndY);
+		const endDistance = basecampPointSegmentDistanceSquared(toX, toY, wall.x, wall.y, wallEndX, wallEndY);
+		if (startDistance < radius * radius) return endDistance + 1e-9 < startDistance;
+		return basecampSegmentDistanceSquared(fromX, fromY, toX, toY, wall.x, wall.y, wallEndX, wallEndY) < radius * radius;
 	});
+}
+
+function basecampPointSegmentDistanceSquared(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+	const dx = bx - ax;
+	const dy = by - ay;
+	const lengthSquared = dx * dx + dy * dy;
+	const ratio = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
+	const x = ax + ratio * dx;
+	const y = ay + ratio * dy;
+	return (px - x) ** 2 + (py - y) ** 2;
+}
+
+function basecampSegmentDistanceSquared(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
+	if (basecampSegmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0;
+	return Math.min(
+		basecampPointSegmentDistanceSquared(ax, ay, cx, cy, dx, dy),
+		basecampPointSegmentDistanceSquared(bx, by, cx, cy, dx, dy),
+		basecampPointSegmentDistanceSquared(cx, cy, ax, ay, bx, by),
+		basecampPointSegmentDistanceSquared(dx, dy, ax, ay, bx, by)
+	);
+}
+
+function basecampSegmentsIntersect(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
+	const cross = (ux: number, uy: number, vx: number, vy: number, wx: number, wy: number) =>
+		(vx - ux) * (wy - uy) - (vy - uy) * (wx - ux);
+	const abC = cross(ax, ay, bx, by, cx, cy);
+	const abD = cross(ax, ay, bx, by, dx, dy);
+	const cdA = cross(cx, cy, dx, dy, ax, ay);
+	const cdB = cross(cx, cy, dx, dy, bx, by);
+	if (abC * abD < 0 && cdA * cdB < 0) return true;
+	const onSegment = (px: number, py: number, qx: number, qy: number, rx: number, ry: number, area: number) =>
+		Math.abs(area) < 1e-9 && qx >= Math.min(px, rx) && qx <= Math.max(px, rx) && qy >= Math.min(py, ry) && qy <= Math.max(py, ry);
+	return onSegment(ax, ay, cx, cy, bx, by, abC) || onSegment(ax, ay, dx, dy, bx, by, abD) ||
+		onSegment(cx, cy, ax, ay, dx, dy, cdA) || onSegment(cx, cy, bx, by, dx, dy, cdB);
 }
 
 function updateBasecampVoiceTarget(

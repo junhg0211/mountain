@@ -559,20 +559,48 @@
 	function wallBlocksMovement(fromX: number, fromY: number, toX: number, toY: number) {
 		const radius = 0.32;
 		return walls.some((wall) => {
-			const horizontal = wall.orientation === 'horizontal';
-			if (horizontal) {
-				const overlaps = toX + radius > wall.x && toX - radius < wall.x + wall.width;
-				if (!overlaps || Math.abs(fromY - wall.y) < radius) return false;
-				return toY > fromY
-					? fromY + radius <= wall.y && toY + radius > wall.y
-					: fromY - radius >= wall.y && toY - radius < wall.y;
-			}
-			const overlaps = toY + radius > wall.y && toY - radius < wall.y + wall.height;
-			if (!overlaps || Math.abs(fromX - wall.x) < radius) return false;
-			return toX > fromX
-				? fromX + radius <= wall.x && toX + radius > wall.x
-				: fromX - radius >= wall.x && toX - radius < wall.x;
+			const wallEndX = wall.orientation === 'horizontal' ? wall.x + wall.width : wall.x;
+			const wallEndY = wall.orientation === 'vertical' ? wall.y + wall.height : wall.y;
+			const startDistance = pointSegmentDistanceSquared(fromX, fromY, wall.x, wall.y, wallEndX, wallEndY);
+			const endDistance = pointSegmentDistanceSquared(toX, toY, wall.x, wall.y, wallEndX, wallEndY);
+			if (startDistance < radius * radius)
+				return endDistance + 1e-9 < startDistance;
+			return segmentDistanceSquared(fromX, fromY, toX, toY, wall.x, wall.y, wallEndX, wallEndY) < radius * radius;
 		});
+	}
+
+	function pointSegmentDistanceSquared(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
+		const dx = bx - ax;
+		const dy = by - ay;
+		const lengthSquared = dx * dx + dy * dy;
+		const ratio = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared));
+		const x = ax + ratio * dx;
+		const y = ay + ratio * dy;
+		return (px - x) ** 2 + (py - y) ** 2;
+	}
+
+	function segmentDistanceSquared(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
+		if (segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0;
+		return Math.min(
+			pointSegmentDistanceSquared(ax, ay, cx, cy, dx, dy),
+			pointSegmentDistanceSquared(bx, by, cx, cy, dx, dy),
+			pointSegmentDistanceSquared(cx, cy, ax, ay, bx, by),
+			pointSegmentDistanceSquared(dx, dy, ax, ay, bx, by)
+		);
+	}
+
+	function segmentsIntersect(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
+		const cross = (ux: number, uy: number, vx: number, vy: number, wx: number, wy: number) =>
+			(vx - ux) * (wy - uy) - (vy - uy) * (wx - ux);
+		const abC = cross(ax, ay, bx, by, cx, cy);
+		const abD = cross(ax, ay, bx, by, dx, dy);
+		const cdA = cross(cx, cy, dx, dy, ax, ay);
+		const cdB = cross(cx, cy, dx, dy, bx, by);
+		if (abC * abD < 0 && cdA * cdB < 0) return true;
+		const onSegment = (px: number, py: number, qx: number, qy: number, rx: number, ry: number, area: number) =>
+			Math.abs(area) < 1e-9 && qx >= Math.min(px, rx) && qx <= Math.max(px, rx) && qy >= Math.min(py, ry) && qy <= Math.max(py, ry);
+		return onSegment(ax, ay, cx, cy, bx, by, abC) || onSegment(ax, ay, dx, dy, bx, by, abD) ||
+			onSegment(cx, cy, ax, ay, dx, dy, cdA) || onSegment(cx, cy, bx, by, dx, dy, cdB);
 	}
 
 	function wallStyle(wall: { x: number; y: number; width: number; height: number; orientation?: 'horizontal' | 'vertical' }) {
