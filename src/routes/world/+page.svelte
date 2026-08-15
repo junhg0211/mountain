@@ -4,6 +4,14 @@
 	let { data } = $props();
 	const columns = 40;
 	const rows = 24;
+	type Presence = {
+		id: string;
+		userId: string;
+		username: string;
+		avatarUrl: string | null;
+		x: number;
+		y: number;
+	};
 	let rooms = $state<typeof data.rooms>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
@@ -13,6 +21,12 @@
 	let connected = $state(false);
 	let processing = $state(false);
 	let roomCreationRequestId: string | null = null;
+	let presenceId = $state<string | null>(null);
+	let presences = $state<Presence[]>([]);
+	let movementFrame: number | null = null;
+	let lastMovementSentAt = 0;
+	const pressedKeys = new Set<string>();
+	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
 	let notice = $state<{ success: boolean; message: string } | null>(null);
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -22,12 +36,32 @@
 	let activeGuildId: string | null = null;
 
 	onMount(() => {
+		const keydown = (event: KeyboardEvent) => {
+			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
+				return;
+			const key = event.key.toLowerCase();
+			if (!movementKeys.has(key)) return;
+			event.preventDefault();
+			pressedKeys.add(key);
+			if (movementFrame === null) movementFrame = requestAnimationFrame(moveAvatar);
+		};
+		const keyup = (event: KeyboardEvent) => {
+			const key = event.key.toLowerCase();
+			if (!movementKeys.has(key)) return;
+			pressedKeys.delete(key);
+			if (![...pressedKeys].some((pressed) => movementKeys.has(pressed))) sendCurrentPosition();
+		};
+		window.addEventListener('keydown', keydown);
+		window.addEventListener('keyup', keyup);
 		return () => {
 			stopped = true;
 			connectionVersion += 1;
 			if (reconnectTimer) clearTimeout(reconnectTimer);
 			if (heartbeatTimer) clearInterval(heartbeatTimer);
 			socket?.close(1000);
+			window.removeEventListener('keydown', keydown);
+			window.removeEventListener('keyup', keyup);
+			if (movementFrame !== null) cancelAnimationFrame(movementFrame);
 		};
 	});
 
@@ -44,6 +78,8 @@
 		socket = null;
 		connected = false;
 		processing = false;
+		presenceId = null;
+		presences = [];
 		void connect(version);
 	});
 
@@ -75,6 +111,18 @@
 			next.onmessage = (event) => {
 				lastMessageAt = Date.now();
 				const message = JSON.parse(String(event.data)) as Record<string, unknown>;
+				if (message.type === 'basecamp-connected') {
+					presenceId = String(message.presenceId || '');
+					return;
+				}
+				if (message.type === 'basecamp-presences') {
+					const incoming = message.presences as Presence[];
+					const me = presences.find((presence) => presence.id === presenceId);
+					presences = incoming.map((presence) =>
+						presence.id === presenceId && me ? { ...presence, x: me.x, y: me.y } : presence
+					);
+					return;
+				}
 				if (message.type === 'basecamp-state') {
 					rooms = message.rooms as typeof rooms;
 					settings = message.settings as typeof settings;
@@ -102,6 +150,8 @@
 				connected = false;
 				processing = false;
 				roomCreationRequestId = null;
+				presenceId = null;
+				presences = [];
 				if (!stopped && version === connectionVersion)
 					reconnectTimer = setTimeout(() => void connect(version), 1500);
 			};
@@ -115,6 +165,35 @@
 			if (!stopped && version === connectionVersion)
 				reconnectTimer = setTimeout(() => void connect(version), 1500);
 		}
+	}
+
+	function moveAvatar() {
+		movementFrame = null;
+		if (!pressedKeys.size || building || !presenceId) return;
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (!me) {
+			movementFrame = requestAnimationFrame(moveAvatar);
+			return;
+		}
+		const horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
+		const vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
+		if (horizontal || vertical) {
+			const length = Math.hypot(horizontal, vertical) || 1;
+			const x = Math.max(0.6, Math.min(columns - 0.6, me.x + horizontal * 0.18 / length));
+			const y = Math.max(0.8, Math.min(rows - 0.8, me.y + vertical * 0.18 / length));
+			presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
+			if (Date.now() - lastMovementSentAt >= 50 && socket?.readyState === WebSocket.OPEN) {
+				lastMovementSentAt = Date.now();
+				socket.send(JSON.stringify({ type: 'basecamp-move', x, y }));
+			}
+		}
+		movementFrame = requestAnimationFrame(moveAvatar);
+	}
+
+	function sendCurrentPosition() {
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (me && socket?.readyState === WebSocket.OPEN)
+			socket.send(JSON.stringify({ type: 'basecamp-move', x: me.x, y: me.y }));
 	}
 
 	function send(message: Record<string, unknown>) {
@@ -187,6 +266,11 @@
 		const y = Math.min(start.y, end.y);
 		return { x, y, width: Math.abs(start.x - end.x) + 1, height: Math.abs(start.y - end.y) + 1 };
 	});
+	const currentRoom = $derived.by(() => {
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (!me) return null;
+		return rooms.find((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height) || null;
+	});
 
 	function roomStyle(room: { x: number; y: number; width: number; height: number }) {
 		return `left:${(room.x / columns) * 100}%;top:${(room.y / rows) * 100}%;width:${(room.width / columns) * 100}%;height:${(room.height / rows) * 100}%`;
@@ -249,9 +333,14 @@
 						</div>
 					{/each}
 					{#if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
-					<div class="avatar" title={data.user.username}><span>{data.user.username.slice(0, 1).toUpperCase()}</span></div>
+					{#each presences as presence (presence.id)}
+						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${(presence.x / columns) * 100}%;top:${(presence.y / rows) * 100}%`} title={presence.username}>
+							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
+							<small>{presence.username}</small>
+						</div>
+					{/each}
 				</div>
-				<p class="hint">{building ? '빈 공간을 드래그해서 방을 그려 보세요.' : '월드 안에서 방을 만들고 Discord 음성 공간으로 연결할 수 있습니다.'}</p>
+				<p class="hint">{building ? '빈 공간을 드래그해서 방을 그려 보세요.' : '방향키 또는 WASD로 움직여 보세요.'}</p>
 			</div>
 
 			<aside>
@@ -263,6 +352,8 @@
 						<button disabled={processing || !connected || draft.width < 2 || draft.height < 2 || !settings?.categoryId}>방과 채널 만들기</button>
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
+				{:else if currentRoom}
+					<div class="guide room-status"><small>CURRENT ROOM</small><h2>{currentRoom.name}</h2><p>이 방에 들어와 있습니다.</p><div class="voice-status">🔊 연결된 음성 채널: {currentRoom.name}</div></div>
 				{:else}
 					<div class="guide"><small>IN-WORLD BUILDING</small><h2>화면을 벗어나지 않고 건축하세요.</h2><p>방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요. Discord 채널은 방을 확정할 때 함께 만들어집니다.</p><ul><li>최소 크기 2 × 2</li><li>기존 방과 겹칠 수 없음</li><li>서버당 최대 50개</li></ul></div>
 				{/if}
@@ -272,5 +363,5 @@
 </main>
 
 <style>
-	:global(body){margin:0;background:#0a0d12;color:#f4f2ea;font-family:Inter,ui-sans-serif,system-ui,sans-serif}main{min-height:100vh;padding:28px;box-sizing:border-box;background:radial-gradient(circle at 50% 0,#23372d 0,transparent 34%)}header,.intro,.workspace{max-width:1280px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:850;text-decoration:none}.brand span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#d6ff66;color:#17200d}nav{display:flex;gap:8px;overflow:auto}nav a{padding:8px 12px;border-radius:999px;color:#899187;text-decoration:none;font-size:12px;white-space:nowrap}nav a.active{background:#26312a;color:#e5f2dc}.intro{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:70px 0 28px}.intro small,.guide>small,aside form>small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.intro h1{max-width:680px;margin:8px 0 0;font-size:clamp(28px,4vw,52px);line-height:1.04}.intro button,.setup button,aside button{border:0;border-radius:12px;background:#d6ff66;color:#15200c;padding:12px 16px;font:inherit;font-weight:850;cursor:pointer}.intro button.active{background:#ffcf72}.intro button:disabled,.setup button:disabled,aside button:disabled{cursor:not-allowed;opacity:.4}.connection{max-width:1240px;margin:0 auto 10px;color:#848c85;font-size:10px;text-align:right}.connection i{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#9b5c5c}.connection.connected{color:#9eac9c}.connection.connected i{background:#94cf70}.notice{max-width:1240px;margin:0 auto 18px;padding:12px 16px;border:1px solid #663d3d;border-radius:12px;background:#2a1717;color:#ffb6b6;font-size:13px}.notice.success{border-color:#405e38;background:#172619;color:#bfeab6}.setup{max-width:1240px;margin:0 auto 18px;padding:16px 18px;display:grid;grid-template-columns:1fr auto auto auto;align-items:end;gap:14px;border:1px solid #39433a;border-radius:16px;background:#171c18}.setup strong{font-size:14px}.setup p{margin:4px 0 0;color:#8f978e;font-size:11px}.setup label,aside label{display:grid;gap:6px;color:#aeb5ac;font-size:11px}.setup select,aside input{min-width:180px;border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:10px;font:inherit}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px}.world-wrap{min-width:0}.world{position:relative;aspect-ratio:5/3;overflow:hidden;border:1px solid #354039;border-radius:20px;background-color:#1a251d;background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:2.5% 4.1667%;box-shadow:0 24px 80px #0008;touch-action:none;user-select:none}.world.building{cursor:crosshair}.plaza{position:absolute;inset:8%;display:grid;place-content:center;justify-items:center;gap:8px;border:1px dashed #44594b;border-radius:50%;color:#ffffff13;font-size:clamp(20px,5vw,68px);font-weight:950;letter-spacing:.15em}.plaza small{color:#9fb09f;font-size:9px;letter-spacing:.08em}.room{position:absolute;display:grid;place-content:center;min-width:0;box-sizing:border-box;border:3px solid #a3c963;border-radius:8px;background:#4b613fcc;color:#fff;text-align:center;pointer-events:none;box-shadow:inset 0 0 0 3px #162119}.room span{overflow:hidden;padding:0 5px;font-size:12px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}.room small{color:#d6ff86;font-size:8px;font-weight:900;letter-spacing:.12em}.room.failed{border-color:#a55b5b;background:#572e2ecc}.room.draft{z-index:3;border-style:dashed;background:#d6ff6633}.room.draft.invalid{border-color:#ff7d7d;background:#ff5d5d22}.avatar{position:absolute;z-index:4;left:49%;top:62%;display:grid;place-items:center;width:30px;height:30px;border:3px solid #f8f2da;border-radius:50%;background:#ee796b;color:#fff;font-size:12px;font-weight:900;box-shadow:0 8px 15px #0008}.hint{margin:10px 4px 0;color:#788279;font-size:11px}aside{border:1px solid #2e3730;border-radius:18px;background:#141916;padding:20px}aside h2{margin:8px 0 12px;font-size:20px}aside p,aside li{color:#8f978f;font-size:12px;line-height:1.65}aside form{display:grid;gap:12px}aside form p{margin:0}aside button.secondary{background:#282f29;color:#b8c0b8}.guide ul{padding-left:18px}.empty{max-width:720px;margin:120px auto;text-align:center}.empty p{color:#899187}@media(max-width:900px){main{padding:16px}.intro{padding-top:48px;align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.setup{grid-template-columns:1fr 1fr}.setup>div{grid-column:1/-1}}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}.setup{grid-template-columns:1fr}.world{min-width:720px}.world-wrap{overflow-x:auto}.hint{position:sticky;left:0}.intro h1{font-size:30px}}
+	:global(body){margin:0;background:#0a0d12;color:#f4f2ea;font-family:Inter,ui-sans-serif,system-ui,sans-serif}main{min-height:100vh;padding:28px;box-sizing:border-box;background:radial-gradient(circle at 50% 0,#23372d 0,transparent 34%)}header,.intro,.workspace{max-width:1280px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:850;text-decoration:none}.brand span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#d6ff66;color:#17200d}nav{display:flex;gap:8px;overflow:auto}nav a{padding:8px 12px;border-radius:999px;color:#899187;text-decoration:none;font-size:12px;white-space:nowrap}nav a.active{background:#26312a;color:#e5f2dc}.intro{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:70px 0 28px}.intro small,.guide>small,aside form>small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.intro h1{max-width:680px;margin:8px 0 0;font-size:clamp(28px,4vw,52px);line-height:1.04}.intro button,.setup button,aside button{border:0;border-radius:12px;background:#d6ff66;color:#15200c;padding:12px 16px;font:inherit;font-weight:850;cursor:pointer}.intro button.active{background:#ffcf72}.intro button:disabled,.setup button:disabled,aside button:disabled{cursor:not-allowed;opacity:.4}.connection{max-width:1240px;margin:0 auto 10px;color:#848c85;font-size:10px;text-align:right}.connection i{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#9b5c5c}.connection.connected{color:#9eac9c}.connection.connected i{background:#94cf70}.notice{max-width:1240px;margin:0 auto 18px;padding:12px 16px;border:1px solid #663d3d;border-radius:12px;background:#2a1717;color:#ffb6b6;font-size:13px}.notice.success{border-color:#405e38;background:#172619;color:#bfeab6}.setup{max-width:1240px;margin:0 auto 18px;padding:16px 18px;display:grid;grid-template-columns:1fr auto auto auto;align-items:end;gap:14px;border:1px solid #39433a;border-radius:16px;background:#171c18}.setup strong{font-size:14px}.setup p{margin:4px 0 0;color:#8f978e;font-size:11px}.setup label,aside label{display:grid;gap:6px;color:#aeb5ac;font-size:11px}.setup select,aside input{min-width:180px;border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:10px;font:inherit}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px}.world-wrap{min-width:0}.world{position:relative;aspect-ratio:5/3;overflow:hidden;border:1px solid #354039;border-radius:20px;background-color:#1a251d;background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:2.5% 4.1667%;box-shadow:0 24px 80px #0008;touch-action:none;user-select:none}.world.building{cursor:crosshair}.plaza{position:absolute;inset:8%;display:grid;place-content:center;justify-items:center;gap:8px;border:1px dashed #44594b;border-radius:50%;color:#ffffff13;font-size:clamp(20px,5vw,68px);font-weight:950;letter-spacing:.15em}.plaza small{color:#9fb09f;font-size:9px;letter-spacing:.08em}.room{position:absolute;display:grid;place-content:center;min-width:0;box-sizing:border-box;border:3px solid #a3c963;border-radius:8px;background:#4b613fcc;color:#fff;text-align:center;pointer-events:none;box-shadow:inset 0 0 0 3px #162119}.room span{overflow:hidden;padding:0 5px;font-size:12px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}.room small{color:#d6ff86;font-size:8px;font-weight:900;letter-spacing:.12em}.room.failed{border-color:#a55b5b;background:#572e2ecc}.room.draft{z-index:3;border-style:dashed;background:#d6ff6633}.room.draft.invalid{border-color:#ff7d7d;background:#ff5d5d22}.avatar{position:absolute;z-index:4;display:grid;place-items:center;width:30px;height:30px;box-sizing:border-box;border:3px solid #88918a;border-radius:50%;background:#566057;color:#fff;font-size:12px;font-weight:900;box-shadow:0 8px 15px #0008;transform:translate(-50%,-50%);transition:left 70ms linear,top 70ms linear}.avatar.mine{border-color:#f8f2da;background:#ee796b}.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}.avatar small{position:absolute;top:32px;max-width:100px;padding:2px 5px;border-radius:4px;background:#0a0d12cc;color:#f4f2ea;font-size:8px;white-space:nowrap}.hint{margin:10px 4px 0;color:#788279;font-size:11px}.voice-status{margin-top:14px;padding:10px;border:1px solid #405e38;border-radius:10px;background:#172619;color:#bfeab6;font-size:11px}.room-status h2{color:#d6ff86}aside{border:1px solid #2e3730;border-radius:18px;background:#141916;padding:20px}aside h2{margin:8px 0 12px;font-size:20px}aside p,aside li{color:#8f978f;font-size:12px;line-height:1.65}aside form{display:grid;gap:12px}aside form p{margin:0}aside button.secondary{background:#282f29;color:#b8c0b8}.guide ul{padding-left:18px}.empty{max-width:720px;margin:120px auto;text-align:center}.empty p{color:#899187}@media(max-width:900px){main{padding:16px}.intro{padding-top:48px;align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.setup{grid-template-columns:1fr 1fr}.setup>div{grid-column:1/-1}}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}.setup{grid-template-columns:1fr}.world{min-width:720px}.world-wrap{overflow-x:auto}.hint{position:sticky;left:0}.intro h1{font-size:30px}}
 </style>

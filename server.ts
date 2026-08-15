@@ -47,6 +47,15 @@ const server = createServer(handler);
 const sockets = new WebSocketServer({ noServer: true });
 const guildSockets = new Map<string, Set<WebSocket>>();
 const basecampSockets = new Map<string, Set<WebSocket>>();
+interface BasecampPresence {
+	id: string;
+	userId: string;
+	username: string;
+	avatarUrl: string | null;
+	x: number;
+	y: number;
+}
+const basecampPresences = new Map<string, Map<WebSocket, BasecampPresence>>();
 
 void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
@@ -148,21 +157,40 @@ async function attachBasecampSocket(
 	context: { guildId: string; userId: string }
 ) {
 	const { guildId, userId } = context;
-	if (!(await getGuildMember(guildId, userId))) {
+	const member = await getGuildMember(guildId, userId);
+	if (!member) {
 		websocket.close(1008, 'Guild membership required');
 		return;
 	}
+	const presence: BasecampPresence = {
+		id: crypto.randomUUID(),
+		userId,
+		username: member.nick || member.user.global_name || member.user.username,
+		avatarUrl: member.user.avatar
+			? `https://cdn.discordapp.com/avatars/${member.user.id}/${member.user.avatar}.webp?size=80`
+			: null,
+		x: 20,
+		y: 15
+	};
 	const clients = basecampSockets.get(guildId) || new Set<WebSocket>();
 	clients.add(websocket);
 	basecampSockets.set(guildId, clients);
+	const presences = basecampPresences.get(guildId) || new Map<WebSocket, BasecampPresence>();
+	presences.set(websocket, presence);
+	basecampPresences.set(guildId, presences);
 	websocket.on('close', () => {
 		clients.delete(websocket);
 		if (!clients.size) basecampSockets.delete(guildId);
+		presences.delete(websocket);
+		if (!presences.size) basecampPresences.delete(guildId);
+		broadcastBasecampPresences(guildId);
 	});
-	websocket.send(JSON.stringify({ type: 'basecamp-connected' }));
+	websocket.send(JSON.stringify({ type: 'basecamp-connected', presenceId: presence.id }));
 	websocket.send(JSON.stringify({ type: 'basecamp-state', ...(await getBasecampState(guildId)) }));
+	broadcastBasecampPresences(guildId);
 
 	let processing = false;
+	let lastMoveAt = 0;
 	websocket.on('message', async (raw) => {
 		let requestId = '';
 		try {
@@ -170,13 +198,26 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-configure', 'basecamp-create-room'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-configure', 'basecamp-create-room'].includes(
 					type
 				)
 			)
 				throw new BasecampError('지원하지 않는 Basecamp 요청입니다.');
 			if (type === 'basecamp-ping') {
 				websocket.send(JSON.stringify({ type: 'basecamp-pong' }));
+				return;
+			}
+			if (type === 'basecamp-move') {
+				const now = Date.now();
+				if (now - lastMoveAt < 30) return;
+				lastMoveAt = now;
+				const x = Number(message.x);
+				const y = Number(message.y);
+				if (!Number.isFinite(x) || !Number.isFinite(y))
+					throw new BasecampError('올바르지 않은 이동 좌표입니다.');
+				presence.x = Math.max(0.6, Math.min(39.4, x));
+				presence.y = Math.max(0.8, Math.min(23.2, y));
+				broadcastBasecampPresences(guildId);
 				return;
 			}
 			if (processing) throw new BasecampError('다른 공간 작업을 처리하고 있습니다.');
@@ -232,6 +273,16 @@ async function attachBasecampSocket(
 			processing = false;
 		}
 	});
+}
+
+function broadcastBasecampPresences(guildId: string) {
+	const message = JSON.stringify({
+		type: 'basecamp-presences',
+		presences: [...(basecampPresences.get(guildId)?.values() || [])]
+	});
+	for (const socket of basecampSockets.get(guildId) || []) {
+		if (socket.readyState === WebSocket.OPEN) socket.send(message);
+	}
 }
 
 function broadcastBasecampState(

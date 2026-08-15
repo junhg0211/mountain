@@ -34,6 +34,9 @@ Basecamp interactions run through the authenticated `/ws/basecamp` WebSocket ser
 Configuration and room creation never submit or reload the page. Every successful mutation
 broadcasts the latest guild-scoped world state to connected clients; disconnected clients obtain a
 new single-use ticket and resynchronize automatically without refreshing the Activity.
+Connected members move with the arrow keys or WASD. Their server-validated positions, Discord
+display names, and avatars are broadcast to the guild world, and the client detects when its avatar
+crosses into an active room without reloading the page.
 
 ## Authentication flow
 
