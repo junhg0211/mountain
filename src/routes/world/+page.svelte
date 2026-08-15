@@ -35,6 +35,10 @@
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
 	let movementFrame: number | null = null;
+	let cameraFrame: number | null = null;
+	let cameraX = $state(0);
+	let cameraY = $state(0);
+	let cameraInitialized = false;
 	let lastMovementSentAt = 0;
 	const pressedKeys = new Set<string>();
 	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
@@ -84,6 +88,7 @@
 			window.removeEventListener('keydown', keydown);
 			window.removeEventListener('keyup', keyup);
 			if (movementFrame !== null) cancelAnimationFrame(movementFrame);
+			if (cameraFrame !== null) cancelAnimationFrame(cameraFrame);
 			resizeObserver.disconnect();
 		};
 	});
@@ -403,17 +408,46 @@
 				? { name: '월드 광장', channelId: settings.lobbyChannelId }
 				: null
 	);
-	const cameraStyle = $derived.by(() => {
+	const cameraLayout = $derived.by(() => {
 		const cellSize = Math.max(28, viewportWidth / columns, viewportHeight / rows) * 1.35;
 		const mapWidth = columns * cellSize;
 		const mapHeight = rows * cellSize;
 		const me = presences.find((presence) => presence.id === presenceId);
 		const focusX = (me?.x ?? columns / 2) * cellSize;
 		const focusY = (me?.y ?? rows / 2) * cellSize;
-		const x = Math.min(0, Math.max(viewportWidth - mapWidth, viewportWidth / 2 - focusX));
-		const y = Math.min(0, Math.max(viewportHeight - mapHeight, viewportHeight / 2 - focusY));
-		return `width:${mapWidth}px;height:${mapHeight}px;transform:translate3d(${x}px,${y}px,0)`;
+		const targetX = Math.min(0, Math.max(viewportWidth - mapWidth, viewportWidth / 2 - focusX));
+		const targetY = Math.min(0, Math.max(viewportHeight - mapHeight, viewportHeight / 2 - focusY));
+		return { mapWidth, mapHeight, targetX, targetY };
 	});
+	const cameraStyle = $derived(
+		`width:${cameraLayout.mapWidth}px;height:${cameraLayout.mapHeight}px;transform:translate3d(${cameraX}px,${cameraY}px,0)`
+	);
+
+	$effect(() => {
+		const { targetX, targetY } = cameraLayout;
+		if (!viewportWidth || !viewportHeight) return;
+		if (!cameraInitialized) {
+			cameraInitialized = true;
+			cameraX = targetX;
+			cameraY = targetY;
+			return;
+		}
+		if (cameraFrame === null) cameraFrame = requestAnimationFrame(animateCamera);
+	});
+
+	function animateCamera() {
+		cameraFrame = null;
+		const dx = cameraLayout.targetX - cameraX;
+		const dy = cameraLayout.targetY - cameraY;
+		if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+			cameraX = cameraLayout.targetX;
+			cameraY = cameraLayout.targetY;
+			return;
+		}
+		cameraX += dx * 0.18;
+		cameraY += dy * 0.18;
+		cameraFrame = requestAnimationFrame(animateCamera);
+	}
 
 	async function moveToVoiceChannel() {
 		if (!voiceTarget || !data.guildId || movingToVoiceChannel) return;
