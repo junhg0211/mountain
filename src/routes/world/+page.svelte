@@ -30,7 +30,7 @@
 		initial: (typeof data.rooms)[number];
 	} | null = null;
 	let movingToVoiceChannel = $state(false);
-	let autoMoveVoiceChannel = $state(false);
+	let autoMoveVoiceChannel = $state(true);
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
@@ -48,7 +48,8 @@
 	let activeGuildId: string | null = null;
 
 	onMount(() => {
-		autoMoveVoiceChannel = localStorage.getItem(`basecamp-auto-move:${data.guildId}`) === 'true';
+		const savedAutoMove = localStorage.getItem(`basecamp-auto-move:${data.guildId}`);
+		autoMoveVoiceChannel = savedAutoMove === null || savedAutoMove === 'true';
 		const keydown = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
 				return;
@@ -397,6 +398,9 @@
 	async function moveToVoiceChannel() {
 		if (!voiceTarget || !data.guildId || movingToVoiceChannel) return;
 		movingToVoiceChannel = true;
+		const releaseButton = window.setTimeout(() => {
+			movingToVoiceChannel = false;
+		}, 1_000);
 		const target = voiceTarget;
 		const url = `https://discord.com/channels/${data.guildId}/${target.channelId}`;
 		try {
@@ -418,6 +422,7 @@
 				message: error instanceof Error ? error.message : `${target.name} 채널로 이동하지 못했습니다.`
 			};
 		} finally {
+			window.clearTimeout(releaseButton);
 			movingToVoiceChannel = false;
 		}
 	}
