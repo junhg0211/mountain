@@ -39,13 +39,15 @@ import { canManageGuild } from './src/lib/server/db/user-guilds.ts';
 import {
 	BasecampError,
 	configureBasecamp,
-	configureBasecampBackground,
 	configureBasecampSpawn,
+	createBasecampProp,
 	createBasecampWall,
 	createBasecampRoom,
+	deleteBasecampProp,
 	deleteBasecampWall,
 	deleteBasecampRoom,
 	getBasecampState,
+	paintBasecampTiles,
 	updateBasecampRoom
 } from './src/lib/server/basecamp.ts';
 
@@ -232,7 +234,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-background', 'basecamp-set-spawn', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
 					type
 				)
 			)
@@ -300,13 +302,6 @@ async function attachBasecampSocket(
 				});
 				await syncBasecampRoles(guildId, state.settings.accessRoleId);
 				messageText = '월드 광장 채널과 Discord 연결 설정을 저장했습니다.';
-			} else if (type === 'basecamp-set-background') {
-				state = await configureBasecampBackground({
-					guildId,
-					userId,
-					backgroundTile: String(message.backgroundTile || '')
-				});
-				messageText = '월드 배경 타일을 변경했습니다.';
 			} else if (type === 'basecamp-set-spawn') {
 				state = await configureBasecampSpawn({
 					guildId,
@@ -315,6 +310,31 @@ async function attachBasecampSocket(
 					y: presence.y
 				});
 				messageText = '현재 위치를 새로운 시작 위치로 설정했습니다.';
+			} else if (type === 'basecamp-paint-tiles') {
+				state = await paintBasecampTiles({
+					guildId,
+					userId,
+					tileType: String(message.tileType || ''),
+					cells: message.cells as Array<{ x: number; y: number }>
+				});
+				messageText = '선택한 바닥 타일을 칠했습니다.';
+			} else if (type === 'basecamp-create-prop') {
+				state = await createBasecampProp({
+					guildId,
+					userId,
+					name: String(message.name || ''),
+					emoji: String(message.emoji || ''),
+					x: Number(message.x),
+					y: Number(message.y)
+				});
+				messageText = '소품을 월드에 놓았습니다.';
+			} else if (type === 'basecamp-delete-prop') {
+				state = await deleteBasecampProp({
+					guildId,
+					userId,
+					id: String(message.id || '')
+				});
+				messageText = '소품을 치웠습니다.';
 			} else if (type === 'basecamp-create-room') {
 				state = await createBasecampRoom({
 					guildId,

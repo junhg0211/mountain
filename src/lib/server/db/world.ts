@@ -20,6 +20,102 @@ export interface WorldWall {
 	orientation: 'horizontal' | 'vertical';
 }
 
+export interface WorldTile {
+	x: number;
+	y: number;
+	tileType: 'stone' | 'sand' | 'water';
+}
+
+export interface WorldProp {
+	id: string;
+	name: string;
+	emoji: string;
+	x: number;
+	y: number;
+	createdBy: string;
+}
+
+export async function listWorldTiles(guildId: string): Promise<WorldTile[]> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT x, y, tile_type FROM world_tiles WHERE guild_id=${guildId}
+	`;
+	return rows.map((row: Record<string, unknown>) => ({
+		x: Number(row.x),
+		y: Number(row.y),
+		tileType: String(row.tile_type) as WorldTile['tileType']
+	}));
+}
+
+export async function paintWorldTiles(input: {
+	guildId: string;
+	userId: string;
+	tileType: 'grass' | WorldTile['tileType'];
+	cells: Array<{ x: number; y: number }>;
+}) {
+	const db = await getDB();
+	await db.begin(async (tx) => {
+		for (const cell of input.cells) {
+			if (input.tileType === 'grass') {
+				await tx`DELETE FROM world_tiles WHERE guild_id=${input.guildId} AND x=${cell.x} AND y=${cell.y}`;
+			} else {
+				await tx`
+					INSERT INTO world_tiles (guild_id, x, y, tile_type, updated_by)
+					VALUES (${input.guildId}, ${cell.x}, ${cell.y}, ${input.tileType}, ${input.userId})
+					ON DUPLICATE KEY UPDATE tile_type=VALUES(tile_type), updated_by=VALUES(updated_by)
+				`;
+			}
+		}
+	});
+}
+
+export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id, name, emoji, x, y, created_by FROM world_props
+		WHERE guild_id=${guildId} ORDER BY created_at
+	`;
+	return rows.map((row: Record<string, unknown>) => ({
+		id: String(row.id),
+		name: String(row.name),
+		emoji: String(row.emoji),
+		x: Number(row.x),
+		y: Number(row.y),
+		createdBy: String(row.created_by)
+	}));
+}
+
+export async function createWorldProp(input: WorldProp & { guildId: string }) {
+	const db = await getDB();
+	await db`
+		INSERT INTO world_props (id, guild_id, name, emoji, x, y, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.x}, ${input.y}, ${input.createdBy})
+	`;
+}
+
+export async function getWorldProp(guildId: string, id: string): Promise<WorldProp | null> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id, name, emoji, x, y, created_by FROM world_props
+		WHERE guild_id=${guildId} AND id=${id} LIMIT 1
+	`;
+	if (!rows.length) return null;
+	return {
+		id: String(rows[0].id),
+		name: String(rows[0].name),
+		emoji: String(rows[0].emoji),
+		x: Number(rows[0].x),
+		y: Number(rows[0].y),
+		createdBy: String(rows[0].created_by)
+	};
+}
+
+export async function deleteWorldProp(guildId: string, id: string) {
+	const db = await getDB();
+	const result = await db`DELETE FROM world_props WHERE guild_id=${guildId} AND id=${id}`;
+	if (Number(result.affectedRows) !== 1) throw new Error('PROP_NOT_FOUND');
+}
+
 export async function listWorldWalls(guildId: string): Promise<WorldWall[]> {
 	const db = await getDB();
 	const rows = await db`
@@ -54,7 +150,7 @@ export async function deleteWorldWall(guildId: string, id: string) {
 export async function getWorldSettings(guildId: string) {
 	const db = await getDB();
 	const rows = await db`
-		SELECT world_category_id, world_access_role_id, world_lobby_channel_id, world_background_tile,
+		SELECT world_category_id, world_access_role_id, world_lobby_channel_id,
 			world_spawn_x, world_spawn_y
 		FROM guild_settings WHERE guild_id=${guildId} LIMIT 1
 	`;
@@ -64,21 +160,9 @@ export async function getWorldSettings(guildId: string) {
 		lobbyChannelId: rows[0]?.world_lobby_channel_id
 			? String(rows[0].world_lobby_channel_id)
 			: null,
-		backgroundTile: rows[0]?.world_background_tile
-			? String(rows[0].world_background_tile)
-			: 'grass',
 		spawnX: Number(rows[0]?.world_spawn_x ?? 20),
 		spawnY: Number(rows[0]?.world_spawn_y ?? 15)
 	};
-}
-
-export async function setWorldBackgroundTile(guildId: string, backgroundTile: string) {
-	const db = await getDB();
-	await db`
-		INSERT INTO guild_settings (guild_id, world_background_tile)
-		VALUES (${guildId}, ${backgroundTile})
-		ON DUPLICATE KEY UPDATE world_background_tile=VALUES(world_background_tile)
-	`;
 }
 
 export async function setWorldSpawn(guildId: string, x: number, y: number) {

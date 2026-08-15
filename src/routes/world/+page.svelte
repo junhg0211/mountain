@@ -15,9 +15,12 @@
 	};
 	let rooms = $state<typeof data.rooms>([]);
 	let walls = $state<typeof data.walls>([]);
+	let tiles = $state<typeof data.tiles>([]);
+	let worldProps = $state<typeof data.props>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
-	let buildTool = $state<'room' | 'wall' | 'eraser'>('room');
+	let buildTool = $state<'room' | 'wall' | 'eraser' | 'tile' | 'prop'>('room');
+	let tileType = $state<'grass' | 'stone' | 'sand' | 'water'>('stone');
 	let start = $state<{ x: number; y: number } | null>(null);
 	let end = $state<{ x: number; y: number } | null>(null);
 	let socket = $state<WebSocket | null>(null);
@@ -25,6 +28,8 @@
 	let processing = $state(false);
 	let roomCreationRequestId: string | null = null;
 	let roomEditRequestId: string | null = null;
+	let propRequestId: string | null = null;
+	let selectedProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedRoom = $state<(typeof data.rooms)[number] | null>(null);
 	let roomDeletionOpen = $state(false);
 	let editSession: {
@@ -141,6 +146,8 @@
 		activeGuildId = guildId;
 		rooms = [...data.rooms];
 		walls = [...data.walls];
+		tiles = [...data.tiles];
+		worldProps = [...data.props];
 		settings = data.settings;
 		connectionVersion += 1;
 		const version = connectionVersion;
@@ -204,6 +211,8 @@
 				if (message.type === 'basecamp-state') {
 					rooms = message.rooms as typeof rooms;
 					walls = message.walls as typeof walls;
+					tiles = message.tiles as typeof tiles;
+					worldProps = message.props as typeof worldProps;
 					settings = message.settings as typeof settings;
 					return;
 				}
@@ -212,6 +221,7 @@
 					const success = message.ok === true;
 					const isRoomCreation = message.requestId === roomCreationRequestId;
 					const isRoomEdit = message.requestId === roomEditRequestId;
+					const isPropRequest = message.requestId === propRequestId;
 					notice = {
 						success,
 						message: String(success ? message.message || '' : message.error || '')
@@ -227,6 +237,14 @@
 						roomEditRequestId = null;
 						if (success) {
 							selectedRoom = null;
+							building = false;
+						}
+					}
+					if (isPropRequest) {
+						propRequestId = null;
+						if (success) {
+							selectedProp = null;
+							cancelDraft();
 							building = false;
 						}
 					}
@@ -365,13 +383,26 @@
 		});
 	}
 
-	function setBackgroundTile(event: Event) {
-		const backgroundTile = (event.currentTarget as HTMLSelectElement).value;
-		send({ type: 'basecamp-set-background', backgroundTile });
-	}
-
 	function setSpawn() {
 		send({ type: 'basecamp-set-spawn' });
+	}
+
+	function createProp(event: SubmitEvent) {
+		event.preventDefault();
+		if (!draft) return;
+		const form = new FormData(event.currentTarget as HTMLFormElement);
+		propRequestId = send({
+			type: 'basecamp-create-prop',
+			name: form.get('name'),
+			emoji: form.get('emoji'),
+			x: draft.x,
+			y: draft.y
+		});
+	}
+
+	function deleteProp() {
+		if (!selectedProp) return;
+		propRequestId = send({ type: 'basecamp-delete-prop', id: selectedProp.id });
 	}
 
 	function createRoom(event: SubmitEvent) {
@@ -417,6 +448,12 @@
 
 	function beginRoom(event: PointerEvent) {
 		if (!building || buildTool === 'eraser' || event.button !== 0) return;
+		if (buildTool === 'prop') {
+			start = cell(event);
+			end = start;
+			selectedProp = null;
+			return;
+		}
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		start = buildTool === 'wall' ? wallPoint(event) : cell(event);
 		end = start;
@@ -465,6 +502,12 @@
 		editSession = null;
 		if (building && buildTool === 'wall' && draft) {
 			send({ type: 'basecamp-create-wall', ...draft });
+			cancelDraft();
+		} else if (building && buildTool === 'tile' && draft) {
+			const cells = [];
+			for (let x = draft.x; x < draft.x + draft.width; x += 1)
+				for (let y = draft.y; y < draft.y + draft.height; y += 1) cells.push({ x, y });
+			send({ type: 'basecamp-paint-tiles', tileType, cells });
 			cancelDraft();
 		}
 	}
@@ -523,10 +566,18 @@
 			: `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;height:${wall.height * cameraLayout.cellSize}px`;
 	}
 
-	function setBuildTool(tool: 'room' | 'wall' | 'eraser') {
+	function setBuildTool(tool: 'room' | 'wall' | 'eraser' | 'tile' | 'prop') {
 		if (building && buildTool === tool) building = false;
 		else { building = true; buildTool = tool; }
 		cancelEditing();
+		selectedProp = null;
+	}
+
+	function selectProp(event: PointerEvent, prop: (typeof data.props)[number]) {
+		if (!building || buildTool !== 'prop' || event.button !== 0) return;
+		event.stopPropagation();
+		selectedProp = prop;
+		cancelDraft();
 	}
 
 	function deleteWall(event: PointerEvent, wall: (typeof data.walls)[number]) {
@@ -686,6 +737,21 @@
 		return `left:${room.x * cameraLayout.cellSize}px;top:${room.y * cameraLayout.cellSize}px;width:${room.width * cameraLayout.cellSize}px;height:${room.height * cameraLayout.cellSize}px`;
 	}
 
+	function tileStyle(tile: { x: number; y: number }) {
+		return `left:${tile.x * cameraLayout.cellSize}px;top:${tile.y * cameraLayout.cellSize}px;width:${cameraLayout.cellSize}px;height:${cameraLayout.cellSize}px`;
+	}
+
+	function propStyle(prop: { id: string; x: number; y: number }) {
+		const stackIndex = worldProps
+			.filter((item) => item.x === prop.x && item.y === prop.y)
+			.findIndex((item) => item.id === prop.id);
+		const angle = stackIndex * 2.4;
+		const radius = Math.min(0.24, stackIndex * 0.07) * cameraLayout.cellSize;
+		const x = (prop.x + 0.5) * cameraLayout.cellSize + Math.cos(angle) * radius;
+		const y = (prop.y + 0.5) * cameraLayout.cellSize + Math.sin(angle) * radius;
+		return `left:${x}px;top:${y}px`;
+	}
+
 	const spawnStyle = $derived(
 		`left:${(settings?.spawnX ?? 20) * cameraLayout.cellSize}px;top:${(settings?.spawnY ?? 15) * cameraLayout.cellSize}px`
 	);
@@ -719,15 +785,17 @@
 	{:else}
 		<section class="intro">
 			<div><small>SERVER WORLD</small><h1>같은 화면에서 걷고, 바로 공간을 바꿉니다.</h1></div>
-			{#if data.canManage}
-				<div class="build-actions">
-					<label class="tile-picker">배경<select disabled={!connected || processing} value={settings?.backgroundTile || 'grass'} onchange={setBackgroundTile}><option value="grass">잔디</option><option value="stone">석재</option><option value="sand">모래</option><option value="water">물결</option></select></label>
+			<div class="build-actions">
+				{#if data.canManage}
 					<button disabled={!connected || processing} onclick={setSpawn}>현재 위치를 시작점으로</button>
 					<button class:active={building && buildTool === 'room'} onclick={() => setBuildTool('room')}>방 만들기</button>
 					<button class:active={building && buildTool === 'wall'} onclick={() => setBuildTool('wall')}>벽 만들기</button>
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
-				</div>
-			{/if}
+					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option><option value="stone">석재</option><option value="sand">모래</option><option value="water">물결</option></select></label>
+					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
+				{/if}
+				<button class:active={building && buildTool === 'prop'} onclick={() => setBuildTool('prop')}>소품 놓기</button>
+			</div>
 		</section>
 
 		<div class="connection" class:connected><i></i>{connected ? '실시간 연결됨' : '자동 재연결 중'}</div>
@@ -756,18 +824,13 @@
 					onpointermove={resizeRoom}
 					onpointerup={finishRoom}
 				>
-					<div
-						class="world-background"
-						class:tile-stone={settings?.backgroundTile === 'stone'}
-						class:tile-sand={settings?.backgroundTile === 'sand'}
-						class:tile-water={settings?.backgroundTile === 'water'}
-						style={backgroundStyle}
-					></div>
+					<div class="world-background" style={backgroundStyle}></div>
 					<div
 						class="world-map"
 						style={cameraStyle}
 					>
 					<div class="plaza" style={spawnStyle}><span>START</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
+					{#each tiles as tile}<div class:stone={tile.tileType === 'stone'} class:sand={tile.tileType === 'sand'} class:water={tile.tileType === 'water'} class="painted-tile" style={tileStyle(tile)}></div>{/each}
 					{#each walls as wall}
 						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)} role="button" tabindex={building && buildTool === 'eraser' ? 0 : -1} aria-label="벽 삭제" onpointerdown={(event) => deleteWall(event, wall)}></div>
 					{/each}
@@ -787,20 +850,27 @@
 							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + 0.5) * cameraLayout.cellSize}px;top:${(draft.y + 0.5) * cameraLayout.cellSize}px`}>＋</div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
 							<small>{presence.username}</small>
 						</div>
 					{/each}
+					{#each worldProps as prop (prop.id)}
+						<button class:selected={selectedProp?.id === prop.id} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{prop.emoji}</button>
+					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? '소품을 놓거나 선택할 칸을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
-				{#if selectedRoom && data.canManage}
+				{#if selectedProp}
+					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.emoji} {selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y}</p>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
+				{:else if draft && buildTool === 'prop'}
+					<form onsubmit={createProp}><small>새 소품</small><h2>이 칸에 소품 놓기</h2><label>표시<input name="emoji" maxlength="32" placeholder="예: 🪴" required /></label><label>소품 이름<input name="name" maxlength="40" placeholder="예: 화분" required /></label><p>같은 칸에 다른 소품이 있어도 함께 놓을 수 있습니다.</p><button disabled={processing || !connected}>소품 놓기</button><button class="secondary" type="button" onclick={cancelDraft}>취소</button></form>
+				{:else if selectedRoom && data.canManage}
 					<form onsubmit={updateRoom}>
 						<small>선택한 공간</small><h2>방 편집하기</h2>
 						<label>방 이름<input name="name" maxlength="80" value={selectedRoom.name} required /></label>
@@ -852,5 +922,5 @@
 	.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
-	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.tile-picker select:disabled{opacity:.4}.world-background.tile-stone{background-color:#303735;background-image:linear-gradient(#ffffff0d 1px,transparent 1px),linear-gradient(90deg,#ffffff0d 1px,transparent 1px),linear-gradient(135deg,#ffffff05 25%,transparent 25%,transparent 75%,#0000000a 75%)}.world-background.tile-sand{background-color:#5a4a2f;background-image:linear-gradient(#fff1c20c 1px,transparent 1px),linear-gradient(90deg,#fff1c20c 1px,transparent 1px),radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:var(--tile-size) var(--tile-size),var(--tile-size) var(--tile-size),18px 18px}.world-background.tile-water{background-color:#173b46;background-image:linear-gradient(#bdefff12 1px,transparent 1px),linear-gradient(90deg,#bdefff12 1px,transparent 1px),repeating-radial-gradient(ellipse at 50% 0,#69c7df18 0 3px,transparent 4px 12px);background-size:var(--tile-size) var(--tile-size),var(--tile-size) var(--tile-size),48px 24px}
+	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:#111913aa;font-size:22px;line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}
 </style>

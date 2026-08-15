@@ -139,7 +139,6 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     world_category_id VARCHAR(255),
     world_access_role_id VARCHAR(255),
     world_lobby_channel_id VARCHAR(255),
-    world_background_tile VARCHAR(32) NOT NULL DEFAULT 'grass',
     world_spawn_x DOUBLE NOT NULL DEFAULT 20,
     world_spawn_y DOUBLE NOT NULL DEFAULT 15,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -178,6 +177,30 @@ CREATE TABLE IF NOT EXISTS world_walls (
     INDEX world_walls_guild_idx (guild_id),
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
     CHECK (width >= 1 AND height >= 1)
+);
+
+CREATE TABLE IF NOT EXISTS world_tiles (
+    guild_id VARCHAR(255) NOT NULL,
+    x INT NOT NULL,
+    y INT NOT NULL,
+    tile_type VARCHAR(16) NOT NULL,
+    updated_by VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, x, y),
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS world_props (
+    id CHAR(36) PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    name VARCHAR(40) NOT NULL,
+    emoji VARCHAR(32) NOT NULL,
+    x INT NOT NULL,
+    y INT NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX world_props_guild_idx (guild_id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS monthly_burn_runs (

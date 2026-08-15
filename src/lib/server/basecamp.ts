@@ -4,13 +4,18 @@ import {
 	archiveWorldRoom,
 	createWorldRoomDraft,
 	createWorldWall,
+	createWorldProp,
+	deleteWorldProp,
 	deleteWorldWall,
 	failWorldRoom,
+	getWorldProp,
 	getWorldSettings,
+	listWorldProps,
 	listWorldRooms,
+	listWorldTiles,
 	listWorldWalls,
+	paintWorldTiles,
 	restoreWorldRoom,
-	setWorldBackgroundTile,
 	setWorldSpawn,
 	setWorldSettings,
 	updateWorldRoom
@@ -55,25 +60,71 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 }
 
 export async function getBasecampState(guildId: string) {
-	const [rooms, walls, settings] = await Promise.all([
+	const [rooms, walls, tiles, props, settings] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
+		listWorldTiles(guildId),
+		listWorldProps(guildId),
 		getWorldSettings(guildId)
 	]);
-	return { rooms, walls, settings };
+	return { rooms, walls, tiles, props, settings };
 }
 
-const backgroundTiles = new Set(['grass', 'stone', 'sand', 'water']);
-
-export async function configureBasecampBackground(input: {
+export async function paintBasecampTiles(input: {
 	guildId: string;
 	userId: string;
-	backgroundTile: string;
+	tileType: string;
+	cells: Array<{ x: number; y: number }>;
 }) {
 	await requireGuildManager(input.guildId, input.userId);
-	if (!backgroundTiles.has(input.backgroundTile))
-		throw new BasecampError('지원하는 배경 타일을 선택해 주세요.');
-	await setWorldBackgroundTile(input.guildId, input.backgroundTile);
+	if (!['grass', 'stone', 'sand', 'water'].includes(input.tileType))
+		throw new BasecampError('지원하는 바닥 타일을 선택해 주세요.');
+	if (!Array.isArray(input.cells) || input.cells.length < 1 || input.cells.length > 2_000 ||
+		!input.cells.every((cell) => Number.isInteger(cell.x) && Number.isInteger(cell.y)))
+		throw new BasecampError('한 번에 1~2,000칸을 칠해 주세요.');
+	const cells = [...new Map(input.cells.map((cell) => [`${cell.x}:${cell.y}`, cell])).values()];
+	await paintWorldTiles({
+		guildId: input.guildId,
+		userId: input.userId,
+		tileType: input.tileType as 'grass' | 'stone' | 'sand' | 'water',
+		cells
+	});
+	return getBasecampState(input.guildId);
+}
+
+export async function createBasecampProp(input: {
+	guildId: string;
+	userId: string;
+	name: string;
+	emoji: string;
+	x: number;
+	y: number;
+}) {
+	if (!(await getGuildMember(input.guildId, input.userId)))
+		throw new BasecampError('현재 Discord 서버 구성원만 소품을 놓을 수 있습니다.');
+	const name = input.name.trim();
+	const emoji = input.emoji.trim();
+	if (!name || name.length > 40) throw new BasecampError('소품 이름은 1~40자로 입력해 주세요.');
+	if (!emoji || emoji.length > 32) throw new BasecampError('표시할 이모지나 짧은 문자를 입력해 주세요.');
+	if (!Number.isInteger(input.x) || !Number.isInteger(input.y))
+		throw new BasecampError('소품을 놓을 칸을 선택해 주세요.');
+	await createWorldProp({
+		id: crypto.randomUUID(),
+		guildId: input.guildId,
+		name,
+		emoji,
+		x: input.x,
+		y: input.y,
+		createdBy: input.userId
+	});
+	return getBasecampState(input.guildId);
+}
+
+export async function deleteBasecampProp(input: { guildId: string; userId: string; id: string }) {
+	const prop = await getWorldProp(input.guildId, input.id);
+	if (!prop) throw new BasecampError('삭제할 소품을 찾을 수 없습니다.');
+	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
+	await deleteWorldProp(input.guildId, input.id);
 	return getBasecampState(input.guildId);
 }
 
