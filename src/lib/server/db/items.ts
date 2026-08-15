@@ -43,6 +43,11 @@ export type ItemDefinitionInput = {
 	active?: boolean;
 };
 export type ItemDefinition = ReturnType<typeof mapItem>;
+export interface InventoryEntry {
+	item: ItemDefinition;
+	quantity: number;
+	updatedAt: string;
+}
 
 export class ItemNotFoundError extends Error {}
 export class InsufficientItemQuantityError extends Error {}
@@ -114,7 +119,10 @@ export async function getItemDefinitionByKey(guildId: string, itemKey: string) {
 	return mapItem(rows[0] as Record<string, unknown>);
 }
 
-export async function listItemDefinitions(guildId: string, includeInactive = false) {
+export async function listItemDefinitions(
+	guildId: string,
+	includeInactive = false
+): Promise<ItemDefinition[]> {
 	const db = await getDB();
 	const rows = includeInactive
 		? await db`SELECT * FROM items WHERE guild_id=${guildId} ORDER BY name, id`
@@ -122,7 +130,7 @@ export async function listItemDefinitions(guildId: string, includeInactive = fal
 	return rows.map((row: Record<string, unknown>) => mapItem(row));
 }
 
-export async function getInventory(guildId: string, userId: string) {
+export async function getInventory(guildId: string, userId: string): Promise<InventoryEntry[]> {
 	const db = await getDB();
 	const rows = await db`
 		SELECT items.*, inventories.quantity, inventories.updated_at AS inventory_updated_at

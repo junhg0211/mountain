@@ -9,6 +9,7 @@ import {
 	REST,
 	Routes,
 	type ChatInputCommandInteraction,
+	type AutocompleteInteraction,
 	type RESTGetAPIApplicationCommandsResult,
 	type RESTPostAPIApplicationCommandsJSONBody,
 	type RESTPostAPIChatInputApplicationCommandsJSONBody
@@ -21,12 +22,21 @@ import pay from './commands/economy/pay';
 import autopay from './commands/economy/autopay';
 import subscription from './commands/economy/subscription';
 import ranking from './commands/economy/ranking';
+import inventory from './commands/economy/inventory';
+import useItem from './commands/economy/use-item';
 import dashboard from './commands/utility/dashboard';
 import { getLanguage } from './i18n';
 import { startMonthlyBurnScheduler, stopMonthlyBurnScheduler } from './monthly-burn';
 import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
-import { startAutomaticPaymentScheduler, stopAutomaticPaymentScheduler } from './automatic-payments';
-import { startAttendanceReminderScheduler, stopAttendanceReminderScheduler } from './attendance-reminders';
+import {
+	startAutomaticPaymentScheduler,
+	stopAutomaticPaymentScheduler
+} from './automatic-payments';
+import {
+	startAttendanceReminderScheduler,
+	stopAttendanceReminderScheduler
+} from './attendance-reminders';
+import { handleMemberMessage } from './member-activity';
 
 dotenv.config();
 
@@ -91,6 +101,7 @@ interface Command {
 		toJSON(): RESTPostAPIChatInputApplicationCommandsJSONBody;
 	};
 	execute(interaction: ChatInputCommandInteraction): Promise<void>;
+	autocomplete?(interaction: AutocompleteInteraction): Promise<void>;
 }
 
 const commands = new Map<string, Command>([
@@ -102,6 +113,8 @@ const commands = new Map<string, Command>([
 	[autopay.data.name, autopay],
 	[subscription.data.name, subscription],
 	[ranking.data.name, ranking],
+	[inventory.data.name, inventory],
+	[useItem.data.name, useItem],
 	[dashboard.data.name, dashboard]
 ]);
 
@@ -161,7 +174,11 @@ async function start() {
 	let attempt = 0;
 	while (!state.shuttingDown) {
 		const client = new Client({
-			intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
+			intents: [
+				GatewayIntentBits.Guilds,
+				GatewayIntentBits.GuildMessages,
+				GatewayIntentBits.GuildVoiceStates
+			]
 		});
 		state.client = client;
 		client.once(Events.ClientReady, () => {
@@ -169,6 +186,11 @@ async function start() {
 			startVoiceActivityRewards(client);
 		});
 		client.on(Events.Error, (error) => console.error('Discord client error:', error));
+		client.on(Events.MessageCreate, (message) => {
+			void handleMemberMessage(message).catch((error) =>
+				console.error('Message activity recording failed:', error)
+			);
+		});
 		bindInteractionHandler(client);
 
 		try {
@@ -194,6 +216,16 @@ async function start() {
 function bindInteractionHandler(client: Client) {
 	client.removeAllListeners(Events.InteractionCreate);
 	client.on(Events.InteractionCreate, async (interaction) => {
+		if (interaction.isAutocomplete()) {
+			const command = commands.get(interaction.commandName);
+			try {
+				await command?.autocomplete?.(interaction);
+			} catch (error) {
+				console.error(`Command ${interaction.commandName} autocomplete failed:`, error);
+				if (!interaction.responded) await interaction.respond([]);
+			}
+			return;
+		}
 		if (!interaction.isChatInputCommand()) return;
 
 		const command = commands.get(interaction.commandName);
