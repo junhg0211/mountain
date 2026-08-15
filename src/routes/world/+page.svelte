@@ -29,7 +29,7 @@
 		origin: { x: number; y: number };
 		initial: (typeof data.rooms)[number];
 	} | null = null;
-	let openingVoiceChannel = $state(false);
+	let movingToLobby = $state(false);
 	let autoMoveVoiceChannel = $state(false);
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
 	let presenceId = $state<string | null>(null);
@@ -394,9 +394,9 @@
 				: null
 	);
 
-	async function openVoiceChannel() {
-		if (!settings?.lobbyChannelId || !data.guildId || openingVoiceChannel) return;
-		openingVoiceChannel = true;
+	async function moveToLobby() {
+		if (!settings?.lobbyChannelId || !data.guildId || movingToLobby) return;
+		movingToLobby = true;
 		const url = `https://discord.com/channels/${data.guildId}/${settings.lobbyChannelId}`;
 		try {
 			const query = new URLSearchParams(window.location.search);
@@ -406,19 +406,18 @@
 				const discord = new DiscordSDK(data.discordClientId);
 				await discord.ready();
 				const result = await discord.commands.openExternalLink({ url });
-				if (!result.opened) throw new Error('Discord가 채널 링크를 열지 못했습니다.');
+				if (!result.opened) throw new Error('Discord가 월드 광장으로 이동하지 못했습니다.');
 			} else {
-				const opened = window.open(url, 'mountain-basecamp-voice');
-				if (!opened) throw new Error('팝업을 허용한 뒤 다시 시도해 주세요.');
+				window.location.assign(url);
 			}
-			notice = { success: true, message: '월드 광장 음성 채널을 열었습니다. 먼저 통화에 참가해 주세요.' };
+			notice = { success: true, message: '월드 광장으로 이동했습니다. 통화에 참가해 주세요.' };
 		} catch (error) {
 			notice = {
 				success: false,
-				message: error instanceof Error ? error.message : '음성 채널을 열지 못했습니다.'
+				message: error instanceof Error ? error.message : '월드 광장으로 이동하지 못했습니다.'
 			};
 		} finally {
-			openingVoiceChannel = false;
+			movingToLobby = false;
 		}
 	}
 
@@ -555,7 +554,7 @@
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
 				{:else}
-					<div class:room-status={currentRoom} class="guide"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div><button disabled={openingVoiceChannel || !settings?.lobbyChannelId} onclick={openVoiceChannel}>{openingVoiceChannel ? '광장 여는 중…' : '월드 광장 통화 참가'}</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
+					<div class:room-status={currentRoom} class="guide"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div><button disabled={movingToLobby || !settings?.lobbyChannelId} onclick={moveToLobby}>월드 광장으로 이동</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
 				{/if}
 			</aside>
 		</div>
