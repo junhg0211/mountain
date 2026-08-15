@@ -46,9 +46,11 @@
 	const movementAcceleration = 34;
 	const movementFriction = 54;
 	let cameraFrame: number | null = null;
+	let zoomFrame: number | null = null;
 	let cameraX = $state(0);
 	let cameraY = $state(0);
-	let worldZoom = $state(1);
+	let targetZoom = $state(1);
+	let renderedZoom = $state(1);
 	let cameraInitialized = false;
 	let lastMovementSentAt = 0;
 	const pressedKeys = new Set<string>();
@@ -111,6 +113,7 @@
 			window.removeEventListener('keyup', keyup);
 			if (movementFrame !== null) cancelAnimationFrame(movementFrame);
 			if (cameraFrame !== null) cancelAnimationFrame(cameraFrame);
+			if (zoomFrame !== null) cancelAnimationFrame(zoomFrame);
 			resizeObserver.disconnect();
 		};
 	});
@@ -540,7 +543,7 @@
 				: null
 	);
 	const cameraLayout = $derived.by(() => {
-		const cellSize = Math.max(28, viewportWidth / columns, viewportHeight / rows) * 1.35 * worldZoom;
+		const cellSize = Math.max(28, viewportWidth / columns, viewportHeight / rows) * 1.35 * renderedZoom;
 		const mapWidth = columns * cellSize;
 		const mapHeight = rows * cellSize;
 		const me = presences.find((presence) => presence.id === presenceId);
@@ -567,6 +570,7 @@
 			cameraY = targetY;
 			return;
 		}
+		if (zoomFrame !== null) return;
 		if (cameraFrame === null) cameraFrame = requestAnimationFrame(animateCamera);
 	});
 
@@ -587,7 +591,25 @@
 	function zoomWorld(event: WheelEvent) {
 		event.preventDefault();
 		const factor = Math.exp(-event.deltaY * 0.0012);
-		worldZoom = Math.max(0.4, Math.min(2.5, worldZoom * factor));
+		targetZoom = Math.max(0.4, Math.min(2.5, targetZoom * factor));
+		if (cameraFrame !== null) {
+			cancelAnimationFrame(cameraFrame);
+			cameraFrame = null;
+		}
+		if (zoomFrame === null) zoomFrame = requestAnimationFrame(animateZoom);
+	}
+
+	function animateZoom() {
+		zoomFrame = null;
+		const difference = targetZoom - renderedZoom;
+		const nextZoom = Math.abs(difference) < 0.001
+			? targetZoom
+			: renderedZoom + difference * 0.18;
+		const ratio = nextZoom / renderedZoom;
+		cameraX = viewportWidth / 2 - (viewportWidth / 2 - cameraX) * ratio;
+		cameraY = viewportHeight / 2 - (viewportHeight / 2 - cameraY) * ratio;
+		renderedZoom = nextZoom;
+		if (nextZoom !== targetZoom) zoomFrame = requestAnimationFrame(animateZoom);
 	}
 
 	async function moveToVoiceChannel() {
@@ -743,7 +765,7 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · 휠로 확대/축소'} · {Math.round(worldZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
