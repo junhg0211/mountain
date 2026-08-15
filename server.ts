@@ -39,6 +39,7 @@ import { canManageGuild } from './src/lib/server/db/user-guilds.ts';
 import {
 	BasecampError,
 	configureBasecamp,
+	configureBasecampBackground,
 	createBasecampWall,
 	createBasecampRoom,
 	deleteBasecampWall,
@@ -230,7 +231,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-background', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
 					type
 				)
 			)
@@ -298,6 +299,13 @@ async function attachBasecampSocket(
 				});
 				await syncBasecampRoles(guildId, state.settings.accessRoleId);
 				messageText = '월드 광장 채널과 Discord 연결 설정을 저장했습니다.';
+			} else if (type === 'basecamp-set-background') {
+				state = await configureBasecampBackground({
+					guildId,
+					userId,
+					backgroundTile: String(message.backgroundTile || '')
+				});
+				messageText = '월드 배경 타일을 변경했습니다.';
 			} else if (type === 'basecamp-create-room') {
 				state = await createBasecampRoom({
 					guildId,

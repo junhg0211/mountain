@@ -367,6 +367,11 @@
 		});
 	}
 
+	function setBackgroundTile(event: Event) {
+		const backgroundTile = (event.currentTarget as HTMLSelectElement).value;
+		send({ type: 'basecamp-set-background', backgroundTile });
+	}
+
 	function createRoom(event: SubmitEvent) {
 		event.preventDefault();
 		if (!draft) return;
@@ -720,6 +725,7 @@
 			<div><small>SERVER WORLD</small><h1>같은 화면에서 걷고, 바로 공간을 바꿉니다.</h1></div>
 			{#if data.canManage}
 				<div class="build-actions">
+					<label class="tile-picker">배경<select disabled={!connected || processing} value={settings?.backgroundTile || 'grass'} onchange={setBackgroundTile}><option value="grass">잔디</option><option value="stone">석재</option><option value="sand">모래</option><option value="water">물결</option></select></label>
 					<button class:active={building && buildTool === 'room'} onclick={() => setBuildTool('room')}>방 만들기</button>
 					<button class:active={building && buildTool === 'wall'} onclick={() => setBuildTool('wall')}>벽 만들기</button>
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
@@ -750,6 +756,9 @@
 				>
 					<div
 						class="world-map"
+						class:tile-stone={settings?.backgroundTile === 'stone'}
+						class:tile-sand={settings?.backgroundTile === 'sand'}
+						class:tile-water={settings?.backgroundTile === 'water'}
 						style={cameraStyle}
 						role="application"
 						aria-label="월드 공간"
@@ -842,4 +851,5 @@
 	.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
+	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.tile-picker select:disabled{opacity:.4}.world-map.tile-stone{background-color:#303735;background-image:linear-gradient(#ffffff0d 1px,transparent 1px),linear-gradient(90deg,#ffffff0d 1px,transparent 1px),linear-gradient(135deg,#ffffff05 25%,transparent 25%,transparent 75%,#0000000a 75%)}.world-map.tile-sand{background-color:#5a4a2f;background-image:linear-gradient(#fff1c20c 1px,transparent 1px),linear-gradient(90deg,#fff1c20c 1px,transparent 1px),radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:2.5% 4.1667%,2.5% 4.1667%,18px 18px}.world-map.tile-water{background-color:#173b46;background-image:linear-gradient(#bdefff12 1px,transparent 1px),linear-gradient(90deg,#bdefff12 1px,transparent 1px),repeating-radial-gradient(ellipse at 50% 0,#69c7df18 0 3px,transparent 4px 12px);background-size:2.5% 4.1667%,2.5% 4.1667%,48px 24px}
 </style>

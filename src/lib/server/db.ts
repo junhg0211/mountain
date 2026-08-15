@@ -135,6 +135,7 @@ const TABLES = [
 		world_category_id VARCHAR(255),
 		world_access_role_id VARCHAR(255),
 		world_lobby_channel_id VARCHAR(255),
+		world_background_tile VARCHAR(32) NOT NULL DEFAULT 'grass',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	)`,
@@ -386,6 +387,7 @@ const REPAIRS = [
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS world_category_id VARCHAR(255)`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS world_access_role_id VARCHAR(255)`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS world_lobby_channel_id VARCHAR(255)`,
+	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS world_background_tile VARCHAR(32) NOT NULL DEFAULT 'grass'`,
 	`ALTER TABLE world_walls ADD COLUMN IF NOT EXISTS orientation VARCHAR(10) NOT NULL DEFAULT 'horizontal'`,
 	`UPDATE world_walls SET orientation='vertical' WHERE height > width`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,

@@ -10,6 +10,7 @@ import {
 	listWorldRooms,
 	listWorldWalls,
 	restoreWorldRoom,
+	setWorldBackgroundTile,
 	setWorldSettings,
 	updateWorldRoom
 } from '$lib/server/db/world';
@@ -59,6 +60,20 @@ export async function getBasecampState(guildId: string) {
 		getWorldSettings(guildId)
 	]);
 	return { rooms, walls, settings };
+}
+
+const backgroundTiles = new Set(['grass', 'stone', 'sand', 'water']);
+
+export async function configureBasecampBackground(input: {
+	guildId: string;
+	userId: string;
+	backgroundTile: string;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	if (!backgroundTiles.has(input.backgroundTile))
+		throw new BasecampError('지원하는 배경 타일을 선택해 주세요.');
+	await setWorldBackgroundTile(input.guildId, input.backgroundTile);
+	return getBasecampState(input.guildId);
 }
 
 export async function createBasecampWall(input: {

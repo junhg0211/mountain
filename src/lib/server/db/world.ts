@@ -54,7 +54,7 @@ export async function deleteWorldWall(guildId: string, id: string) {
 export async function getWorldSettings(guildId: string) {
 	const db = await getDB();
 	const rows = await db`
-		SELECT world_category_id, world_access_role_id, world_lobby_channel_id
+		SELECT world_category_id, world_access_role_id, world_lobby_channel_id, world_background_tile
 		FROM guild_settings WHERE guild_id=${guildId} LIMIT 1
 	`;
 	return {
@@ -62,8 +62,20 @@ export async function getWorldSettings(guildId: string) {
 		accessRoleId: rows[0]?.world_access_role_id ? String(rows[0].world_access_role_id) : null,
 		lobbyChannelId: rows[0]?.world_lobby_channel_id
 			? String(rows[0].world_lobby_channel_id)
-			: null
+			: null,
+		backgroundTile: rows[0]?.world_background_tile
+			? String(rows[0].world_background_tile)
+			: 'grass'
 	};
+}
+
+export async function setWorldBackgroundTile(guildId: string, backgroundTile: string) {
+	const db = await getDB();
+	await db`
+		INSERT INTO guild_settings (guild_id, world_background_tile)
+		VALUES (${guildId}, ${backgroundTile})
+		ON DUPLICATE KEY UPDATE world_background_tile=VALUES(world_background_tile)
+	`;
 }
 
 export async function setWorldSettings(
