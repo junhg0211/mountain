@@ -27,6 +27,7 @@
 	let lastMovementSentAt = 0;
 	const pressedKeys = new Set<string>();
 	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
+	const movementCodes: Record<string, string> = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' };
 	let notice = $state<{ success: boolean; message: string } | null>(null);
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -39,14 +40,14 @@
 		const keydown = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
 				return;
-			const key = event.key.toLowerCase();
+			const key = movementCodes[event.code] || event.key.toLowerCase();
 			if (!movementKeys.has(key)) return;
 			event.preventDefault();
 			pressedKeys.add(key);
 			if (movementFrame === null) movementFrame = requestAnimationFrame(moveAvatar);
 		};
 		const keyup = (event: KeyboardEvent) => {
-			const key = event.key.toLowerCase();
+			const key = movementCodes[event.code] || event.key.toLowerCase();
 			if (!movementKeys.has(key)) return;
 			pressedKeys.delete(key);
 			if (![...pressedKeys].some((pressed) => movementKeys.has(pressed))) sendCurrentPosition();
