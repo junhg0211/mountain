@@ -17,12 +17,13 @@ export interface WorldWall {
 	y: number;
 	width: number;
 	height: number;
+	orientation: 'horizontal' | 'vertical';
 }
 
 export async function listWorldWalls(guildId: string): Promise<WorldWall[]> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, x, y, width, height FROM world_walls
+		SELECT id, x, y, width, height, orientation FROM world_walls
 		WHERE guild_id=${guildId} ORDER BY created_at
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
@@ -30,16 +31,17 @@ export async function listWorldWalls(guildId: string): Promise<WorldWall[]> {
 		x: Number(row.x),
 		y: Number(row.y),
 		width: Number(row.width),
-		height: Number(row.height)
+		height: Number(row.height),
+		orientation: String(row.orientation) as WorldWall['orientation']
 	}));
 }
 
 export async function createWorldWall(input: WorldWall & { guildId: string; createdBy: string }) {
 	const db = await getDB();
 	await db`
-		INSERT INTO world_walls (id, guild_id, x, y, width, height, created_by)
+		INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by)
 		VALUES (${input.id}, ${input.guildId}, ${input.x}, ${input.y}, ${input.width},
-			${input.height}, ${input.createdBy})
+			${input.height}, ${input.orientation}, ${input.createdBy})
 	`;
 }
 

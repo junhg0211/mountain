@@ -268,11 +268,11 @@
 			let y = Math.max(0.8, Math.min(rows - 0.8, rawY));
 			if (x !== rawX) velocityX = 0;
 			if (y !== rawY) velocityY = 0;
-			if (wallCollision(x, me.y) && !wallCollision(me.x, me.y)) {
+			if (wallBlocksMovement(me.x, me.y, x, me.y)) {
 				x = me.x;
 				velocityX = 0;
 			}
-			if (wallCollision(x, y) && !wallCollision(x, me.y)) {
+			if (wallBlocksMovement(x, me.y, x, y)) {
 				y = me.y;
 				velocityY = 0;
 			}
@@ -380,8 +380,16 @@
 	function beginRoom(event: PointerEvent) {
 		if (!building || event.button !== 0) return;
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-		start = cell(event);
+		start = buildTool === 'wall' ? wallPoint(event) : cell(event);
 		end = start;
+	}
+
+	function wallPoint(event: PointerEvent) {
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		return {
+			x: Math.max(0, Math.min(columns, Math.round(((event.clientX - rect.left) / rect.width) * columns))),
+			y: Math.max(0, Math.min(rows, Math.round(((event.clientY - rect.top) / rect.height) * rows)))
+		};
 	}
 
 	function beginEditRoom(
@@ -419,7 +427,7 @@
 		}
 		if (!building || !start || !(event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			return;
-		end = cell(event);
+		end = buildTool === 'wall' ? wallPoint(event) : cell(event);
 	}
 
 	function finishRoom(event: PointerEvent) {
@@ -445,21 +453,45 @@
 
 	const draft = $derived.by(() => {
 		if (!start || !end) return null;
-		const x = Math.min(start.x, end.x);
-		const y = Math.min(start.y, end.y);
-		const width = Math.abs(start.x - end.x) + 1;
-		const height = Math.abs(start.y - end.y) + 1;
-		if (buildTool === 'wall')
-			return width >= height ? { x, y: start.y, width, height: 1 } : { x: start.x, y, width: 1, height };
-		return { x, y, width, height };
+		const deltaX = Math.abs(start.x - end.x);
+		const deltaY = Math.abs(start.y - end.y);
+		if (buildTool === 'wall') {
+			if (deltaX === 0 && deltaY === 0) return null;
+			return deltaX >= deltaY
+				? { x: Math.min(start.x, end.x), y: start.y, width: deltaX, height: 1, orientation: 'horizontal' as const }
+				: { x: start.x, y: Math.min(start.y, end.y), width: 1, height: deltaY, orientation: 'vertical' as const };
+		}
+		return {
+			x: Math.min(start.x, end.x),
+			y: Math.min(start.y, end.y),
+			width: deltaX + 1,
+			height: deltaY + 1
+		};
 	});
 
-	function wallCollision(x: number, y: number) {
+	function wallBlocksMovement(fromX: number, fromY: number, toX: number, toY: number) {
 		const radius = 0.32;
-		return walls.some((wall) =>
-			x + radius > wall.x && x - radius < wall.x + wall.width &&
-			y + radius > wall.y && y - radius < wall.y + wall.height
-		);
+		return walls.some((wall) => {
+			const horizontal = wall.orientation === 'horizontal';
+			if (horizontal) {
+				const overlaps = toX + radius > wall.x && toX - radius < wall.x + wall.width;
+				if (!overlaps || Math.abs(fromY - wall.y) < radius) return false;
+				return toY > fromY
+					? fromY + radius <= wall.y && toY + radius > wall.y
+					: fromY - radius >= wall.y && toY - radius < wall.y;
+			}
+			const overlaps = toY + radius > wall.y && toY - radius < wall.y + wall.height;
+			if (!overlaps || Math.abs(fromX - wall.x) < radius) return false;
+			return toX > fromX
+				? fromX + radius <= wall.x && toX + radius > wall.x
+				: fromX - radius >= wall.x && toX - radius < wall.x;
+		});
+	}
+
+	function wallStyle(wall: { x: number; y: number; width: number; height: number; orientation?: 'horizontal' | 'vertical' }) {
+		return wall.orientation === 'horizontal'
+			? `left:${(wall.x / columns) * 100}%;top:${(wall.y / rows) * 100}%;width:${(wall.width / columns) * 100}%`
+			: `left:${(wall.x / columns) * 100}%;top:${(wall.y / rows) * 100}%;height:${(wall.height / rows) * 100}%`;
 	}
 
 	function setBuildTool(tool: 'room' | 'wall') {
@@ -663,7 +695,7 @@
 					>
 					<div class="plaza"><span>WORLD PLAZA</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
 					{#each walls as wall}
-						<div class="wall" class:editable={building} style={roomStyle(wall)} role="button" tabindex={building ? 0 : -1} aria-label="벽" onpointerdown={(event) => deleteWall(event, wall)}></div>
+						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building} style={wallStyle(wall)} role="button" tabindex={building ? 0 : -1} aria-label="벽" onpointerdown={(event) => deleteWall(event, wall)}></div>
 					{/each}
 					{#each rooms as room}
 						<div
@@ -681,7 +713,7 @@
 							{#if building && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" style={roomStyle(draft)}></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${(presence.x / columns) * 100}%;top:${(presence.y / rows) * 100}%`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
@@ -735,5 +767,5 @@
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 	.world.building .room:not(.draft){pointer-events:auto;cursor:move}.room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
-	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;box-sizing:border-box;border:2px solid #151913;border-radius:3px;background:linear-gradient(135deg,#7f8877,#596153);box-shadow:inset 0 0 0 2px #ffffff12,0 4px 10px #0007;pointer-events:none}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable:hover{border-color:#ffcf72}.draft-wall{z-index:7;border-color:#d6ff66;background:#d6ff6655;pointer-events:none}
+	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable:hover{background:#ffcf72}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
 </style>

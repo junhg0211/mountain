@@ -254,8 +254,10 @@ async function attachBasecampSocket(
 				const nextY = Math.max(0.8, Math.min(23.2, y));
 				const state = basecampWorldStates.get(guildId);
 				if (
-					state && basecampWallCollision(nextX, nextY, state.walls) &&
-					!basecampWallCollision(presence.x, presence.y, state.walls)
+					state && (
+						basecampWallBlocksMovement(presence.x, presence.y, nextX, presence.y, state.walls) ||
+						basecampWallBlocksMovement(nextX, presence.y, nextX, nextY, state.walls)
+					)
 				) return;
 				presence.x = nextX;
 				presence.y = nextY;
@@ -333,7 +335,8 @@ async function attachBasecampSocket(
 					x: Number(message.x),
 					y: Number(message.y),
 					width: Number(message.width),
-					height: Number(message.height)
+					height: Number(message.height),
+					orientation: String(message.orientation || '')
 				});
 				messageText = '벽을 만들었습니다.';
 			} else {
@@ -456,17 +459,31 @@ function getBasecampVoiceTarget(
 	return room?.voiceChannelId || state.settings.lobbyChannelId;
 }
 
-function basecampWallCollision(
-	x: number,
-	y: number,
-	walls: Array<{ x: number; y: number; width: number; height: number }>
+function basecampWallBlocksMovement(
+	fromX: number,
+	fromY: number,
+	toX: number,
+	toY: number,
+	walls: Array<{ x: number; y: number; width: number; height: number; orientation: string }>
 ) {
 	const radius = 0.32;
-	return walls.some(
-		(wall) =>
-			x + radius > wall.x && x - radius < wall.x + wall.width &&
-			y + radius > wall.y && y - radius < wall.y + wall.height
-	);
+	return walls.some((wall) => {
+		const horizontal = wall.orientation === 'horizontal';
+		if (horizontal) {
+			const line = wall.y;
+			const overlaps = toX + radius > wall.x && toX - radius < wall.x + wall.width;
+			if (!overlaps || Math.abs(fromY - line) < radius) return false;
+			return toY > fromY
+				? fromY + radius <= line && toY + radius > line
+				: fromY - radius >= line && toY - radius < line;
+		}
+		const line = wall.x;
+		const overlaps = toY + radius > wall.y && toY - radius < wall.y + wall.height;
+		if (!overlaps || Math.abs(fromX - line) < radius) return false;
+		return toX > fromX
+			? fromX + radius <= line && toX + radius > line
+			: fromX - radius >= line && toX - radius < line;
+	});
 }
 
 function updateBasecampVoiceTarget(

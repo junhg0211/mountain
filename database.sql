@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS world_walls (
     y INT NOT NULL,
     width INT NOT NULL,
     height INT NOT NULL,
+    orientation VARCHAR(10) NOT NULL DEFAULT 'horizontal',
     created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX world_walls_guild_idx (guild_id),

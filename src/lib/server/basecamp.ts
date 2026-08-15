@@ -68,16 +68,26 @@ export async function createBasecampWall(input: {
 	y: number;
 	width: number;
 	height: number;
+	orientation: string;
 }) {
 	await requireGuildManager(input.guildId, input.userId);
+	const horizontal = input.orientation === 'horizontal';
 	if (
 		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
 		input.x < 0 || input.y < 0 || input.width < 1 || input.height < 1 ||
-		input.x + input.width > 40 || input.y + input.height > 24 ||
-		(input.width !== 1 && input.height !== 1)
+		!['horizontal', 'vertical'].includes(input.orientation) ||
+		(horizontal ? input.height !== 1 : input.width !== 1) ||
+		(horizontal
+			? input.x + input.width > 40 || input.y > 24
+			: input.x > 40 || input.y + input.height > 24)
 	)
 		throw new BasecampError('월드 안에 가로 또는 세로 벽을 그려 주세요.');
-	await createWorldWall({ ...input, id: crypto.randomUUID(), createdBy: input.userId });
+	await createWorldWall({
+		...input,
+		orientation: input.orientation as 'horizontal' | 'vertical',
+		id: crypto.randomUUID(),
+		createdBy: input.userId
+	});
 	return getBasecampState(input.guildId);
 }
 
