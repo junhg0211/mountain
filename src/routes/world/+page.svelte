@@ -589,7 +589,6 @@
 			cameraY = targetY;
 			return;
 		}
-		if (zoomFrame !== null) return;
 		if (cameraFrame === null) cameraFrame = requestAnimationFrame(animateCamera);
 	});
 
@@ -611,10 +610,6 @@
 		event.preventDefault();
 		const factor = Math.exp(-event.deltaY * 0.0012);
 		targetZoom = Math.max(0.4, Math.min(2.5, targetZoom * factor));
-		if (cameraFrame !== null) {
-			cancelAnimationFrame(cameraFrame);
-			cameraFrame = null;
-		}
 		if (zoomFrame === null) zoomFrame = requestAnimationFrame(animateZoom);
 	}
 
@@ -625,9 +620,15 @@
 			? targetZoom
 			: renderedZoom + difference * 0.18;
 		const ratio = nextZoom / renderedZoom;
-		cameraX = viewportWidth / 2 - (viewportWidth / 2 - cameraX) * ratio;
-		cameraY = viewportHeight / 2 - (viewportHeight / 2 - cameraY) * ratio;
+		const me = presences.find((presence) => presence.id === presenceId);
+		const focusX = (me?.x ?? columns / 2) * (cameraLayout.mapWidth / columns);
+		const focusY = (me?.y ?? rows / 2) * (cameraLayout.mapHeight / rows);
+		const anchorX = cameraX + focusX;
+		const anchorY = cameraY + focusY;
+		cameraX = anchorX - focusX * ratio;
+		cameraY = anchorY - focusY * ratio;
 		renderedZoom = nextZoom;
+		if (cameraFrame === null) cameraFrame = requestAnimationFrame(animateCamera);
 		if (nextZoom !== targetZoom) zoomFrame = requestAnimationFrame(animateZoom);
 	}
 
