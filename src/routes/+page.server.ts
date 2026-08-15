@@ -16,6 +16,7 @@ import {
 	InsufficientItemQuantityError,
 	ItemNotFoundError,
 	ItemNotForSaleError,
+	ItemTradeLimitError,
 	ItemNotUsableError,
 	ItemStackLimitError,
 	listItemDefinitions,
@@ -229,10 +230,14 @@ export const actions: Actions = {
 				direction
 			});
 			const unit = await getCurrencyUnit(guildId);
+			await sendTransactionNotification(
+				guildId,
+				`${result.item.iconEmoji} **아이템 ${direction === 'purchase' ? '구매' : '판매'}**\n사용자: <@${membership.user.id}>\n아이템: **${result.item.name} × ${result.quantity}**\n금액: **${formatMoneyDisplay(result.total)} ${unit}**\n거래 후 잔액: **${formatMoneyDisplay(result.balance)} ${unit}**`
+			);
 			redirectToDashboard(
 				cookies,
 				guildId,
-				`${result.item.iconEmoji} ${result.item.name} ${result.quantity}개를 ${direction === 'purchase' ? '구매' : '판매'}했습니다. (${formatMoneyDisplay(result.total)} ${unit})`
+				`${result.item.iconEmoji} ${result.item.name} ${result.quantity}개를 ${direction === 'purchase' ? '구매' : '판매'}했습니다. ${formatMoneyDisplay(result.total)} ${unit} · 잔액 ${formatMoneyDisplay(result.balance)} ${unit} · 보유 ${result.inventoryQuantity}개`
 			);
 		} catch (error) {
 			if (error instanceof ItemNotFoundError)
@@ -245,6 +250,8 @@ export const actions: Actions = {
 				return fail(409, { message: '판매할 아이템 수량이 부족합니다.' });
 			if (error instanceof ItemStackLimitError)
 				return fail(409, { message: '구매 후 최대 보유 수량을 초과합니다.' });
+			if (error instanceof ItemTradeLimitError)
+				return fail(409, { message: '거래 금액 또는 거래 후 잔액이 허용 범위를 초과합니다.' });
 			throw error;
 		}
 	},

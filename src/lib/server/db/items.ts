@@ -56,6 +56,9 @@ export class InsufficientItemQuantityError extends Error {}
 export class ItemStackLimitError extends Error {}
 export class ItemNotUsableError extends Error {}
 export class ItemNotForSaleError extends Error {}
+export class ItemTradeLimitError extends Error {}
+
+const MAX_STORED_MONEY_CENTS = 999_999_999_999_999n;
 
 export async function createItemDefinition(guildId: string, input: ItemDefinitionInput) {
 	const item = validateDefinition(input);
@@ -256,6 +259,7 @@ export async function tradeShopItem(options: {
 		if (!Boolean(item.active) || priceValue == null) throw new ItemNotForSaleError();
 		const unitPrice = formatMoneyValue(priceValue);
 		const totalCents = moneyToCents(unitPrice) * BigInt(options.quantity);
+		if (totalCents > MAX_STORED_MONEY_CENTS) throw new ItemTradeLimitError();
 		const total = centsToMoney(totalCents);
 
 		await tx`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${options.guildId}, ${options.userId})`;
@@ -285,6 +289,7 @@ export async function tradeShopItem(options: {
 			throw new InsufficientBalanceError();
 		const nextBalance =
 			options.direction === 'purchase' ? currentBalance - totalCents : currentBalance + totalCents;
+		if (nextBalance > MAX_STORED_MONEY_CENTS) throw new ItemTradeLimitError();
 		await tx`UPDATE accounts SET balance=${centsToMoney(nextBalance)} WHERE guild_id=${options.guildId} AND user_id=${options.userId}`;
 		if (nextQuantity === 0) {
 			await tx`DELETE FROM inventories WHERE guild_id=${options.guildId} AND user_id=${options.userId} AND item_id=${options.itemId}`;
