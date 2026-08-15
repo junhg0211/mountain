@@ -828,7 +828,7 @@
 		<section class="empty"><h1>입장할 수 있는 서버가 없습니다</h1><p>Mountain 봇이 있는 Discord 서버에 먼저 참여해 주세요.</p></section>
 	{:else}
 		<section class="intro">
-			<div><small>SERVER WORLD</small><h1>같은 화면에서 걷고, 바로 공간을 바꿉니다.</h1></div>
+		<div><small>SERVER WORLD</small><h1 hidden>Basecamp</h1></div>
 			<div class="build-actions">
 				{#if data.canManage}
 					<button disabled={!connected || processing} onclick={setSpawn}>현재 위치를 시작점으로</button>
