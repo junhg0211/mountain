@@ -233,6 +233,18 @@ CREATE TABLE IF NOT EXISTS voice_activity_rewards (
     CHECK (amount >= 0.01)
 );
 
+CREATE TABLE IF NOT EXISTS member_activity_daily (
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    activity_date DATE NOT NULL,
+    message_count INT UNSIGNED NOT NULL DEFAULT 0,
+    voice_seconds INT UNSIGNED NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, user_id, activity_date),
+    INDEX member_activity_daily_guild_date_idx (guild_id, activity_date),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS attendance_claims (
     guild_id VARCHAR(255) NOT NULL,
     user_id VARCHAR(255) NOT NULL,

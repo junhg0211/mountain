@@ -1,6 +1,7 @@
 import { awardVoiceActivity } from '$lib/server/db/voice-activity';
 import { getVoiceActivitySettings } from '$lib/server/db/guild-settings';
 import { ensureUser } from '$lib/server/db/users';
+import { recordVoiceActivity } from '$lib/server/db/member-activity';
 import type { Client, GuildMember } from 'discord.js';
 
 const REQUIRED_PRESENCE_MS = 5 * 60 * 1000;
@@ -27,7 +28,6 @@ async function scan(client: Client) {
 	try {
 		for (const guild of client.guilds.cache.values()) {
 			const settings = await getVoiceActivitySettings(guild.id);
-			if (settings.reward === '0.00' || settings.dailyCap === '0.00') continue;
 			for (const channel of guild.channels.cache.values()) {
 				if (!channel.isVoiceBased()) continue;
 				const members = [...channel.members.values()].filter(eligible);
@@ -45,15 +45,23 @@ async function scan(client: Client) {
 						member.displayName || member.user.globalName || member.user.username,
 						member.user.displayAvatarURL()
 					);
-					await awardVoiceActivity({
-						guildId: guild.id,
-						userId: member.id,
-						channelId: channel.id,
-						participantCount: members.length,
-						baseReward: settings.reward,
-						dailyCap: settings.dailyCap,
-						now: new Date(now)
-					});
+					await recordVoiceActivity(
+						guild.id,
+						member.id,
+						REQUIRED_PRESENCE_MS / 1000,
+						new Date(now)
+					);
+					if (settings.reward !== '0.00' && settings.dailyCap !== '0.00') {
+						await awardVoiceActivity({
+							guildId: guild.id,
+							userId: member.id,
+							channelId: channel.id,
+							participantCount: members.length,
+							baseReward: settings.reward,
+							dailyCap: settings.dailyCap,
+							now: new Date(now)
+						});
+					}
 					presences.set(key, { channelId: channel.id, since: now });
 				}
 			}
