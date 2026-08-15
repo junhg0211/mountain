@@ -67,6 +67,7 @@ const basecampRoleRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>
 const basecampWorldStates = new Map<string, Awaited<ReturnType<typeof getBasecampState>>>();
 const basecampAutoMoves = new Map<WebSocket, boolean>();
 const basecampVoiceTargets = new Map<WebSocket, string | null>();
+const basecampVoiceMoveTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>();
 const basecampVoiceMoveAttempts = new Map<WebSocket, number>();
 const basecampVoiceMoveQueues = new Map<WebSocket, Promise<void>>();
 
@@ -207,6 +208,7 @@ async function attachBasecampSocket(
 		basecampSocketRoles.delete(websocket);
 		basecampAutoMoves.delete(websocket);
 		basecampVoiceTargets.delete(websocket);
+		clearBasecampVoiceMoveTimer(websocket);
 		basecampVoiceMoveAttempts.delete(websocket);
 		basecampVoiceMoveQueues.delete(websocket);
 		if (!clients.size) basecampWorldStates.delete(guildId);
@@ -233,7 +235,7 @@ async function attachBasecampSocket(
 				throw new BasecampError('지원하지 않는 Basecamp 요청입니다.');
 			if (type === 'basecamp-ping') {
 				const target = basecampVoiceTargets.get(websocket);
-				if (basecampAutoMoves.get(websocket) && target)
+				if (basecampAutoMoves.get(websocket) && target && !basecampVoiceMoveTimers.has(websocket))
 					queueBasecampVoiceMove(websocket, guildId, userId, target);
 				websocket.send(JSON.stringify({ type: 'basecamp-pong' }));
 				return;
@@ -256,6 +258,7 @@ async function attachBasecampSocket(
 			if (type === 'basecamp-auto-move') {
 				const enabled = message.enabled === true;
 				basecampAutoMoves.set(websocket, enabled);
+				if (!enabled) clearBasecampVoiceMoveTimer(websocket);
 				const state = basecampWorldStates.get(guildId);
 				if (enabled && state) {
 					const target = getBasecampVoiceTarget(state, presence);
@@ -441,10 +444,44 @@ function updateBasecampVoiceTarget(
 	const target = getBasecampVoiceTarget(state, presence);
 	const changed = basecampVoiceTargets.get(websocket) !== target;
 	basecampVoiceTargets.set(websocket, target);
-	if (!basecampAutoMoves.get(websocket) || !target) return;
+	if (!basecampAutoMoves.get(websocket) || !target) {
+		clearBasecampVoiceMoveTimer(websocket);
+		return;
+	}
+	if (changed) {
+		scheduleBasecampVoiceMove(websocket, guildId, presence.userId, target);
+		return;
+	}
 	const lastAttempt = basecampVoiceMoveAttempts.get(websocket) || 0;
-	if (changed || Date.now() - lastAttempt >= 2_000)
+	if (!basecampVoiceMoveTimers.has(websocket) && Date.now() - lastAttempt >= 2_000)
 		queueBasecampVoiceMove(websocket, guildId, presence.userId, target);
+}
+
+function scheduleBasecampVoiceMove(
+	websocket: WebSocket,
+	guildId: string,
+	userId: string,
+	channelId: string
+) {
+	clearBasecampVoiceMoveTimer(websocket);
+	basecampVoiceMoveTimers.set(
+		websocket,
+		setTimeout(() => {
+			basecampVoiceMoveTimers.delete(websocket);
+			if (
+				websocket.readyState === WebSocket.OPEN &&
+				basecampAutoMoves.get(websocket) &&
+				basecampVoiceTargets.get(websocket) === channelId
+			)
+				queueBasecampVoiceMove(websocket, guildId, userId, channelId);
+		}, 500)
+	);
+}
+
+function clearBasecampVoiceMoveTimer(websocket: WebSocket) {
+	const timer = basecampVoiceMoveTimers.get(websocket);
+	if (timer) clearTimeout(timer);
+	basecampVoiceMoveTimers.delete(websocket);
 }
 
 function queueBasecampVoiceMove(
