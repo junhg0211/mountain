@@ -140,6 +140,8 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     world_access_role_id VARCHAR(255),
     world_lobby_channel_id VARCHAR(255),
     world_background_tile VARCHAR(32) NOT NULL DEFAULT 'grass',
+    world_spawn_x DOUBLE NOT NULL DEFAULT 20,
+    world_spawn_y DOUBLE NOT NULL DEFAULT 15,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

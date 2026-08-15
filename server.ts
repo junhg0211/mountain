@@ -40,6 +40,7 @@ import {
 	BasecampError,
 	configureBasecamp,
 	configureBasecampBackground,
+	configureBasecampSpawn,
 	createBasecampWall,
 	createBasecampRoom,
 	deleteBasecampWall,
@@ -179,6 +180,7 @@ async function attachBasecampSocket(
 		websocket.close(1008, 'Guild membership required');
 		return;
 	}
+	const initialState = await getBasecampState(guildId);
 	const presence: BasecampPresence = {
 		id: crypto.randomUUID(),
 		userId,
@@ -186,10 +188,9 @@ async function attachBasecampSocket(
 		avatarUrl: member.user.avatar
 			? `https://cdn.discordapp.com/avatars/${member.user.id}/${member.user.avatar}.webp?size=80`
 			: null,
-		x: 20,
-		y: 15
+		x: initialState.settings.spawnX,
+		y: initialState.settings.spawnY
 	};
-	const initialState = await getBasecampState(guildId);
 	basecampWorldStates.set(guildId, initialState);
 	const clients = basecampSockets.get(guildId) || new Set<WebSocket>();
 	clients.add(websocket);
@@ -231,7 +232,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-background', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-background', 'basecamp-set-spawn', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
 					type
 				)
 			)
@@ -251,8 +252,8 @@ async function attachBasecampSocket(
 				const y = Number(message.y);
 				if (!Number.isFinite(x) || !Number.isFinite(y))
 					throw new BasecampError('올바르지 않은 이동 좌표입니다.');
-				const nextX = Math.max(0.6, Math.min(39.4, x));
-				const nextY = Math.max(0.8, Math.min(23.2, y));
+				const nextX = x;
+				const nextY = y;
 				const state = basecampWorldStates.get(guildId);
 				if (
 					state && (
@@ -306,6 +307,14 @@ async function attachBasecampSocket(
 					backgroundTile: String(message.backgroundTile || '')
 				});
 				messageText = '월드 배경 타일을 변경했습니다.';
+			} else if (type === 'basecamp-set-spawn') {
+				state = await configureBasecampSpawn({
+					guildId,
+					userId,
+					x: presence.x,
+					y: presence.y
+				});
+				messageText = '현재 위치를 새로운 시작 위치로 설정했습니다.';
 			} else if (type === 'basecamp-create-room') {
 				state = await createBasecampRoom({
 					guildId,

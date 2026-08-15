@@ -11,6 +11,7 @@ import {
 	listWorldWalls,
 	restoreWorldRoom,
 	setWorldBackgroundTile,
+	setWorldSpawn,
 	setWorldSettings,
 	updateWorldRoom
 } from '$lib/server/db/world';
@@ -76,6 +77,19 @@ export async function configureBasecampBackground(input: {
 	return getBasecampState(input.guildId);
 }
 
+export async function configureBasecampSpawn(input: {
+	guildId: string;
+	userId: string;
+	x: number;
+	y: number;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	if (![input.x, input.y].every(Number.isFinite))
+		throw new BasecampError('올바른 시작 위치에서 다시 시도해 주세요.');
+	await setWorldSpawn(input.guildId, input.x, input.y);
+	return getBasecampState(input.guildId);
+}
+
 export async function createBasecampWall(input: {
 	guildId: string;
 	userId: string;
@@ -89,14 +103,11 @@ export async function createBasecampWall(input: {
 	const horizontal = input.orientation === 'horizontal';
 	if (
 		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
-		input.x < 0 || input.y < 0 || input.width < 1 || input.height < 1 ||
+		input.width < 1 || input.height < 1 ||
 		!['horizontal', 'vertical'].includes(input.orientation) ||
-		(horizontal ? input.height !== 1 : input.width !== 1) ||
-		(horizontal
-			? input.x + input.width > 40 || input.y > 24
-			: input.x > 40 || input.y + input.height > 24)
+		(horizontal ? input.height !== 1 : input.width !== 1)
 	)
-		throw new BasecampError('월드 안에 가로 또는 세로 벽을 그려 주세요.');
+		throw new BasecampError('가로 또는 세로 벽을 그려 주세요.');
 	await createWorldWall({
 		...input,
 		orientation: input.orientation as 'horizontal' | 'vertical',
@@ -209,14 +220,10 @@ export async function createBasecampRoom(input: {
 	if (!name || name.length > 80) throw new BasecampError('방 이름은 1~80자로 입력해 주세요.');
 	if (
 		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
-		input.x < 0 ||
-		input.y < 0 ||
 		input.width < 2 ||
-		input.height < 2 ||
-		input.x + input.width > 40 ||
-		input.y + input.height > 24
+		input.height < 2
 	)
-		throw new BasecampError('월드 안에 2×2 이상의 방을 그려 주세요.');
+		throw new BasecampError('2×2 이상의 방을 그려 주세요.');
 	const settings = await getWorldSettings(input.guildId);
 	if (!settings.categoryId || !settings.accessRoleId || !settings.lobbyChannelId)
 		throw new BasecampError('먼저 Discord 카테고리와 월드 접속자 역할을 설정해 주세요.');
@@ -284,10 +291,9 @@ export async function updateBasecampRoom(input: {
 	if (!name || name.length > 80) throw new BasecampError('방 이름은 1~80자로 입력해 주세요.');
 	if (
 		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
-		input.x < 0 || input.y < 0 || input.width < 2 || input.height < 2 ||
-		input.x + input.width > 40 || input.y + input.height > 24
+		input.width < 2 || input.height < 2
 	)
-		throw new BasecampError('월드 안에 2×2 이상의 방을 배치해 주세요.');
+		throw new BasecampError('2×2 이상의 방을 배치해 주세요.');
 	const settings = await getWorldSettings(input.guildId);
 	if (!settings.categoryId || !settings.accessRoleId)
 		throw new BasecampError('먼저 Basecamp Discord 연결을 설정해 주세요.');

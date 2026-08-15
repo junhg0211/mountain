@@ -54,7 +54,8 @@ export async function deleteWorldWall(guildId: string, id: string) {
 export async function getWorldSettings(guildId: string) {
 	const db = await getDB();
 	const rows = await db`
-		SELECT world_category_id, world_access_role_id, world_lobby_channel_id, world_background_tile
+		SELECT world_category_id, world_access_role_id, world_lobby_channel_id, world_background_tile,
+			world_spawn_x, world_spawn_y
 		FROM guild_settings WHERE guild_id=${guildId} LIMIT 1
 	`;
 	return {
@@ -65,7 +66,9 @@ export async function getWorldSettings(guildId: string) {
 			: null,
 		backgroundTile: rows[0]?.world_background_tile
 			? String(rows[0].world_background_tile)
-			: 'grass'
+			: 'grass',
+		spawnX: Number(rows[0]?.world_spawn_x ?? 20),
+		spawnY: Number(rows[0]?.world_spawn_y ?? 15)
 	};
 }
 
@@ -75,6 +78,15 @@ export async function setWorldBackgroundTile(guildId: string, backgroundTile: st
 		INSERT INTO guild_settings (guild_id, world_background_tile)
 		VALUES (${guildId}, ${backgroundTile})
 		ON DUPLICATE KEY UPDATE world_background_tile=VALUES(world_background_tile)
+	`;
+}
+
+export async function setWorldSpawn(guildId: string, x: number, y: number) {
+	const db = await getDB();
+	await db`
+		INSERT INTO guild_settings (guild_id, world_spawn_x, world_spawn_y)
+		VALUES (${guildId}, ${x}, ${y})
+		ON DUPLICATE KEY UPDATE world_spawn_x=VALUES(world_spawn_x), world_spawn_y=VALUES(world_spawn_y)
 	`;
 }
 
