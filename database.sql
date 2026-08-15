@@ -162,6 +162,20 @@ CREATE TABLE IF NOT EXISTS world_rooms (
     CHECK (width >= 2 AND height >= 2)
 );
 
+CREATE TABLE IF NOT EXISTS world_walls (
+    id CHAR(36) PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    x INT NOT NULL,
+    y INT NOT NULL,
+    width INT NOT NULL,
+    height INT NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX world_walls_guild_idx (guild_id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+    CHECK (width >= 1 AND height >= 1)
+);
+
 CREATE TABLE IF NOT EXISTS monthly_burn_runs (
     guild_id VARCHAR(255) NOT NULL,
     burn_period CHAR(7) NOT NULL,

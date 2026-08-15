@@ -3,9 +3,12 @@ import {
 	activateWorldRoom,
 	archiveWorldRoom,
 	createWorldRoomDraft,
+	createWorldWall,
+	deleteWorldWall,
 	failWorldRoom,
 	getWorldSettings,
 	listWorldRooms,
+	listWorldWalls,
 	restoreWorldRoom,
 	setWorldSettings,
 	updateWorldRoom
@@ -50,8 +53,44 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 }
 
 export async function getBasecampState(guildId: string) {
-	const [rooms, settings] = await Promise.all([listWorldRooms(guildId), getWorldSettings(guildId)]);
-	return { rooms, settings };
+	const [rooms, walls, settings] = await Promise.all([
+		listWorldRooms(guildId),
+		listWorldWalls(guildId),
+		getWorldSettings(guildId)
+	]);
+	return { rooms, walls, settings };
+}
+
+export async function createBasecampWall(input: {
+	guildId: string;
+	userId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	if (
+		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
+		input.x < 0 || input.y < 0 || input.width < 1 || input.height < 1 ||
+		input.x + input.width > 40 || input.y + input.height > 24 ||
+		(input.width !== 1 && input.height !== 1)
+	)
+		throw new BasecampError('월드 안에 가로 또는 세로 벽을 그려 주세요.');
+	await createWorldWall({ ...input, id: crypto.randomUUID(), createdBy: input.userId });
+	return getBasecampState(input.guildId);
+}
+
+export async function deleteBasecampWall(input: { guildId: string; userId: string; id: string }) {
+	await requireGuildManager(input.guildId, input.userId);
+	try {
+		await deleteWorldWall(input.guildId, input.id);
+	} catch (error) {
+		if (error instanceof Error && error.message === 'WALL_NOT_FOUND')
+			throw new BasecampError('삭제할 벽을 찾을 수 없습니다.');
+		throw error;
+	}
+	return getBasecampState(input.guildId);
 }
 
 export async function configureBasecamp(input: {

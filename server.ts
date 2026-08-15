@@ -39,7 +39,9 @@ import { canManageGuild } from './src/lib/server/db/user-guilds.ts';
 import {
 	BasecampError,
 	configureBasecamp,
+	createBasecampWall,
 	createBasecampRoom,
+	deleteBasecampWall,
 	deleteBasecampRoom,
 	getBasecampState,
 	updateBasecampRoom
@@ -228,7 +230,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
 					type
 				)
 			)
@@ -248,10 +250,16 @@ async function attachBasecampSocket(
 				const y = Number(message.y);
 				if (!Number.isFinite(x) || !Number.isFinite(y))
 					throw new BasecampError('올바르지 않은 이동 좌표입니다.');
-				presence.x = Math.max(0.6, Math.min(39.4, x));
-				presence.y = Math.max(0.8, Math.min(23.2, y));
-				broadcastBasecampPresences(guildId);
+				const nextX = Math.max(0.6, Math.min(39.4, x));
+				const nextY = Math.max(0.8, Math.min(23.2, y));
 				const state = basecampWorldStates.get(guildId);
+				if (
+					state && basecampWallCollision(nextX, nextY, state.walls) &&
+					!basecampWallCollision(presence.x, presence.y, state.walls)
+				) return;
+				presence.x = nextX;
+				presence.y = nextY;
+				broadcastBasecampPresences(guildId);
 				if (state) updateBasecampVoiceTarget(websocket, guildId, presence, state);
 				return;
 			}
@@ -311,13 +319,26 @@ async function attachBasecampSocket(
 					height: Number(message.height)
 				});
 				messageText = `${String(message.name || '').trim()} 방과 음성 채널을 수정했습니다.`;
-			} else {
+			} else if (type === 'basecamp-delete-room') {
 				state = await deleteBasecampRoom({
 					guildId,
 					userId,
 					id: String(message.id || '')
 				});
 				messageText = '방과 Discord 음성 채널을 삭제했습니다.';
+			} else if (type === 'basecamp-create-wall') {
+				state = await createBasecampWall({
+					guildId,
+					userId,
+					x: Number(message.x),
+					y: Number(message.y),
+					width: Number(message.width),
+					height: Number(message.height)
+				});
+				messageText = '벽을 만들었습니다.';
+			} else {
+				state = await deleteBasecampWall({ guildId, userId, id: String(message.id || '') });
+				messageText = '벽을 삭제했습니다.';
 			}
 			websocket.send(
 				JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: messageText })
@@ -433,6 +454,19 @@ function getBasecampVoiceTarget(
 			presence.y < item.y + item.height
 	);
 	return room?.voiceChannelId || state.settings.lobbyChannelId;
+}
+
+function basecampWallCollision(
+	x: number,
+	y: number,
+	walls: Array<{ x: number; y: number; width: number; height: number }>
+) {
+	const radius = 0.32;
+	return walls.some(
+		(wall) =>
+			x + radius > wall.x && x - radius < wall.x + wall.width &&
+			y + radius > wall.y && y - radius < wall.y + wall.height
+	);
 }
 
 function updateBasecampVoiceTarget(

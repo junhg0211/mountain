@@ -1,7 +1,7 @@
 import { getSessionUser } from '$lib/server/auth';
 import { requireGuildManager } from '$lib/server/basecamp';
 import { getDB } from '$lib/server/db';
-import { getWorldSettings, listWorldRooms } from '$lib/server/db/world';
+import { getWorldSettings, listWorldRooms, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -21,6 +21,7 @@ async function userGuilds(userId: string) {
 const emptyWorld = {
 	guildId: null,
 	rooms: [],
+	walls: [],
 	settings: null,
 	canManage: false,
 	categories: [],
@@ -44,7 +45,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	} catch (error) {
 		console.error('Basecamp permission check failed:', error);
 	}
-	const [rooms, settings] = await Promise.all([listWorldRooms(guildId), getWorldSettings(guildId)]);
+	const [rooms, walls, settings] = await Promise.all([
+		listWorldRooms(guildId),
+		listWorldWalls(guildId),
+		getWorldSettings(guildId)
+	]);
 	const [categories, roles] = canManage
 		? await Promise.all([getGuildCategories(guildId), getGuildRoles(guildId)])
 		: [[], []];
@@ -53,6 +58,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		guilds,
 		guildId,
 		rooms,
+		walls,
 		settings,
 		canManage,
 		categories,

@@ -11,6 +11,44 @@ export interface WorldRoom {
 	status: 'creating' | 'active' | 'failed' | 'archived';
 }
 
+export interface WorldWall {
+	id: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export async function listWorldWalls(guildId: string): Promise<WorldWall[]> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id, x, y, width, height FROM world_walls
+		WHERE guild_id=${guildId} ORDER BY created_at
+	`;
+	return rows.map((row: Record<string, unknown>) => ({
+		id: String(row.id),
+		x: Number(row.x),
+		y: Number(row.y),
+		width: Number(row.width),
+		height: Number(row.height)
+	}));
+}
+
+export async function createWorldWall(input: WorldWall & { guildId: string; createdBy: string }) {
+	const db = await getDB();
+	await db`
+		INSERT INTO world_walls (id, guild_id, x, y, width, height, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.x}, ${input.y}, ${input.width},
+			${input.height}, ${input.createdBy})
+	`;
+}
+
+export async function deleteWorldWall(guildId: string, id: string) {
+	const db = await getDB();
+	const result = await db`DELETE FROM world_walls WHERE guild_id=${guildId} AND id=${id}`;
+	if (Number(result.affectedRows) !== 1) throw new Error('WALL_NOT_FOUND');
+}
+
 export async function getWorldSettings(guildId: string) {
 	const db = await getDB();
 	const rows = await db`

@@ -13,8 +13,10 @@
 		y: number;
 	};
 	let rooms = $state<typeof data.rooms>([]);
+	let walls = $state<typeof data.walls>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
+	let buildTool = $state<'room' | 'wall'>('room');
 	let start = $state<{ x: number; y: number } | null>(null);
 	let end = $state<{ x: number; y: number } | null>(null);
 	let socket = $state<WebSocket | null>(null);
@@ -105,6 +107,7 @@
 		if (activeGuildId === guildId) return;
 		activeGuildId = guildId;
 		rooms = [...data.rooms];
+		walls = [...data.walls];
 		settings = data.settings;
 		connectionVersion += 1;
 		const version = connectionVersion;
@@ -167,6 +170,7 @@
 				}
 				if (message.type === 'basecamp-state') {
 					rooms = message.rooms as typeof rooms;
+					walls = message.walls as typeof walls;
 					settings = message.settings as typeof settings;
 					return;
 				}
@@ -236,8 +240,13 @@
 				? initialMovementStep
 				: Math.min(maximumMovementStep, movementStep + movementAcceleration);
 			const length = Math.hypot(horizontal, vertical) || 1;
-			const x = Math.max(0.6, Math.min(columns - 0.6, me.x + horizontal * movementStep / length));
-			const y = Math.max(0.8, Math.min(rows - 0.8, me.y + vertical * movementStep / length));
+			let x = Math.max(0.6, Math.min(columns - 0.6, me.x + horizontal * movementStep / length));
+			let y = Math.max(0.8, Math.min(rows - 0.8, me.y + vertical * movementStep / length));
+			if (wallCollision(x, y) && !wallCollision(me.x, me.y)) {
+				if (!wallCollision(x, me.y)) y = me.y;
+				else if (!wallCollision(me.x, y)) x = me.x;
+				else { x = me.x; y = me.y; }
+			}
 			presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
 			if (Date.now() - lastMovementSentAt >= 50 && socket?.readyState === WebSocket.OPEN) {
 				lastMovementSentAt = Date.now();
@@ -340,7 +349,7 @@
 		room: (typeof data.rooms)[number],
 		mode: 'move' | 'resize'
 	) {
-		if (!building || room.status !== 'active' || event.button !== 0) return;
+		if (!building || buildTool !== 'room' || room.status !== 'active' || event.button !== 0) return;
 		event.stopPropagation();
 		const world = (event.currentTarget as HTMLElement).closest('.world-map') as HTMLElement;
 		const current = selectedRoom?.id === room.id ? selectedRoom : room;
@@ -377,6 +386,10 @@
 		if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 		editSession = null;
+		if (building && buildTool === 'wall' && draft) {
+			send({ type: 'basecamp-create-wall', ...draft });
+			cancelDraft();
+		}
 	}
 
 	function cancelDraft() {
@@ -394,8 +407,32 @@
 		if (!start || !end) return null;
 		const x = Math.min(start.x, end.x);
 		const y = Math.min(start.y, end.y);
-		return { x, y, width: Math.abs(start.x - end.x) + 1, height: Math.abs(start.y - end.y) + 1 };
+		const width = Math.abs(start.x - end.x) + 1;
+		const height = Math.abs(start.y - end.y) + 1;
+		if (buildTool === 'wall')
+			return width >= height ? { x, y: start.y, width, height: 1 } : { x: start.x, y, width: 1, height };
+		return { x, y, width, height };
 	});
+
+	function wallCollision(x: number, y: number) {
+		const radius = 0.32;
+		return walls.some((wall) =>
+			x + radius > wall.x && x - radius < wall.x + wall.width &&
+			y + radius > wall.y && y - radius < wall.y + wall.height
+		);
+	}
+
+	function setBuildTool(tool: 'room' | 'wall') {
+		if (building && buildTool === tool) building = false;
+		else { building = true; buildTool = tool; }
+		cancelEditing();
+	}
+
+	function deleteWall(event: PointerEvent, wall: (typeof data.walls)[number]) {
+		if (!building || event.button !== 0) return;
+		event.stopPropagation();
+		if (confirm('이 벽을 삭제할까요?')) send({ type: 'basecamp-delete-wall', id: wall.id });
+	}
 	const currentRoom = $derived.by(() => {
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
@@ -549,9 +586,10 @@
 		<section class="intro">
 			<div><small>SERVER WORLD</small><h1>같은 화면에서 걷고, 바로 공간을 바꿉니다.</h1></div>
 			{#if data.canManage}
-				<button class:active={building} onclick={() => { building = !building; cancelEditing(); }}>
-					{building ? '공사 도구 내려놓기' : '방 만들기'}
-				</button>
+				<div class="build-actions">
+					<button class:active={building && buildTool === 'room'} onclick={() => setBuildTool('room')}>방 만들기</button>
+					<button class:active={building && buildTool === 'wall'} onclick={() => setBuildTool('wall')}>벽 만들기</button>
+				</div>
 			{/if}
 		</section>
 
@@ -584,6 +622,9 @@
 						onpointerup={finishRoom}
 					>
 					<div class="plaza"><span>WORLD PLAZA</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
+					{#each walls as wall}
+						<div class="wall" class:editable={building} style={roomStyle(wall)} role="button" tabindex={building ? 0 : -1} aria-label="벽" onpointerdown={(event) => deleteWall(event, wall)}></div>
+					{/each}
 					{#each rooms as room}
 						<div
 							class:failed={room.status === 'failed'}
@@ -600,7 +641,7 @@
 							{#if building && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" style={roomStyle(draft)}></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${(presence.x / columns) * 100}%;top:${(presence.y / rows) * 100}%`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
@@ -609,7 +650,7 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? '빈 공간을 드래그해서 방을 그려 보세요.' : '방향키 또는 WASD로 움직여 보세요.'}</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '드래그해서 가로 또는 세로 벽을 만드세요. 벽을 누르면 삭제됩니다.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 움직여 보세요.'}</p>
 			</div>
 
 			<aside>
@@ -624,7 +665,7 @@
 						<button class="danger" type="button" disabled={processing || !connected} onclick={deleteRoom}>방과 채널 삭제</button>
 						<button class="secondary" type="button" onclick={() => { selectedRoom = null; editSession = null; }}>선택 해제</button>
 					</form>
-				{:else if draft && data.canManage}
+				{:else if draft && buildTool === 'room' && data.canManage}
 					<form onsubmit={createRoom}>
 						<small>새로운 공간</small><h2>방 확정하기</h2>
 						<label>방 이름<input name="name" maxlength="80" placeholder="예: 라운지" required /></label>
@@ -654,4 +695,5 @@
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 	.world.building .room:not(.draft){pointer-events:auto;cursor:move}.room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
+	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;box-sizing:border-box;border:2px solid #151913;border-radius:3px;background:linear-gradient(135deg,#7f8877,#596153);box-shadow:inset 0 0 0 2px #ffffff12,0 4px 10px #0007;pointer-events:none}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable:hover{border-color:#ffcf72}.draft-wall{z-index:7;border-color:#d6ff66;background:#d6ff6655;pointer-events:none}
 </style>
