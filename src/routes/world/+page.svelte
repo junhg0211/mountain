@@ -12,6 +12,7 @@
 	let socket = $state<WebSocket | null>(null);
 	let connected = $state(false);
 	let processing = $state(false);
+	let roomCreationRequestId: string | null = null;
 	let notice = $state<{ success: boolean; message: string } | null>(null);
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -82,17 +83,25 @@
 				if (message.type === 'basecamp-result') {
 					processing = false;
 					const success = message.ok === true;
+					const isRoomCreation = message.requestId === roomCreationRequestId;
 					notice = {
 						success,
 						message: String(success ? message.message || '' : message.error || '')
 					};
-					if (success) cancelDraft();
+					if (isRoomCreation) {
+						roomCreationRequestId = null;
+						if (success) {
+							cancelDraft();
+							building = false;
+						}
+					}
 				}
 			};
 			next.onclose = () => {
 				if (socket === next) socket = null;
 				connected = false;
 				processing = false;
+				roomCreationRequestId = null;
 				if (!stopped && version === connectionVersion)
 					reconnectTimer = setTimeout(() => void connect(version), 1500);
 			};
@@ -111,12 +120,13 @@
 	function send(message: Record<string, unknown>) {
 		if (!socket || socket.readyState !== WebSocket.OPEN) {
 			notice = { success: false, message: 'Basecamp에 다시 연결하고 있습니다. 잠시만 기다려 주세요.' };
-			return false;
+			return null;
 		}
 		processing = true;
 		notice = null;
-		socket.send(JSON.stringify({ ...message, requestId: crypto.randomUUID() }));
-		return true;
+		const requestId = crypto.randomUUID();
+		socket.send(JSON.stringify({ ...message, requestId }));
+		return requestId;
 	}
 
 	function configure(event: SubmitEvent) {
@@ -133,7 +143,11 @@
 		event.preventDefault();
 		if (!draft) return;
 		const form = new FormData(event.currentTarget as HTMLFormElement);
-		send({ type: 'basecamp-create-room', name: form.get('name'), ...draft });
+		roomCreationRequestId = send({
+			type: 'basecamp-create-room',
+			name: form.get('name'),
+			...draft
+		});
 	}
 
 	function cell(event: PointerEvent) {
