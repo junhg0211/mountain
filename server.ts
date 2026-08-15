@@ -32,6 +32,12 @@ import { getOrCreateBalance, InsufficientBalanceError } from './src/lib/server/d
 import { sendTransactionNotification } from './src/lib/server/bot/notifications.ts';
 import { formatMoneyDisplay } from './src/lib/economy/money-display.ts';
 import { canManageGuild } from './src/lib/server/db/user-guilds.ts';
+import {
+	BasecampError,
+	configureBasecamp,
+	createBasecampRoom,
+	getBasecampState
+} from './src/lib/server/basecamp.ts';
 
 const BET_AMOUNTS = new Set(['0.01','0.05','0.10','0.50','1.00','5.00','10.00','50.00','100.00','500.00']);
 
@@ -40,14 +46,24 @@ const host = process.env.HOST || '0.0.0.0';
 const server = createServer(handler);
 const sockets = new WebSocketServer({ noServer: true });
 const guildSockets = new Map<string, Set<WebSocket>>();
+const basecampSockets = new Map<string, Set<WebSocket>>();
 
 void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
 server.on('upgrade', (request, socket, head) => {
 	const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
-	if (url.pathname !== '/ws/betting') return socket.destroy();
+	if (url.pathname !== '/ws/betting' && url.pathname !== '/ws/basecamp') return socket.destroy();
 	const context = consumeRealtimeTicket(url.searchParams.get('ticket') || '');
 	if (!context) return socket.destroy();
+	if (url.pathname === '/ws/basecamp') {
+		sockets.handleUpgrade(request, socket, head, (websocket) => {
+			void attachBasecampSocket(websocket, context).catch((error) => {
+				console.error('Basecamp socket initialization failed:', error);
+				websocket.close(1011, 'Basecamp initialization failed');
+			});
+		});
+		return;
+	}
 	sockets.handleUpgrade(request, socket, head, (websocket) => {
 		const { guildId, userId } = context;
 		const clients = guildSockets.get(guildId) || new Set<WebSocket>();
@@ -126,6 +142,107 @@ server.on('upgrade', (request, socket, head) => {
 		});
 	});
 });
+
+async function attachBasecampSocket(
+	websocket: WebSocket,
+	context: { guildId: string; userId: string }
+) {
+	const { guildId, userId } = context;
+	if (!(await getGuildMember(guildId, userId))) {
+		websocket.close(1008, 'Guild membership required');
+		return;
+	}
+	const clients = basecampSockets.get(guildId) || new Set<WebSocket>();
+	clients.add(websocket);
+	basecampSockets.set(guildId, clients);
+	websocket.on('close', () => {
+		clients.delete(websocket);
+		if (!clients.size) basecampSockets.delete(guildId);
+	});
+	websocket.send(JSON.stringify({ type: 'basecamp-connected' }));
+	websocket.send(JSON.stringify({ type: 'basecamp-state', ...(await getBasecampState(guildId)) }));
+
+	let processing = false;
+	websocket.on('message', async (raw) => {
+		let requestId = '';
+		try {
+			const message = JSON.parse(String(raw)) as Record<string, unknown>;
+			requestId = String(message.requestId || '');
+			const type = String(message.type || '');
+			if (
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-configure', 'basecamp-create-room'].includes(
+					type
+				)
+			)
+				throw new BasecampError('지원하지 않는 Basecamp 요청입니다.');
+			if (type === 'basecamp-ping') {
+				websocket.send(JSON.stringify({ type: 'basecamp-pong' }));
+				return;
+			}
+			if (processing) throw new BasecampError('다른 공간 작업을 처리하고 있습니다.');
+			if (type === 'basecamp-sync') {
+				websocket.send(
+					JSON.stringify({ type: 'basecamp-state', ...(await getBasecampState(guildId)) })
+				);
+				return;
+			}
+
+			processing = true;
+			let state: Awaited<ReturnType<typeof getBasecampState>>;
+			let messageText: string;
+			if (type === 'basecamp-configure') {
+				state = await configureBasecamp({
+					guildId,
+					userId,
+					categoryId: String(message.categoryId || ''),
+					accessRoleId: String(message.accessRoleId || '')
+				});
+				messageText = '월드 광장 채널과 Discord 연결 설정을 저장했습니다.';
+			} else {
+				state = await createBasecampRoom({
+					guildId,
+					userId,
+					name: String(message.name || ''),
+					x: Number(message.x),
+					y: Number(message.y),
+					width: Number(message.width),
+					height: Number(message.height)
+				});
+				messageText = `${String(message.name || '').trim()} 방과 Discord 음성 채널을 만들었습니다.`;
+			}
+			websocket.send(
+				JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: messageText })
+			);
+			broadcastBasecampState(guildId, state);
+		} catch (error) {
+			console.error('Basecamp realtime request failed:', error);
+			if (websocket.readyState === WebSocket.OPEN)
+				websocket.send(
+					JSON.stringify({
+						type: 'basecamp-result',
+						requestId,
+						ok: false,
+						error:
+							error instanceof BasecampError
+								? error.message
+								: 'Basecamp 작업을 처리하지 못했습니다.'
+					})
+				);
+		} finally {
+			processing = false;
+		}
+	});
+}
+
+function broadcastBasecampState(
+	guildId: string,
+	state: Awaited<ReturnType<typeof getBasecampState>>
+) {
+	const message = JSON.stringify({ type: 'basecamp-state', ...state });
+	for (const socket of basecampSockets.get(guildId) || []) {
+		if (socket.readyState === WebSocket.OPEN) socket.send(message);
+	}
+}
 
 async function runDashboardAction(context: {
 	guildId: string;
@@ -225,6 +342,7 @@ server.listen(port, host, () => console.log(`Mountain listening on http://${host
 function closeRealtimeServer() {
 	registerRealtimePublisher(null);
 	for (const clients of guildSockets.values()) for (const socket of clients) socket.close(1001);
+	for (const clients of basecampSockets.values()) for (const socket of clients) socket.close(1001);
 	sockets.close();
 	server.close();
 }

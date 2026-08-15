@@ -30,6 +30,11 @@ create their own voice channels in that same category.
 Mountain owns the lobby and room channel overrides: `@everyone` is denied Speak and the configured
 Basecamp access role is allowed Speak. Existing Discord restrictions such as timeouts still apply.
 
+Basecamp interactions run through the authenticated `/ws/basecamp` WebSocket served by `server.ts`.
+Configuration and room creation never submit or reload the page. Every successful mutation
+broadcasts the latest guild-scoped world state to connected clients; disconnected clients obtain a
+new single-use ticket and resynchronize automatically without refreshing the Activity.
+
 ## Authentication flow
 
 1. `ActivityAuth.svelte` detects Discord's Activity frame parameters and initializes `DiscordSDK`.
