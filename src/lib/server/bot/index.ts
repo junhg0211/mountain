@@ -67,7 +67,7 @@ async function shutdown(signal: NodeJS.Signals) {
 	forceExit.unref();
 
 	try {
-		stopVoiceActivityRewards();
+		await stopVoiceActivityRewards();
 		stopMonthlyBurnScheduler();
 		stopAutomaticPaymentScheduler();
 		stopAttendanceReminderScheduler();

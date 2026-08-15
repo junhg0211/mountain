@@ -14,7 +14,10 @@
 	function formatDuration(seconds: number) {
 		const hours = Math.floor(seconds / 3600);
 		const minutes = Math.floor((seconds % 3600) / 60);
-		return hours ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+		const remainingSeconds = seconds % 60;
+		if (hours) return `${hours}시간 ${minutes}분 ${remainingSeconds}초`;
+		if (minutes) return `${minutes}분 ${remainingSeconds}초`;
+		return `${remainingSeconds}초`;
 	}
 </script>
 
