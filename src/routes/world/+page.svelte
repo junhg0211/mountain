@@ -279,7 +279,7 @@
 
 	function moveAvatar(timestamp = performance.now()) {
 		movementFrame = null;
-		if (building || !presenceId) {
+		if (!presenceId) {
 			velocityX = 0;
 			velocityY = 0;
 			lastMovementFrameAt = null;
