@@ -508,7 +508,7 @@ function scheduleBasecampVoiceMove(
 				basecampVoiceTargets.get(websocket) === channelId
 			)
 				queueBasecampVoiceMove(websocket, guildId, userId, channelId);
-		}, 500)
+		}, 300)
 	);
 }
 
