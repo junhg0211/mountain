@@ -10,6 +10,11 @@
 	onMount(() => {
 		const query = new URLSearchParams(window.location.search);
 		active = query.has('frame_id') && query.has('instance_id');
+		const instanceId = query.get('instance_id');
+		if (active && instanceId && sessionStorage.getItem(`mountain-activity-auth:${instanceId}`) === 'true') {
+			active = false;
+			return;
+		}
 		if (active) void authenticateActivity();
 	});
 
@@ -42,7 +47,12 @@
 			if (!authentication) throw new Error('Discord Activity 인증에 실패했습니다.');
 			await invalidateAll();
 			const guildId = discord.guildId;
-			window.location.assign(guildId ? `/world?guild=${encodeURIComponent(guildId)}` : '/world');
+			const destination = new URL(window.location.href);
+			destination.pathname = '/world';
+			if (guildId) destination.searchParams.set('guild', guildId);
+			if (discord.instanceId)
+				sessionStorage.setItem(`mountain-activity-auth:${discord.instanceId}`, 'true');
+			window.location.assign(`${destination.pathname}${destination.search}`);
 		} catch (error) {
 			console.error('Discord Activity authentication failed:', error);
 			errorMessage =

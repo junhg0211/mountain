@@ -40,7 +40,9 @@ crosses into an active room without reloading the page.
 The configured access role is granted while a member has an active Basecamp WebSocket and removed
 ten seconds after their final connection closes, allowing brief automatic reconnects. Room and
 lobby panels open their linked Discord voice-channel URL for user-confirmed joining; the Embedded
-App SDK does not expose the desktop RPC command that directly selects a voice channel.
+App SDK does not expose the desktop RPC command that directly selects a voice channel. A per-guild
+toggle can automatically open the linked channel when the avatar crosses between the lobby and a
+room, but Discord still owns the final voice-join confirmation.
 
 ## Authentication flow
 
@@ -51,6 +53,8 @@ App SDK does not expose the desktop RPC command that directly selects a voice ch
 4. The access token is returned only long enough for `commands.authenticate` and is never stored in
    the database or browser storage.
 5. A guild Activity redirects to that guild's `/world` Basecamp after authentication.
+   Discord's `frame_id` and `instance_id` query parameters are preserved across this redirect and
+   guild switching so later Embedded App SDK commands can reuse the Activity frame context.
 
 Normal browser sessions remain `SameSite=Lax`. Activity sessions are `Secure`, `SameSite=None`, and
 `Partitioned` so they work in Discord's sandboxed iframe without becoming general third-party

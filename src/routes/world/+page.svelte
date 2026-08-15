@@ -22,6 +22,10 @@
 	let processing = $state(false);
 	let roomCreationRequestId: string | null = null;
 	let openingVoiceChannel = $state(false);
+	let autoOpenVoiceChannel = $state(false);
+	let autoVoiceReady = $state(false);
+	let lastAutoVoiceChannelId: string | null = null;
+	let voiceWindow: Window | null = null;
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
@@ -39,6 +43,9 @@
 	let activeGuildId: string | null = null;
 
 	onMount(() => {
+		autoOpenVoiceChannel = localStorage.getItem(`basecamp-auto-voice:${data.guildId}`) === 'true';
+		lastAutoVoiceChannelId = voiceTarget?.channelId || null;
+		autoVoiceReady = true;
 		const keydown = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
 				return;
@@ -300,15 +307,27 @@
 				: null
 	);
 
-	async function openVoiceChannel() {
+	$effect(() => {
+		const channelId = voiceTarget?.channelId || null;
+		if (
+			!autoVoiceReady ||
+			!autoOpenVoiceChannel ||
+			!channelId ||
+			channelId === lastAutoVoiceChannelId
+		)
+			return;
+		lastAutoVoiceChannelId = channelId;
+		void openVoiceChannel(true);
+	});
+
+	async function openVoiceChannel(automatic = false) {
 		if (!voiceTarget || !data.guildId || openingVoiceChannel) return;
+		const target = voiceTarget;
 		openingVoiceChannel = true;
-		const url = `https://discord.com/channels/${data.guildId}/${voiceTarget.channelId}`;
+		const url = `https://discord.com/channels/${data.guildId}/${target.channelId}`;
 		try {
 			const query = new URLSearchParams(window.location.search);
-			const inActivity =
-				(query.has('frame_id') && query.has('instance_id')) ||
-				window.location.hostname.endsWith('.discordsays.com');
+			const inActivity = query.has('frame_id') && query.has('instance_id');
 			if (inActivity && data.discordClientId) {
 				const { DiscordSDK } = await import('@discord/embedded-app-sdk');
 				const discord = new DiscordSDK(data.discordClientId);
@@ -316,10 +335,12 @@
 				const result = await discord.commands.openExternalLink({ url });
 				if (!result.opened) throw new Error('Discord가 채널 링크를 열지 못했습니다.');
 			} else {
-				const opened = window.open(url, '_blank', 'noopener,noreferrer');
-				if (!opened) throw new Error('팝업을 허용한 뒤 다시 시도해 주세요.');
+				if (voiceWindow && !voiceWindow.closed) voiceWindow.location.href = url;
+				else voiceWindow = window.open(url, 'mountain-basecamp-voice');
+				if (!voiceWindow) throw new Error('팝업을 허용한 뒤 다시 시도해 주세요.');
 			}
-			notice = { success: true, message: `${voiceTarget.name} 음성 채널을 열었습니다. Discord에서 참가해 주세요.` };
+			if (!automatic)
+				notice = { success: true, message: `${target.name} 음성 채널을 열었습니다. Discord에서 참가해 주세요.` };
 		} catch (error) {
 			notice = {
 				success: false,
@@ -328,6 +349,24 @@
 		} finally {
 			openingVoiceChannel = false;
 		}
+	}
+
+	function setAutoVoiceChannel(event: Event) {
+		autoOpenVoiceChannel = (event.currentTarget as HTMLInputElement).checked;
+		localStorage.setItem(
+			`basecamp-auto-voice:${data.guildId}`,
+			String(autoOpenVoiceChannel)
+		);
+		lastAutoVoiceChannelId = voiceTarget?.channelId || null;
+		if (autoOpenVoiceChannel) void openVoiceChannel();
+	}
+
+	function switchGuild(event: MouseEvent, guildId: string) {
+		const query = new URLSearchParams(window.location.search);
+		if (!query.has('frame_id') || !query.has('instance_id')) return;
+		event.preventDefault();
+		query.set('guild', guildId);
+		window.location.assign(`/world?${query}`);
 	}
 
 	function roomStyle(room: { x: number; y: number; width: number; height: number }) {
@@ -352,7 +391,7 @@
 		{#if data.guilds.length}
 			<nav aria-label="서버 선택">
 				{#each data.guilds as guild}
-					<a class:active={guild.id === data.guildId} href={`/world?guild=${guild.id}`}>{guild.name}</a>
+					<a class:active={guild.id === data.guildId} href={`/world?guild=${guild.id}`} onclick={(event) => switchGuild(event, guild.id)}>{guild.name}</a>
 				{/each}
 			</nav>
 		{/if}
@@ -420,7 +459,7 @@
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
 				{:else}
-					<div class:room-status={currentRoom} class="guide"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 연결된 음성 채널: {voiceTarget.name}</div><button disabled={openingVoiceChannel} onclick={openVoiceChannel}>{openingVoiceChannel ? '채널 여는 중…' : '음성 채널 참가'}</button>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
+					<div class:room-status={currentRoom} class="guide"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 연결된 음성 채널: {voiceTarget.name}</div><button disabled={openingVoiceChannel} onclick={() => openVoiceChannel()}>{openingVoiceChannel ? '채널 여는 중…' : '음성 채널 참가'}</button><label class="auto-voice"><input type="checkbox" checked={autoOpenVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 채널 자동 열기</span></label>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
 				{/if}
 			</aside>
 		</div>
@@ -438,4 +477,5 @@
 	.guide>.voice-status+button{width:100%;margin-top:10px}.build-tip{margin-top:14px;padding-top:12px;border-top:1px solid #ffffff12}
 	header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}header,.intro{transform:translateY(-10px)}aside{transform:translateX(12px)}.setup,.connection,.world-wrap>.hint{transform:translateY(10px)}main.reveal-top header,main.reveal-top .intro,header:focus-within,header:hover,.intro:focus-within,.intro:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-right aside,aside:focus-within,aside:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-bottom .setup,main.reveal-bottom .connection,main.reveal-bottom .world-wrap>.hint,.setup:focus-within,.setup:hover,.connection:hover{opacity:1;transform:none;pointer-events:auto}.edge-cue{position:absolute;z-index:17;display:block;pointer-events:none;opacity:.38;background:#d6ff66;box-shadow:0 0 12px #d6ff6688}.edge-cue.top{top:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}.edge-cue.right{top:50%;right:0;width:2px;height:52px;transform:translateY(-50%)}.edge-cue.bottom{bottom:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}main.reveal-top .edge-cue.top,main.reveal-right .edge-cue.right,main.reveal-bottom .edge-cue.bottom{opacity:0}
 	@media(hover:none){header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:1;transform:none;pointer-events:auto}.edge-cue{display:none}}
+	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 </style>
