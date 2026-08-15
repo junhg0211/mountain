@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { handler } from './build/handler.js';
-import { startBot } from './src/lib/server/bot/index.ts';
+import { getClient, startBot } from './src/lib/server/bot/index.ts';
 import { consumeRealtimeTicket, publishBettingUpdate, registerRealtimePublisher } from './src/lib/server/realtime.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDB } from './src/lib/server/db.ts';
@@ -62,6 +62,11 @@ interface BasecampPresence {
 const basecampPresences = new Map<string, Map<WebSocket, BasecampPresence>>();
 const basecampSocketRoles = new Map<WebSocket, string | null>();
 const basecampRoleRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const basecampWorldStates = new Map<string, Awaited<ReturnType<typeof getBasecampState>>>();
+const basecampAutoMoves = new Map<WebSocket, boolean>();
+const basecampVoiceTargets = new Map<WebSocket, string | null>();
+const basecampVoiceMoveAttempts = new Map<WebSocket, number>();
+const basecampVoiceMoveQueues = new Map<WebSocket, Promise<void>>();
 
 void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
@@ -179,6 +184,7 @@ async function attachBasecampSocket(
 		y: 15
 	};
 	const initialState = await getBasecampState(guildId);
+	basecampWorldStates.set(guildId, initialState);
 	const clients = basecampSockets.get(guildId) || new Set<WebSocket>();
 	clients.add(websocket);
 	basecampSockets.set(guildId, clients);
@@ -186,6 +192,8 @@ async function attachBasecampSocket(
 	presences.set(websocket, presence);
 	basecampPresences.set(guildId, presences);
 	basecampSocketRoles.set(websocket, initialState.settings.accessRoleId);
+	basecampAutoMoves.set(websocket, false);
+	basecampVoiceTargets.set(websocket, getBasecampVoiceTarget(initialState, presence));
 	if (initialState.settings.accessRoleId)
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
@@ -195,6 +203,11 @@ async function attachBasecampSocket(
 		if (!presences.size) basecampPresences.delete(guildId);
 		const roleId = basecampSocketRoles.get(websocket);
 		basecampSocketRoles.delete(websocket);
+		basecampAutoMoves.delete(websocket);
+		basecampVoiceTargets.delete(websocket);
+		basecampVoiceMoveAttempts.delete(websocket);
+		basecampVoiceMoveQueues.delete(websocket);
+		if (!clients.size) basecampWorldStates.delete(guildId);
 		if (roleId) scheduleBasecampRoleRemoval(guildId, userId, roleId);
 		broadcastBasecampPresences(guildId);
 	});
@@ -211,12 +224,15 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-configure', 'basecamp-create-room'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-create-room'].includes(
 					type
 				)
 			)
 				throw new BasecampError('지원하지 않는 Basecamp 요청입니다.');
 			if (type === 'basecamp-ping') {
+				const target = basecampVoiceTargets.get(websocket);
+				if (basecampAutoMoves.get(websocket) && target)
+					queueBasecampVoiceMove(websocket, guildId, userId, target);
 				websocket.send(JSON.stringify({ type: 'basecamp-pong' }));
 				return;
 			}
@@ -231,6 +247,20 @@ async function attachBasecampSocket(
 				presence.x = Math.max(0.6, Math.min(39.4, x));
 				presence.y = Math.max(0.8, Math.min(23.2, y));
 				broadcastBasecampPresences(guildId);
+				const state = basecampWorldStates.get(guildId);
+				if (state) updateBasecampVoiceTarget(websocket, guildId, presence, state);
+				return;
+			}
+			if (type === 'basecamp-auto-move') {
+				const enabled = message.enabled === true;
+				basecampAutoMoves.set(websocket, enabled);
+				const state = basecampWorldStates.get(guildId);
+				if (enabled && state) {
+					const target = getBasecampVoiceTarget(state, presence);
+					basecampVoiceTargets.set(websocket, target);
+					if (target) queueBasecampVoiceMove(websocket, guildId, userId, target);
+				}
+				websocket.send(JSON.stringify({ type: 'basecamp-auto-move-result', enabled }));
 				return;
 			}
 			if (processing) throw new BasecampError('다른 공간 작업을 처리하고 있습니다.');
@@ -356,10 +386,93 @@ function broadcastBasecampState(
 	guildId: string,
 	state: Awaited<ReturnType<typeof getBasecampState>>
 ) {
+	basecampWorldStates.set(guildId, state);
 	const message = JSON.stringify({ type: 'basecamp-state', ...state });
 	for (const socket of basecampSockets.get(guildId) || []) {
 		if (socket.readyState === WebSocket.OPEN) socket.send(message);
 	}
+}
+
+function getBasecampVoiceTarget(
+	state: Awaited<ReturnType<typeof getBasecampState>>,
+	presence: BasecampPresence
+) {
+	const room = state.rooms.find(
+		(item) =>
+			item.status === 'active' &&
+			presence.x >= item.x &&
+			presence.x < item.x + item.width &&
+			presence.y >= item.y &&
+			presence.y < item.y + item.height
+	);
+	return room?.voiceChannelId || state.settings.lobbyChannelId;
+}
+
+function updateBasecampVoiceTarget(
+	websocket: WebSocket,
+	guildId: string,
+	presence: BasecampPresence,
+	state: Awaited<ReturnType<typeof getBasecampState>>
+) {
+	const target = getBasecampVoiceTarget(state, presence);
+	const changed = basecampVoiceTargets.get(websocket) !== target;
+	basecampVoiceTargets.set(websocket, target);
+	if (!basecampAutoMoves.get(websocket) || !target) return;
+	const lastAttempt = basecampVoiceMoveAttempts.get(websocket) || 0;
+	if (changed || Date.now() - lastAttempt >= 2_000)
+		queueBasecampVoiceMove(websocket, guildId, presence.userId, target);
+}
+
+function queueBasecampVoiceMove(
+	websocket: WebSocket,
+	guildId: string,
+	userId: string,
+	channelId: string
+) {
+	basecampVoiceMoveAttempts.set(websocket, Date.now());
+	const previous = basecampVoiceMoveQueues.get(websocket) || Promise.resolve();
+	const next = previous
+		.catch(() => undefined)
+		.then(async () => {
+			if (!basecampAutoMoves.get(websocket) || basecampVoiceTargets.get(websocket) !== channelId)
+				return;
+			const client = getClient();
+			if (!client?.isReady()) throw new Error('Discord 봇이 아직 준비되지 않았습니다.');
+			const guild = await client.guilds.fetch(guildId);
+			const member = await guild.members.fetch(userId);
+			if (!member.voice.channelId) {
+				websocket.send(
+					JSON.stringify({
+						type: 'basecamp-voice-status',
+						ok: false,
+						message: '먼저 월드 광장 음성 채널에 참가해 주세요.'
+					})
+				);
+				return;
+			}
+			if (member.voice.channelId === channelId) return;
+			await member.voice.setChannel(channelId, 'Basecamp room transition');
+			if (websocket.readyState === WebSocket.OPEN)
+				websocket.send(
+					JSON.stringify({
+						type: 'basecamp-voice-status',
+						ok: true,
+						message: '현재 공간의 음성 채널로 이동했습니다.'
+					})
+				);
+		})
+		.catch((error) => {
+			console.error(`Basecamp voice move failed for ${guildId}/${userId}:`, error);
+			if (websocket.readyState === WebSocket.OPEN)
+				websocket.send(
+					JSON.stringify({
+						type: 'basecamp-voice-status',
+						ok: false,
+						message: '음성 채널을 이동하지 못했습니다. 봇의 멤버 이동 권한을 확인해 주세요.'
+					})
+				);
+		});
+	basecampVoiceMoveQueues.set(websocket, next);
 }
 
 async function runDashboardAction(context: {

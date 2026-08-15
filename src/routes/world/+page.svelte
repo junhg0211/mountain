@@ -22,10 +22,7 @@
 	let processing = $state(false);
 	let roomCreationRequestId: string | null = null;
 	let openingVoiceChannel = $state(false);
-	let autoOpenVoiceChannel = $state(false);
-	let autoVoiceReady = $state(false);
-	let lastAutoVoiceChannelId: string | null = null;
-	let voiceWindow: Window | null = null;
+	let autoMoveVoiceChannel = $state(false);
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
@@ -43,9 +40,7 @@
 	let activeGuildId: string | null = null;
 
 	onMount(() => {
-		autoOpenVoiceChannel = localStorage.getItem(`basecamp-auto-voice:${data.guildId}`) === 'true';
-		lastAutoVoiceChannelId = voiceTarget?.channelId || null;
-		autoVoiceReady = true;
+		autoMoveVoiceChannel = localStorage.getItem(`basecamp-auto-move:${data.guildId}`) === 'true';
 		const keydown = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
 				return;
@@ -123,6 +118,13 @@
 				const message = JSON.parse(String(event.data)) as Record<string, unknown>;
 				if (message.type === 'basecamp-connected') {
 					presenceId = String(message.presenceId || '');
+					next.send(
+						JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel })
+					);
+					return;
+				}
+				if (message.type === 'basecamp-voice-status') {
+					notice = { success: message.ok === true, message: String(message.message || '') };
 					return;
 				}
 				if (message.type === 'basecamp-presences') {
@@ -307,24 +309,10 @@
 				: null
 	);
 
-	$effect(() => {
-		const channelId = voiceTarget?.channelId || null;
-		if (
-			!autoVoiceReady ||
-			!autoOpenVoiceChannel ||
-			!channelId ||
-			channelId === lastAutoVoiceChannelId
-		)
-			return;
-		lastAutoVoiceChannelId = channelId;
-		void openVoiceChannel(true);
-	});
-
-	async function openVoiceChannel(automatic = false) {
-		if (!voiceTarget || !data.guildId || openingVoiceChannel) return;
-		const target = voiceTarget;
+	async function openVoiceChannel() {
+		if (!settings?.lobbyChannelId || !data.guildId || openingVoiceChannel) return;
 		openingVoiceChannel = true;
-		const url = `https://discord.com/channels/${data.guildId}/${target.channelId}`;
+		const url = `https://discord.com/channels/${data.guildId}/${settings.lobbyChannelId}`;
 		try {
 			const query = new URLSearchParams(window.location.search);
 			const inActivity = query.has('frame_id') && query.has('instance_id');
@@ -335,12 +323,10 @@
 				const result = await discord.commands.openExternalLink({ url });
 				if (!result.opened) throw new Error('Discord가 채널 링크를 열지 못했습니다.');
 			} else {
-				if (voiceWindow && !voiceWindow.closed) voiceWindow.location.href = url;
-				else voiceWindow = window.open(url, 'mountain-basecamp-voice');
-				if (!voiceWindow) throw new Error('팝업을 허용한 뒤 다시 시도해 주세요.');
+				const opened = window.open(url, 'mountain-basecamp-voice');
+				if (!opened) throw new Error('팝업을 허용한 뒤 다시 시도해 주세요.');
 			}
-			if (!automatic)
-				notice = { success: true, message: `${target.name} 음성 채널을 열었습니다. Discord에서 참가해 주세요.` };
+			notice = { success: true, message: '월드 광장 음성 채널을 열었습니다. 먼저 통화에 참가해 주세요.' };
 		} catch (error) {
 			notice = {
 				success: false,
@@ -352,13 +338,16 @@
 	}
 
 	function setAutoVoiceChannel(event: Event) {
-		autoOpenVoiceChannel = (event.currentTarget as HTMLInputElement).checked;
+		autoMoveVoiceChannel = (event.currentTarget as HTMLInputElement).checked;
 		localStorage.setItem(
-			`basecamp-auto-voice:${data.guildId}`,
-			String(autoOpenVoiceChannel)
+			`basecamp-auto-move:${data.guildId}`,
+			String(autoMoveVoiceChannel)
 		);
-		lastAutoVoiceChannelId = voiceTarget?.channelId || null;
-		if (autoOpenVoiceChannel) void openVoiceChannel();
+		if (socket?.readyState === WebSocket.OPEN)
+			socket.send(
+				JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel })
+			);
+		else notice = { success: false, message: 'Basecamp에 다시 연결한 뒤 설정해 주세요.' };
 	}
 
 	function switchGuild(event: MouseEvent, guildId: string) {
@@ -459,7 +448,7 @@
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
 				{:else}
-					<div class:room-status={currentRoom} class="guide"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 연결된 음성 채널: {voiceTarget.name}</div><button disabled={openingVoiceChannel} onclick={() => openVoiceChannel()}>{openingVoiceChannel ? '채널 여는 중…' : '음성 채널 참가'}</button><label class="auto-voice"><input type="checkbox" checked={autoOpenVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 채널 자동 열기</span></label>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
+					<div class:room-status={currentRoom} class="guide"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div><button disabled={openingVoiceChannel || !settings?.lobbyChannelId} onclick={openVoiceChannel}>{openingVoiceChannel ? '광장 여는 중…' : '월드 광장 통화 참가'}</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
 				{/if}
 			</aside>
 		</div>

@@ -39,10 +39,10 @@ display names, and avatars are broadcast to the guild world, and the client dete
 crosses into an active room without reloading the page.
 The configured access role is granted while a member has an active Basecamp WebSocket and removed
 ten seconds after their final connection closes, allowing brief automatic reconnects. Room and
-lobby panels open their linked Discord voice-channel URL for user-confirmed joining; the Embedded
-App SDK does not expose the desktop RPC command that directly selects a voice channel. A per-guild
-toggle can automatically open the linked channel when the avatar crosses between the lobby and a
-room, but Discord still owns the final voice-join confirmation.
+lobby panels open the `월드 광장` voice-channel URL for the user's initial join. After that, a
+per-guild toggle lets the bot move the already-connected member between the lobby and room voice
+channels whenever the avatar crosses a room boundary. This requires the bot's **Move Members** and
+**Connect** permissions; Discord does not allow a bot to connect a user who is not already in voice.
 
 ## Authentication flow
 

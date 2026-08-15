@@ -37,9 +37,10 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 	const [botMember, role] = await Promise.all([guild.members.fetchMe(), guild.roles.fetch(roleId)]);
 	if (
 		!botMember.permissions.has(PermissionsBitField.Flags.ManageChannels) ||
-		!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)
+		!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles) ||
+		!botMember.permissions.has(PermissionsBitField.Flags.MoveMembers)
 	)
-		throw new BasecampError('Mountain 봇에 채널 관리와 역할 관리 권한을 부여해 주세요.');
+		throw new BasecampError('Mountain 봇에 채널 관리, 역할 관리, 멤버 이동 권한을 부여해 주세요.');
 	if (!role || botMember.roles.highest.comparePositionTo(role) <= 0)
 		throw new BasecampError('Mountain 봇 역할을 월드 접속자 역할보다 위로 옮겨 주세요.');
 }
