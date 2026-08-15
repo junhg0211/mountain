@@ -62,6 +62,15 @@
 	let viewportWidth = $state(0);
 	let viewportHeight = $state(0);
 
+	$effect(() => {
+		const currentNotice = notice;
+		if (!currentNotice) return;
+		const timer = window.setTimeout(() => {
+			if (notice === currentNotice) notice = null;
+		}, 3_000);
+		return () => window.clearTimeout(timer);
+	});
+
 	onMount(() => {
 		const savedAutoMove = localStorage.getItem(`basecamp-auto-move:${data.guildId}`);
 		autoMoveVoiceChannel = savedAutoMove === null || savedAutoMove === 'true';
