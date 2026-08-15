@@ -37,10 +37,12 @@
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
 	let movementFrame: number | null = null;
-	let movementStep = 0;
-	const initialMovementStep = 0.04;
-	const maximumMovementStep = 0.18;
-	const movementAcceleration = 0.008;
+	let velocityX = 0;
+	let velocityY = 0;
+	let lastMovementFrameAt: number | null = null;
+	const maximumMovementSpeed = 10.8;
+	const movementAcceleration = 34;
+	const movementFriction = 54;
 	let cameraFrame: number | null = null;
 	let cameraX = $state(0);
 	let cameraY = $state(0);
@@ -82,8 +84,7 @@
 			if (!movementKeys.has(key)) return;
 			pressedKeys.delete(key);
 			if (![...pressedKeys].some((pressed) => movementKeys.has(pressed))) {
-				movementStep = 0;
-				sendCurrentPosition();
+				if (movementFrame === null) moveAvatar();
 			}
 		};
 		window.addEventListener('keydown', keydown);
@@ -222,10 +223,12 @@
 		}
 	}
 
-	function moveAvatar() {
+	function moveAvatar(timestamp = performance.now()) {
 		movementFrame = null;
-		if (!pressedKeys.size || building || !presenceId) {
-			movementStep = 0;
+		if (building || !presenceId) {
+			velocityX = 0;
+			velocityY = 0;
+			lastMovementFrameAt = null;
 			return;
 		}
 		const me = presences.find((presence) => presence.id === presenceId);
@@ -233,27 +236,55 @@
 			movementFrame = requestAnimationFrame(moveAvatar);
 			return;
 		}
+		const deltaSeconds = lastMovementFrameAt === null
+			? 1 / 60
+			: Math.min(0.05, Math.max(0.001, (timestamp - lastMovementFrameAt) / 1_000));
+		lastMovementFrameAt = timestamp;
 		const horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
 		const vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
-		if (horizontal || vertical) {
-			movementStep = movementStep === 0
-				? initialMovementStep
-				: Math.min(maximumMovementStep, movementStep + movementAcceleration);
-			const length = Math.hypot(horizontal, vertical) || 1;
-			let x = Math.max(0.6, Math.min(columns - 0.6, me.x + horizontal * movementStep / length));
-			let y = Math.max(0.8, Math.min(rows - 0.8, me.y + vertical * movementStep / length));
-			if (wallCollision(x, y) && !wallCollision(me.x, me.y)) {
-				if (!wallCollision(x, me.y)) y = me.y;
-				else if (!wallCollision(me.x, y)) x = me.x;
-				else { x = me.x; y = me.y; }
+		const inputLength = Math.hypot(horizontal, vertical) || 1;
+		const targetVelocityX = horizontal / inputLength * maximumMovementSpeed;
+		const targetVelocityY = vertical / inputLength * maximumMovementSpeed;
+		velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? movementAcceleration : movementFriction) * deltaSeconds);
+		velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? movementAcceleration : movementFriction) * deltaSeconds);
+		const speed = Math.hypot(velocityX, velocityY);
+		if (speed > maximumMovementSpeed) {
+			velocityX = velocityX / speed * maximumMovementSpeed;
+			velocityY = velocityY / speed * maximumMovementSpeed;
+		}
+		if (velocityX || velocityY) {
+			const rawX = me.x + velocityX * deltaSeconds;
+			const rawY = me.y + velocityY * deltaSeconds;
+			let x = Math.max(0.6, Math.min(columns - 0.6, rawX));
+			let y = Math.max(0.8, Math.min(rows - 0.8, rawY));
+			if (x !== rawX) velocityX = 0;
+			if (y !== rawY) velocityY = 0;
+			if (wallCollision(x, me.y) && !wallCollision(me.x, me.y)) {
+				x = me.x;
+				velocityX = 0;
+			}
+			if (wallCollision(x, y) && !wallCollision(x, me.y)) {
+				y = me.y;
+				velocityY = 0;
 			}
 			presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
 			if (Date.now() - lastMovementSentAt >= 50 && socket?.readyState === WebSocket.OPEN) {
 				lastMovementSentAt = Date.now();
 				socket.send(JSON.stringify({ type: 'basecamp-move', x, y }));
 			}
-		} else movementStep = 0;
-		movementFrame = requestAnimationFrame(moveAvatar);
+		}
+		if (horizontal || vertical || velocityX || velocityY)
+			movementFrame = requestAnimationFrame(moveAvatar);
+		else {
+			lastMovementFrameAt = null;
+			sendCurrentPosition();
+		}
+	}
+
+	function approachVelocity(current: number, target: number, amount: number) {
+		if (current < target) return Math.min(target, current + amount);
+		if (current > target) return Math.max(target, current - amount);
+		return target;
 	}
 
 	function sendCurrentPosition() {
