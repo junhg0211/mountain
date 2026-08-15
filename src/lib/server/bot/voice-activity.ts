@@ -5,11 +5,13 @@ import { recordVoiceActivity } from '$lib/server/db/member-activity';
 import type { Client, GuildMember } from 'discord.js';
 
 const REQUIRED_PRESENCE_MS = 5 * 60 * 1000;
-const SCAN_INTERVAL_MS = 60 * 1000;
+const ACTIVITY_INTERVAL_MS = 45 * 1000;
+const SCAN_INTERVAL_MS = 15 * 1000;
 
 interface Presence {
 	channelId: string;
-	since: number;
+	activitySince: number;
+	rewardSince: number;
 }
 
 const presences = new Map<string, Presence>();
@@ -36,22 +38,29 @@ async function scan(client: Client) {
 					seen.add(key);
 					const presence = presences.get(key);
 					if (!presence || presence.channelId !== channel.id) {
-						presences.set(key, { channelId: channel.id, since: now });
+						presences.set(key, { channelId: channel.id, activitySince: now, rewardSince: now });
 						continue;
 					}
-					if (now - presence.since < REQUIRED_PRESENCE_MS) continue;
+					const elapsedActivityIntervals = Math.floor(
+						(now - presence.activitySince) / ACTIVITY_INTERVAL_MS
+					);
+					const rewardDue = now - presence.rewardSince >= REQUIRED_PRESENCE_MS;
+					if (elapsedActivityIntervals < 1 && !rewardDue) continue;
 					await ensureUser(
 						member.id,
 						member.displayName || member.user.globalName || member.user.username,
 						member.user.displayAvatarURL()
 					);
-					await recordVoiceActivity(
-						guild.id,
-						member.id,
-						REQUIRED_PRESENCE_MS / 1000,
-						new Date(now)
-					);
-					if (settings.reward !== '0.00' && settings.dailyCap !== '0.00') {
+					if (elapsedActivityIntervals > 0) {
+						await recordVoiceActivity(
+							guild.id,
+							member.id,
+							(elapsedActivityIntervals * ACTIVITY_INTERVAL_MS) / 1000,
+							new Date(now)
+						);
+						presence.activitySince += elapsedActivityIntervals * ACTIVITY_INTERVAL_MS;
+					}
+					if (rewardDue && settings.reward !== '0.00' && settings.dailyCap !== '0.00') {
 						await awardVoiceActivity({
 							guildId: guild.id,
 							userId: member.id,
@@ -62,7 +71,7 @@ async function scan(client: Client) {
 							now: new Date(now)
 						});
 					}
-					presences.set(key, { channelId: channel.id, since: now });
+					if (rewardDue) presence.rewardSince = now;
 				}
 			}
 		}

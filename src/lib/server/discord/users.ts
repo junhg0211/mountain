@@ -20,6 +20,23 @@ export interface DiscordGuildMember {
 	user: DiscordUser & { bot?: boolean };
 }
 
+export async function getGuildMembers(guildId: string): Promise<DiscordGuildMember[]> {
+	const members: DiscordGuildMember[] = [];
+	let after: string | undefined;
+	do {
+		const params = new URLSearchParams({ limit: '1000' });
+		if (after) params.set('after', after);
+		const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/members?${params}`, {
+			headers: { Authorization: botAuthorization() }
+		});
+		if (!response.ok) throw new Error(`Discord member list request failed (${response.status}).`);
+		const page = (await response.json()) as DiscordGuildMember[];
+		members.push(...page);
+		after = page.length === 1000 ? page.at(-1)?.user.id : undefined;
+	} while (after);
+	return members;
+}
+
 export interface DiscordChannel {
 	id: string;
 	name: string;

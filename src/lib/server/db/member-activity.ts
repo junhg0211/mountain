@@ -1,5 +1,7 @@
 import { getDB } from '$lib/server/db';
 
+export const VOICE_SCORE_SECONDS = 45;
+
 const KOREAN_DATE_FORMAT = new Intl.DateTimeFormat('en-CA', {
 	timeZone: 'Asia/Seoul',
 	year: 'numeric',
@@ -51,9 +53,8 @@ export async function getMemberActivityRanking(
 		WHERE activity.guild_id=${guildId}
 			AND activity.activity_date BETWEEN ${startDate} AND ${endDate}
 		GROUP BY activity.user_id, users.username, users.avatar_url
-		ORDER BY (SUM(activity.message_count) + FLOOR(SUM(activity.voice_seconds) / 300)) DESC,
+		ORDER BY (SUM(activity.message_count) + FLOOR(SUM(activity.voice_seconds) / ${VOICE_SCORE_SECONDS})) DESC,
 			SUM(activity.message_count) DESC, SUM(activity.voice_seconds) DESC, activity.user_id
-		LIMIT 100
 	`;
 	return rows.map((row: Record<string, unknown>, index: number) => ({
 		rank: index + 1,
@@ -62,6 +63,7 @@ export async function getMemberActivityRanking(
 		avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
 		messageCount: Number(row.message_count),
 		voiceSeconds: Number(row.voice_seconds),
-		participationScore: Number(row.message_count) + Math.floor(Number(row.voice_seconds) / 300)
+		participationScore:
+			Number(row.message_count) + Math.floor(Number(row.voice_seconds) / VOICE_SCORE_SECONDS)
 	}));
 }

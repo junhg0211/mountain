@@ -49,16 +49,23 @@
 			</article>
 			<article><span>작성 메시지</span><strong>{totalMessages.toLocaleString()}개</strong></article>
 			<article><span>음성 참여</span><strong>{formatDuration(totalVoiceSeconds)}</strong></article>
+			<article>
+				<span>미참여 인원</span><strong
+					>{data.memberListAvailable
+						? `${data.nonParticipants.length.toLocaleString()}명`
+						: '확인 불가'}</strong
+				>
+			</article>
 		</section>
 		<section class="card">
 			<div class="card-heading">
 				<div>
-					<span>TOP 100</span>
+					<span>PARTICIPATION RANKING</span>
 					<h2>{selectedGuild.name}</h2>
 				</div>
 				<small>{data.startDate} ~ {data.endDate}</small>
 			</div>
-			<p class="description">메시지 1개와 음성 참여 5분을 각각 참여 점수 1점으로 계산합니다.</p>
+			<p class="description">메시지 1개와 음성 참여 45초를 각각 참여 점수 1점으로 계산합니다.</p>
 			{#if data.ranking.length}
 				<div class="ranking">
 					<div class="row labels">
@@ -82,6 +89,39 @@
 					{/each}
 				</div>
 			{:else}<div class="empty">선택한 기간에 기록된 참여 활동이 없습니다.</div>{/if}
+		</section>
+		<section class="card inactive-card">
+			<div class="card-heading">
+				<div>
+					<span>NO ACTIVITY</span>
+					<h2>미참여 구성원</h2>
+				</div>
+				<small
+					>{data.memberListAvailable
+						? `${data.nonParticipants.length.toLocaleString()}명`
+						: '권한 필요'}</small
+				>
+			</div>
+			<p class="description">
+				선택한 기간에 메시지 작성과 음성 참여 기록이 모두 없는 현재 서버 구성원입니다.
+			</p>
+			{#if !data.memberListAvailable}
+				<div class="empty">
+					Discord Developer Portal에서 Server Members Intent를 활성화하면 미참여 구성원 목록을
+					확인할 수 있습니다.
+				</div>
+			{:else if data.nonParticipants.length}
+				<div class="inactive-grid">
+					{#each data.nonParticipants as member}
+						<article class="member inactive-member">
+							{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i
+									>{member.username.slice(0, 1)}</i
+								>{/if}
+							<span><b>{member.username}</b><small>{member.userId}</small></span>
+						</article>
+					{/each}
+				</div>
+			{:else}<div class="empty">선택한 기간에 모든 구성원이 참여했습니다.</div>{/if}
 		</section>
 	{:else}<div class="empty">관리할 수 있는 서버가 없습니다.</div>{/if}
 </main>
@@ -166,7 +206,7 @@
 	}
 	.summary {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(4, 1fr);
 		gap: 14px;
 		margin-bottom: 18px;
 	}
@@ -192,6 +232,9 @@
 	}
 	.card {
 		padding: 24px;
+	}
+	.inactive-card {
+		margin-top: 18px;
 	}
 	.card-heading {
 		display: flex;
@@ -257,6 +300,17 @@
 	.medal {
 		color: #9f8eff;
 		font-size: 20px;
+	}
+	.inactive-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+		gap: 10px;
+	}
+	.inactive-member {
+		padding: 12px;
+		border: 1px solid #20252e;
+		border-radius: 11px;
+		background: #0b0d12;
 	}
 	.empty {
 		padding: 42px;

@@ -2,6 +2,7 @@ import { getSessionUser } from '$lib/server/auth';
 import { getDB } from '$lib/server/db';
 import { getMemberActivityRanking, koreanActivityDate } from '$lib/server/db/member-activity';
 import { canManageGuild } from '$lib/server/db/user-guilds';
+import { getGuildMembers } from '$lib/server/discord/users';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
@@ -44,6 +45,36 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const ranking = selectedGuildId
 		? await getMemberActivityRanking(selectedGuildId, startDate, endDate)
 		: [];
+	let members: Awaited<ReturnType<typeof getGuildMembers>> = [];
+	let memberListAvailable = true;
+	if (selectedGuildId) {
+		try {
+			members = await getGuildMembers(selectedGuildId);
+		} catch (error) {
+			memberListAvailable = false;
+			console.error(`Discord member list lookup failed for ${selectedGuildId}:`, error);
+		}
+	}
+	const participantIds = new Set(ranking.map((member: { userId: string }) => member.userId));
+	const nonParticipants = members
+		.filter((member) => !member.user.bot && !participantIds.has(member.user.id))
+		.map((member) => ({
+			userId: member.user.id,
+			username: member.nick || member.user.global_name || member.user.username,
+			avatarUrl: member.user.avatar
+				? `https://cdn.discordapp.com/avatars/${member.user.id}/${member.user.avatar}.webp?size=80`
+				: null
+		}))
+		.sort((a, b) => a.username.localeCompare(b.username, 'ko'));
 
-	return { user, guilds, selectedGuildId, startDate, endDate, ranking };
+	return {
+		user,
+		guilds,
+		selectedGuildId,
+		startDate,
+		endDate,
+		ranking,
+		nonParticipants,
+		memberListAvailable
+	};
 };
