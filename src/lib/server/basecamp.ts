@@ -46,6 +46,7 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 		throw new BasecampError('Mountain 봇에 채널 관리, 역할 관리, 멤버 이동 권한을 부여해 주세요.');
 	if (!role || botMember.roles.highest.comparePositionTo(role) <= 0)
 		throw new BasecampError('Mountain 봇 역할을 월드 접속자 역할보다 위로 옮겨 주세요.');
+	return botMember.id;
 }
 
 export async function getBasecampState(guildId: string) {
@@ -72,7 +73,7 @@ export async function configureBasecamp(input: {
 		)
 	)
 		throw new BasecampError('유효한 월드 접속자 역할을 선택해 주세요.');
-	await requireBasecampBotPermissions(input.guildId, input.accessRoleId);
+	const botUserId = await requireBasecampBotPermissions(input.guildId, input.accessRoleId);
 
 	const current = await getWorldSettings(input.guildId);
 	let lobbyChannelId = current.lobbyChannelId;
@@ -83,7 +84,9 @@ export async function configureBasecamp(input: {
 			channelId: lobbyChannelId,
 			categoryId: input.categoryId,
 			accessRoleId: input.accessRoleId,
-			name: '월드 광장'
+			botUserId,
+			name: '월드 광장',
+			access: 'lobby'
 		});
 		if (!updated) lobbyChannelId = null;
 	}
@@ -92,12 +95,30 @@ export async function configureBasecamp(input: {
 			guildId: input.guildId,
 			categoryId: input.categoryId,
 			accessRoleId: input.accessRoleId,
-			name: '월드 광장'
+			botUserId,
+			name: '월드 광장',
+			access: 'lobby'
 		});
 		lobbyChannelId = lobby.id;
 		createdLobbyId = lobby.id;
 	}
 	try {
+		const rooms = await listWorldRooms(input.guildId);
+		await Promise.all(
+			rooms
+				.filter((room) => room.status === 'active' && room.voiceChannelId)
+				.map((room) =>
+					updateGuildVoiceChannel({
+						guildId: input.guildId,
+						channelId: room.voiceChannelId!,
+						categoryId: input.categoryId,
+						accessRoleId: input.accessRoleId,
+						botUserId,
+						name: room.name,
+						access: 'room'
+					})
+				)
+		);
 		await setWorldSettings(input.guildId, {
 			categoryId: input.categoryId,
 			accessRoleId: input.accessRoleId,
@@ -143,6 +164,7 @@ export async function createBasecampRoom(input: {
 		throw new BasecampError('설정한 Discord 카테고리를 찾을 수 없습니다.');
 	if (!roles.some((role) => role.id === settings.accessRoleId && !role.managed))
 		throw new BasecampError('설정한 월드 접속자 역할을 찾을 수 없습니다.');
+	const botUserId = await requireBasecampBotPermissions(input.guildId, settings.accessRoleId);
 
 	const id = crypto.randomUUID();
 	try {
@@ -161,7 +183,9 @@ export async function createBasecampRoom(input: {
 			guildId: input.guildId,
 			categoryId: settings.categoryId,
 			accessRoleId: settings.accessRoleId,
-			name
+			botUserId,
+			name,
+			access: 'room'
 		});
 		channelId = channel.id;
 		await activateWorldRoom(input.guildId, id, channel.id);
@@ -203,6 +227,7 @@ export async function updateBasecampRoom(input: {
 	const settings = await getWorldSettings(input.guildId);
 	if (!settings.categoryId || !settings.accessRoleId)
 		throw new BasecampError('먼저 Basecamp Discord 연결을 설정해 주세요.');
+	const botUserId = await requireBasecampBotPermissions(input.guildId, settings.accessRoleId);
 	let previous: Awaited<ReturnType<typeof updateWorldRoom>>;
 	try {
 		previous = await updateWorldRoom({ ...input, name });
@@ -220,7 +245,9 @@ export async function updateBasecampRoom(input: {
 			channelId: previous.voiceChannelId,
 			categoryId: settings.categoryId,
 			accessRoleId: settings.accessRoleId,
-			name
+			botUserId,
+			name,
+			access: 'room'
 		});
 		if (!updated) throw new Error('VOICE_CHANNEL_MISSING');
 	} catch (error) {

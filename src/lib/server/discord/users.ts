@@ -209,7 +209,9 @@ export async function createGuildVoiceChannel(input: {
 	guildId: string;
 	categoryId: string;
 	accessRoleId: string;
+	botUserId: string;
 	name: string;
+	access: 'lobby' | 'room';
 }): Promise<DiscordChannel> {
 	const response = await fetch(`${API_BASE_URL}/guilds/${input.guildId}/channels`, {
 		method: 'POST',
@@ -221,10 +223,7 @@ export async function createGuildVoiceChannel(input: {
 			name: input.name,
 			type: 2,
 			parent_id: input.categoryId,
-			permission_overwrites: [
-				{ id: input.guildId, type: 0, deny: '2097152' },
-				{ id: input.accessRoleId, type: 0, allow: '2097152' }
-			]
+			permission_overwrites: voiceChannelPermissionOverwrites(input)
 		})
 	});
 	if (!response.ok) {
@@ -239,7 +238,9 @@ export async function updateGuildVoiceChannel(input: {
 	channelId: string;
 	categoryId: string;
 	accessRoleId: string;
+	botUserId: string;
 	name: string;
+	access: 'lobby' | 'room';
 }): Promise<DiscordChannel | null> {
 	const channelResponse = await fetch(`${API_BASE_URL}/channels/${input.channelId}`, {
 		headers: { Authorization: botAuthorization() }
@@ -258,15 +259,33 @@ export async function updateGuildVoiceChannel(input: {
 		body: JSON.stringify({
 			name: input.name,
 			parent_id: input.categoryId,
-			permission_overwrites: [
-				{ id: input.guildId, type: 0, deny: '2097152' },
-				{ id: input.accessRoleId, type: 0, allow: '2097152' }
-			]
+			permission_overwrites: voiceChannelPermissionOverwrites(input)
 		})
 	});
 	if (!response.ok)
 		throw new Error(`Discord voice channel update failed (${response.status}).`);
 	return (await response.json()) as DiscordChannel;
+}
+
+function voiceChannelPermissionOverwrites(input: {
+	guildId: string;
+	accessRoleId: string;
+	botUserId: string;
+	access: 'lobby' | 'room';
+}) {
+	const connect = 1_048_576n;
+	const speak = 2_097_152n;
+	return input.access === 'lobby'
+		? [
+				{ id: input.guildId, type: 0, deny: speak.toString() },
+				{ id: input.accessRoleId, type: 0, allow: connect.toString(), deny: speak.toString() },
+				{ id: input.botUserId, type: 1, allow: connect.toString() }
+			]
+		: [
+				{ id: input.guildId, type: 0, deny: (connect | speak).toString() },
+				{ id: input.accessRoleId, type: 0, allow: speak.toString(), deny: connect.toString() },
+				{ id: input.botUserId, type: 1, allow: connect.toString() }
+			];
 }
 
 export async function deleteGuildChannel(channelId: string): Promise<void> {

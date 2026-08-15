@@ -27,8 +27,11 @@ the category for Basecamp voice channels and a non-managed access role. Mountain
 creates a `월드 광장` lobby voice channel immediately. Rooms drawn and confirmed inside the world
 create their own voice channels in that same category.
 
-Mountain owns the lobby and room channel overrides: `@everyone` is denied Speak and the configured
-Basecamp access role is allowed Speak. Existing Discord restrictions such as timeouts still apply.
+Mountain owns the lobby and room channel overrides. The configured Basecamp access role can connect
+to `월드 광장` but cannot speak there. Room channels deny Connect to members while allowing Speak,
+so members can enter them only when Mountain moves an already-connected member from the lobby.
+Mountain receives an explicit Connect override on both channel types. Existing Discord restrictions
+such as timeouts still apply.
 
 Basecamp interactions run through the authenticated `/ws/basecamp` WebSocket served by `server.ts`.
 Configuration and room creation never submit or reload the page. Every successful mutation
