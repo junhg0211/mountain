@@ -35,6 +35,10 @@
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
 	let movementFrame: number | null = null;
+	let movementStep = 0;
+	const initialMovementStep = 0.04;
+	const maximumMovementStep = 0.18;
+	const movementAcceleration = 0.008;
 	let cameraFrame: number | null = null;
 	let cameraX = $state(0);
 	let cameraY = $state(0);
@@ -75,7 +79,10 @@
 			const key = movementCodes[event.code] || event.key.toLowerCase();
 			if (!movementKeys.has(key)) return;
 			pressedKeys.delete(key);
-			if (![...pressedKeys].some((pressed) => movementKeys.has(pressed))) sendCurrentPosition();
+			if (![...pressedKeys].some((pressed) => movementKeys.has(pressed))) {
+				movementStep = 0;
+				sendCurrentPosition();
+			}
 		};
 		window.addEventListener('keydown', keydown);
 		window.addEventListener('keyup', keyup);
@@ -213,7 +220,10 @@
 
 	function moveAvatar() {
 		movementFrame = null;
-		if (!pressedKeys.size || building || !presenceId) return;
+		if (!pressedKeys.size || building || !presenceId) {
+			movementStep = 0;
+			return;
+		}
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) {
 			movementFrame = requestAnimationFrame(moveAvatar);
@@ -222,15 +232,18 @@
 		const horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
 		const vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
 		if (horizontal || vertical) {
+			movementStep = movementStep === 0
+				? initialMovementStep
+				: Math.min(maximumMovementStep, movementStep + movementAcceleration);
 			const length = Math.hypot(horizontal, vertical) || 1;
-			const x = Math.max(0.6, Math.min(columns - 0.6, me.x + horizontal * 0.18 / length));
-			const y = Math.max(0.8, Math.min(rows - 0.8, me.y + vertical * 0.18 / length));
+			const x = Math.max(0.6, Math.min(columns - 0.6, me.x + horizontal * movementStep / length));
+			const y = Math.max(0.8, Math.min(rows - 0.8, me.y + vertical * movementStep / length));
 			presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
 			if (Date.now() - lastMovementSentAt >= 50 && socket?.readyState === WebSocket.OPEN) {
 				lastMovementSentAt = Date.now();
 				socket.send(JSON.stringify({ type: 'basecamp-move', x, y }));
 			}
-		}
+		} else movementStep = 0;
 		movementFrame = requestAnimationFrame(moveAvatar);
 	}
 
