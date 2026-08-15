@@ -16,7 +16,7 @@
 	let walls = $state<typeof data.walls>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
-	let buildTool = $state<'room' | 'wall'>('room');
+	let buildTool = $state<'room' | 'wall' | 'eraser'>('room');
 	let start = $state<{ x: number; y: number } | null>(null);
 	let end = $state<{ x: number; y: number } | null>(null);
 	let socket = $state<WebSocket | null>(null);
@@ -378,7 +378,7 @@
 	}
 
 	function beginRoom(event: PointerEvent) {
-		if (!building || event.button !== 0) return;
+		if (!building || buildTool === 'eraser' || event.button !== 0) return;
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 		start = buildTool === 'wall' ? wallPoint(event) : cell(event);
 		end = start;
@@ -494,16 +494,16 @@
 			: `left:${(wall.x / columns) * 100}%;top:${(wall.y / rows) * 100}%;height:${(wall.height / rows) * 100}%`;
 	}
 
-	function setBuildTool(tool: 'room' | 'wall') {
+	function setBuildTool(tool: 'room' | 'wall' | 'eraser') {
 		if (building && buildTool === tool) building = false;
 		else { building = true; buildTool = tool; }
 		cancelEditing();
 	}
 
 	function deleteWall(event: PointerEvent, wall: (typeof data.walls)[number]) {
-		if (!building || event.button !== 0) return;
+		if (!building || buildTool !== 'eraser' || event.button !== 0) return;
 		event.stopPropagation();
-		if (confirm('이 벽을 삭제할까요?')) send({ type: 'basecamp-delete-wall', id: wall.id });
+		send({ type: 'basecamp-delete-wall', id: wall.id });
 	}
 	const currentRoom = $derived.by(() => {
 		const me = presences.find((presence) => presence.id === presenceId);
@@ -661,6 +661,7 @@
 				<div class="build-actions">
 					<button class:active={building && buildTool === 'room'} onclick={() => setBuildTool('room')}>방 만들기</button>
 					<button class:active={building && buildTool === 'wall'} onclick={() => setBuildTool('wall')}>벽 만들기</button>
+					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
 				</div>
 			{/if}
 		</section>
@@ -695,7 +696,7 @@
 					>
 					<div class="plaza"><span>WORLD PLAZA</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
 					{#each walls as wall}
-						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building} style={wallStyle(wall)} role="button" tabindex={building ? 0 : -1} aria-label="벽" onpointerdown={(event) => deleteWall(event, wall)}></div>
+						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)} role="button" tabindex={building && buildTool === 'eraser' ? 0 : -1} aria-label="벽 삭제" onpointerdown={(event) => deleteWall(event, wall)}></div>
 					{/each}
 					{#each rooms as room}
 						<div
@@ -722,7 +723,7 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '드래그해서 가로 또는 세로 벽을 만드세요. 벽을 누르면 삭제됩니다.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 움직여 보세요.'}</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 움직여 보세요.'}</p>
 			</div>
 
 			<aside>
@@ -767,5 +768,5 @@
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 	.world.building .room:not(.draft){pointer-events:auto;cursor:move}.room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
-	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable:hover{background:#ffcf72}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
+	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
 </style>

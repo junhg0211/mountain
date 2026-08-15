@@ -50,8 +50,9 @@ Voice moves wait until the avatar has remained on the new side of a boundary for
 crossing back during that interval cancels the pending move and prevents channel churn.
 Managers can select active rooms in construction mode, drag to reposition them, resize from the
 corner handle, rename the linked room and voice channel together, or delete both after confirmation.
-They can also draw horizontal or vertical walls along the boundaries between grid cells and remove
-a wall by selecting it while the wall tool is active. Walls are guild-scoped, synchronized through
+They can also draw horizontal or vertical walls along the boundaries between grid cells. A separate
+wall eraser tool removes a selected wall and provides a wider hit target than the visible line.
+Walls are guild-scoped, synchronized through
 the Basecamp WebSocket, and enforced as line-crossing barriers by both client and server movement
 collision checks. All edit coordinates and overlap rules are revalidated on the server.
 
