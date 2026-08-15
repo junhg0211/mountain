@@ -37,6 +37,10 @@ new single-use ticket and resynchronize automatically without refreshing the Act
 Connected members move with the arrow keys or WASD. Their server-validated positions, Discord
 display names, and avatars are broadcast to the guild world, and the client detects when its avatar
 crosses into an active room without reloading the page.
+The configured access role is granted while a member has an active Basecamp WebSocket and removed
+ten seconds after their final connection closes, allowing brief automatic reconnects. Room and
+lobby panels open their linked Discord voice-channel URL for user-confirmed joining; the Embedded
+App SDK does not expose the desktop RPC command that directly selects a voice channel.
 
 ## Authentication flow
 

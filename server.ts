@@ -26,7 +26,11 @@ import {
 	settleTeamBettingPool,
 	settleWeightedBettingPool
 } from './src/lib/server/db/betting.ts';
-import { getGuildMember } from './src/lib/server/discord/users.ts';
+import {
+	addGuildMemberRole,
+	getGuildMember,
+	removeGuildMemberRole
+} from './src/lib/server/discord/users.ts';
 import { parseMoney } from './src/lib/server/economy/money.ts';
 import { getOrCreateBalance, InsufficientBalanceError } from './src/lib/server/db/accounts.ts';
 import { sendTransactionNotification } from './src/lib/server/bot/notifications.ts';
@@ -56,6 +60,8 @@ interface BasecampPresence {
 	y: number;
 }
 const basecampPresences = new Map<string, Map<WebSocket, BasecampPresence>>();
+const basecampSocketRoles = new Map<WebSocket, string | null>();
+const basecampRoleRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
@@ -172,21 +178,28 @@ async function attachBasecampSocket(
 		x: 20,
 		y: 15
 	};
+	const initialState = await getBasecampState(guildId);
 	const clients = basecampSockets.get(guildId) || new Set<WebSocket>();
 	clients.add(websocket);
 	basecampSockets.set(guildId, clients);
 	const presences = basecampPresences.get(guildId) || new Map<WebSocket, BasecampPresence>();
 	presences.set(websocket, presence);
 	basecampPresences.set(guildId, presences);
+	basecampSocketRoles.set(websocket, initialState.settings.accessRoleId);
+	if (initialState.settings.accessRoleId)
+		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
 		clients.delete(websocket);
 		if (!clients.size) basecampSockets.delete(guildId);
 		presences.delete(websocket);
 		if (!presences.size) basecampPresences.delete(guildId);
+		const roleId = basecampSocketRoles.get(websocket);
+		basecampSocketRoles.delete(websocket);
+		if (roleId) scheduleBasecampRoleRemoval(guildId, userId, roleId);
 		broadcastBasecampPresences(guildId);
 	});
 	websocket.send(JSON.stringify({ type: 'basecamp-connected', presenceId: presence.id }));
-	websocket.send(JSON.stringify({ type: 'basecamp-state', ...(await getBasecampState(guildId)) }));
+	websocket.send(JSON.stringify({ type: 'basecamp-state', ...initialState }));
 	broadcastBasecampPresences(guildId);
 
 	let processing = false;
@@ -238,6 +251,7 @@ async function attachBasecampSocket(
 					categoryId: String(message.categoryId || ''),
 					accessRoleId: String(message.accessRoleId || '')
 				});
+				await syncBasecampRoles(guildId, state.settings.accessRoleId);
 				messageText = '월드 광장 채널과 Discord 연결 설정을 저장했습니다.';
 			} else {
 				state = await createBasecampRoom({
@@ -273,6 +287,59 @@ async function attachBasecampSocket(
 			processing = false;
 		}
 	});
+}
+
+function basecampRoleKey(guildId: string, userId: string, roleId: string) {
+	return `${guildId}:${userId}:${roleId}`;
+}
+
+async function grantBasecampRole(guildId: string, userId: string, roleId: string) {
+	const key = basecampRoleKey(guildId, userId, roleId);
+	const timer = basecampRoleRemovalTimers.get(key);
+	if (timer) clearTimeout(timer);
+	basecampRoleRemovalTimers.delete(key);
+	try {
+		await addGuildMemberRole(guildId, userId, roleId);
+	} catch (error) {
+		console.error(`Basecamp role assignment failed for ${guildId}/${userId}:`, error);
+	}
+}
+
+function scheduleBasecampRoleRemoval(guildId: string, userId: string, roleId: string) {
+	const key = basecampRoleKey(guildId, userId, roleId);
+	const previous = basecampRoleRemovalTimers.get(key);
+	if (previous) clearTimeout(previous);
+	basecampRoleRemovalTimers.set(
+		key,
+		setTimeout(() => {
+			basecampRoleRemovalTimers.delete(key);
+			const stillConnected = [...(basecampPresences.get(guildId)?.entries() || [])].some(
+				([socket, connected]) =>
+					connected.userId === userId && basecampSocketRoles.get(socket) === roleId
+			);
+			if (!stillConnected)
+				void removeGuildMemberRole(guildId, userId, roleId).catch((error) =>
+					console.error(`Basecamp role removal failed for ${guildId}/${userId}:`, error)
+				);
+		}, 10_000)
+	);
+}
+
+async function syncBasecampRoles(guildId: string, roleId: string | null) {
+	const presences = basecampPresences.get(guildId);
+	if (!presences) return;
+	await Promise.all(
+		[...presences.entries()].map(async ([socket, presence]) => {
+			const previousRoleId = basecampSocketRoles.get(socket);
+			if (previousRoleId === roleId) return;
+			basecampSocketRoles.set(socket, roleId);
+			if (previousRoleId)
+				await removeGuildMemberRole(guildId, presence.userId, previousRoleId).catch((error) =>
+					console.error(`Old Basecamp role removal failed for ${guildId}/${presence.userId}:`, error)
+				);
+			if (roleId) await grantBasecampRole(guildId, presence.userId, roleId);
+		})
+	);
 }
 
 function broadcastBasecampPresences(guildId: string) {
