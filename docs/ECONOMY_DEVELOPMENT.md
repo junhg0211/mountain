@@ -90,6 +90,10 @@ Every quantity change locks the item and inventory rows, verifies the stack and 
 and writes exactly one `item_movements` row in the same transaction. A zero result removes the
 inventory row; movement history remains append-only. Money charged or rewarded by a future item
 operation must additionally follow the balance ledger rules above in that same transaction.
+Guild shop prices are optional fields on each guild-scoped definition. Purchases and sales lock
+the active item, member account, and member inventory together. A purchase writes an
+`item_purchase` debit ledger row and positive `purchase` movement; a sale writes an `item_sale`
+credit ledger row and negative `sale` movement, with the movement referencing the money ledger ID.
 Administrator grants must re-check manage-guild permission and live Discord membership, reject
 bots and inactive items, and record the acting administrator as the movement reference.
 Administrator revokes follow the same checks, may target inactive items, must never exceed the

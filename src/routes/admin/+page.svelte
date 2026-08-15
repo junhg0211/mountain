@@ -94,7 +94,9 @@
 		monthly_burn: '월간 소각',
 		role_subscription: '역할 구독',
 		scheduled_transfer: '자동 송금',
-		item_use: '아이템 사용'
+		item_use: '아이템 사용',
+		item_purchase: '아이템 구매',
+		item_sale: '아이템 판매'
 	};
 	function transactionRoute(transaction: Transaction) {
 		const sender = transaction.sender?.name || '시스템';
@@ -119,7 +121,7 @@
 
 <svelte:head><title>Mountain Admin</title></svelte:head>
 <main>
-	<header><a href="/">← 일반 대시보드</a><span>관리자 대시보드</span></header>
+	<header><a href="/">← 일반 대시보드</a><span><a href="/admin/stats">참여 통계</a> · 관리자 대시보드</span></header>
 	<section class="heading">
 		<div>
 			<p>ADMINISTRATION</p>
@@ -188,6 +190,20 @@
 							/></label
 						>
 					{/if}
+					<label
+						>구매가 ({selectedGuild.currencyUnit})<input
+							name="purchasePrice"
+							inputmode="decimal"
+							placeholder="미판매"
+						/></label
+					>
+					<label
+						>판매가 ({selectedGuild.currencyUnit})<input
+							name="sellPrice"
+							inputmode="decimal"
+							placeholder="매입 안 함"
+						/></label
+					>
 					<button>아이템 만들기</button>
 				</form>
 				<div class="item-grant-heading">
@@ -313,6 +329,22 @@
 										>설명<textarea name="description" maxlength="500" rows="3" required
 											>{item.description}</textarea
 										></label
+									>
+									<label
+										>구매가 ({selectedGuild.currencyUnit})<input
+											name="purchasePrice"
+											inputmode="decimal"
+											value={item.purchasePrice ?? ''}
+											placeholder="미판매"
+										/></label
+									>
+									<label
+										>판매가 ({selectedGuild.currencyUnit})<input
+											name="sellPrice"
+											inputmode="decimal"
+											value={item.sellPrice ?? ''}
+											placeholder="매입 안 함"
+										/></label
 									>
 									<label class="edit-active"
 										><input type="checkbox" name="active" checked={item.active} /><span

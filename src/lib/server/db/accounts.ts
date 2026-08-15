@@ -19,7 +19,9 @@ export type TransactionType =
 	| 'monthly_burn'
 	| 'role_subscription'
 	| 'scheduled_transfer'
-	| 'item_use';
+	| 'item_use'
+	| 'item_purchase'
+	| 'item_sale';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = await getDB();
@@ -101,6 +103,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'attendance' ||
 			type === 'voice_activity' ||
 			type === 'item_use' ||
+			type === 'item_sale' ||
 			type === 'bet_house_refund' ||
 			(!outgoing &&
 				(type === 'transfer' || type === 'scheduled_transfer' || type === 'bet_weighted'));

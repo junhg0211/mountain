@@ -114,7 +114,9 @@
 			| 'monthly_burn'
 			| 'role_subscription'
 			| 'scheduled_transfer'
-			| 'item_use';
+			| 'item_use'
+			| 'item_purchase'
+			| 'item_sale';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
@@ -126,6 +128,8 @@
 		if (transaction.type === 'monthly_burn') return '월간 보유금 소각';
 		if (transaction.type === 'role_subscription') return '역할 구독 결제';
 		if (transaction.type === 'item_use') return '아이템 사용 보상';
+		if (transaction.type === 'item_purchase') return '아이템 구매';
+		if (transaction.type === 'item_sale') return '아이템 판매';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')
@@ -158,6 +162,7 @@
 	const itemMovementLabels: Record<ItemMovement['type'], string> = {
 		grant: '관리자 지급',
 		purchase: '구매',
+		sale: '판매',
 		use: '사용',
 		discard: '버림',
 		transfer_in: '받음',
@@ -248,6 +253,54 @@
 						>
 					</div>
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
+				</section>
+
+				<section class="card shop-card">
+					<div class="inventory-heading">
+						<div>
+							<p class="card-label">GUILD SHOP</p>
+							<h3>아이템 상점</h3>
+						</div>
+						<span>{data.shopItems.length}개 상품</span>
+					</div>
+					{#if data.shopItems.length}
+						<div class="shop-grid">
+							{#each data.shopItems as item}
+								<article>
+									<span class="inventory-icon">{item.iconEmoji}</span>
+									<div class="shop-info">
+										<strong>{item.name}</strong>
+										<p>{item.description}</p>
+									</div>
+									<form method="POST" action={`?/tradeItem&guild=${selectedGuild.id}`}>
+										<input type="hidden" name="guildId" value={selectedGuild.id} />
+										<input type="hidden" name="itemId" value={item.id} />
+										<input
+											name="quantity"
+											type="number"
+											min="1"
+											max="999999999"
+											step="1"
+											value="1"
+											aria-label="거래 수량"
+										/>
+										{#if item.purchasePrice}<button name="direction" value="purchase"
+												>구매 · {formatMoneyDisplay(item.purchasePrice)}</button
+											>{/if}
+										{#if item.sellPrice}<button class="sell-button" name="direction" value="sale"
+												>판매 · {formatMoneyDisplay(item.sellPrice)}</button
+											>{/if}
+									</form>
+								</article>
+							{/each}
+						</div>
+					{:else}<div class="inventory-empty">
+							<span>🏪</span>
+							<div>
+								<strong>등록된 상품이 없습니다.</strong>
+								<p>관리자가 가격을 설정하면 여기에 표시됩니다.</p>
+							</div>
+						</div>{/if}
 				</section>
 
 				<section class="card inventory-card">
@@ -851,6 +904,49 @@
 		font-size: clamp(54px, 8vw, 86px);
 		line-height: 1;
 		letter-spacing: -0.06em;
+	}
+	.shop-card {
+		grid-column: 1 / -1;
+	}
+	.shop-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+		gap: 10px;
+		margin-top: 18px;
+	}
+	.shop-grid article {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 12px;
+		padding: 15px;
+		background: #171a21;
+		border-radius: 12px;
+	}
+	.shop-info p {
+		margin: 5px 0 0;
+		color: #858d9d;
+		font-size: 12px;
+	}
+	.shop-grid form {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: 72px 1fr 1fr;
+		gap: 7px;
+	}
+	.shop-grid input {
+		min-width: 0;
+		border: 1px solid #303644;
+		background: #0e1116;
+		color: white;
+		border-radius: 8px;
+		padding: 8px;
+	}
+	.shop-grid button {
+		background: #7657ff;
+		color: white;
+	}
+	.shop-grid .sell-button {
+		background: #265f4a;
 	}
 	.balance-card span {
 		color: #a697ff;

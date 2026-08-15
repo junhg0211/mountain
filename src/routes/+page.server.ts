@@ -15,7 +15,11 @@ import {
 	getItemMovements,
 	InsufficientItemQuantityError,
 	ItemNotFoundError,
+	ItemNotForSaleError,
 	ItemNotUsableError,
+	ItemStackLimitError,
+	listItemDefinitions,
+	tradeShopItem,
 	useCurrencyItem
 } from '$lib/server/db/items';
 import {
@@ -72,6 +76,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			selectedGuildId: null,
 			botConnected: false,
 			inventory: [],
+			shopItems: [],
 			itemMovements: [],
 			notice
 		};
@@ -136,7 +141,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		attendanceLeaderboard,
 		voiceRewardRemaining,
 		inventory,
-		itemMovements
+		itemMovements,
+		shopItems
 	] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
@@ -145,9 +151,10 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				getAttendanceLeaderboard(selectedGuildId),
 				getVoiceActivityRemaining(selectedGuildId, user.id),
 				getInventory(selectedGuildId, user.id),
-				getItemMovements(selectedGuildId, user.id, 10)
+				getItemMovements(selectedGuildId, user.id, 10),
+				listItemDefinitions(selectedGuildId)
 			])
-		: [[], [], null, [], '0.00', [], []];
+		: [[], [], null, [], '0.00', [], [], []];
 	return {
 		user,
 		guilds,
@@ -160,6 +167,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		voiceRewardRemaining,
 		inventory,
 		itemMovements,
+		shopItems: shopItems.filter((item) => item.purchasePrice !== null || item.sellPrice !== null),
 		notice
 	};
 };
@@ -195,6 +203,50 @@ export const actions: Actions = {
 	logout: async ({ cookies }) => {
 		await deleteSession(cookies);
 		redirect(303, '/');
+	},
+	tradeItem: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const itemId = String(form.get('itemId') || '');
+		const direction = String(form.get('direction') || '');
+		const rawQuantity = String(form.get('quantity') || '').trim();
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership)
+			return fail(401, { message: '로그인이 필요하거나 서버 접근 권한이 없습니다.' });
+		if (!/^\d+$/.test(itemId) || (direction !== 'purchase' && direction !== 'sale'))
+			return fail(400, { message: '올바른 상점 아이템을 선택해 주세요.' });
+		if (!/^[1-9]\d{0,8}$/.test(rawQuantity))
+			return fail(400, { message: '수량은 1~999,999,999 사이의 정수여야 합니다.' });
+		const member = await getGuildMember(guildId, membership.user.id);
+		if (!member || member.user.bot)
+			return fail(403, { message: '현재 Discord 서버에 참여 중인 사용자만 거래할 수 있습니다.' });
+		try {
+			const result = await tradeShopItem({
+				guildId,
+				userId: membership.user.id,
+				itemId,
+				quantity: Number(rawQuantity),
+				direction
+			});
+			const unit = await getCurrencyUnit(guildId);
+			redirectToDashboard(
+				cookies,
+				guildId,
+				`${result.item.iconEmoji} ${result.item.name} ${result.quantity}개를 ${direction === 'purchase' ? '구매' : '판매'}했습니다. (${formatMoneyDisplay(result.total)} ${unit})`
+			);
+		} catch (error) {
+			if (error instanceof ItemNotFoundError)
+				return fail(404, { message: '이 서버에 존재하지 않는 아이템입니다.' });
+			if (error instanceof ItemNotForSaleError)
+				return fail(400, { message: '현재 상점에서 거래할 수 없는 아이템입니다.' });
+			if (error instanceof InsufficientBalanceError)
+				return fail(409, { message: '구매에 필요한 잔액이 부족합니다.' });
+			if (error instanceof InsufficientItemQuantityError)
+				return fail(409, { message: '판매할 아이템 수량이 부족합니다.' });
+			if (error instanceof ItemStackLimitError)
+				return fail(409, { message: '구매 후 최대 보유 수량을 초과합니다.' });
+			throw error;
+		}
 	},
 	useItem: async ({ cookies, request }) => {
 		const form = await request.formData();

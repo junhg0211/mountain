@@ -1,5 +1,6 @@
 import { getDB } from '$lib/server/db';
 import { centsToMoney, moneyToCents, parseMoney } from '$lib/server/economy/money';
+import { InsufficientBalanceError } from '$lib/server/db/accounts';
 
 export const ITEM_TYPES = ['consumable', 'collectible', 'box', 'role', 'coupon'] as const;
 export const ITEM_RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary'] as const;
@@ -7,6 +8,7 @@ export const ITEM_EFFECT_TYPES = ['currency', 'discord_role', 'random_box', 'cou
 export const ITEM_MOVEMENT_TYPES = [
 	'grant',
 	'purchase',
+	'sale',
 	'use',
 	'discard',
 	'transfer_in',
@@ -53,6 +55,7 @@ export class ItemNotFoundError extends Error {}
 export class InsufficientItemQuantityError extends Error {}
 export class ItemStackLimitError extends Error {}
 export class ItemNotUsableError extends Error {}
+export class ItemNotForSaleError extends Error {}
 
 export async function createItemDefinition(guildId: string, input: ItemDefinitionInput) {
 	const item = validateDefinition(input);
@@ -226,6 +229,86 @@ export async function getItemMovements(guildId: string, userId: string, limit = 
 		referenceId: row.reference_id == null ? null : String(row.reference_id),
 		createdAt: toIso(row.created_at)
 	}));
+}
+
+export async function tradeShopItem(options: {
+	guildId: string;
+	userId: string;
+	itemId: string;
+	quantity: number;
+	direction: 'purchase' | 'sale';
+}) {
+	if (
+		!Number.isSafeInteger(options.quantity) ||
+		options.quantity < 1 ||
+		options.quantity > 999_999_999
+	)
+		throw new TypeError('Shop quantity must be a positive safe integer.');
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const itemRows = await tx`
+			SELECT name, icon_emoji, active, stackable, max_stack, purchase_price, sell_price
+			FROM items WHERE guild_id=${options.guildId} AND id=${options.itemId} FOR UPDATE
+		`;
+		if (itemRows.length !== 1) throw new ItemNotFoundError('Item definition was not found.');
+		const item = itemRows[0] as Record<string, unknown>;
+		const priceValue = options.direction === 'purchase' ? item.purchase_price : item.sell_price;
+		if (!Boolean(item.active) || priceValue == null) throw new ItemNotForSaleError();
+		const unitPrice = formatMoneyValue(priceValue);
+		const totalCents = moneyToCents(unitPrice) * BigInt(options.quantity);
+		const total = centsToMoney(totalCents);
+
+		await tx`INSERT IGNORE INTO accounts (guild_id, user_id) VALUES (${options.guildId}, ${options.userId})`;
+		const accountRows = await tx`
+			SELECT balance FROM accounts
+			WHERE guild_id=${options.guildId} AND user_id=${options.userId} FOR UPDATE
+		`;
+		if (accountRows.length !== 1) throw new Error('Account could not be loaded.');
+		const inventoryRows = await tx`
+			SELECT quantity FROM inventories
+			WHERE guild_id=${options.guildId} AND user_id=${options.userId} AND item_id=${options.itemId}
+			FOR UPDATE
+		`;
+		const currentQuantity = inventoryRows.length === 1 ? Number(inventoryRows[0].quantity) : 0;
+		const delta = options.direction === 'purchase' ? options.quantity : -options.quantity;
+		const nextQuantity = currentQuantity + delta;
+		if (nextQuantity < 0) throw new InsufficientItemQuantityError();
+		const stackLimit = Boolean(item.stackable)
+			? item.max_stack == null
+				? null
+				: Number(item.max_stack)
+			: 1;
+		if (stackLimit !== null && nextQuantity > stackLimit) throw new ItemStackLimitError();
+
+		const currentBalance = moneyToCents(formatMoneyValue(accountRows[0].balance));
+		if (options.direction === 'purchase' && currentBalance < totalCents)
+			throw new InsufficientBalanceError();
+		const nextBalance =
+			options.direction === 'purchase' ? currentBalance - totalCents : currentBalance + totalCents;
+		await tx`UPDATE accounts SET balance=${centsToMoney(nextBalance)} WHERE guild_id=${options.guildId} AND user_id=${options.userId}`;
+		if (nextQuantity === 0) {
+			await tx`DELETE FROM inventories WHERE guild_id=${options.guildId} AND user_id=${options.userId} AND item_id=${options.itemId}`;
+		} else if (inventoryRows.length === 1) {
+			await tx`UPDATE inventories SET quantity=${nextQuantity} WHERE guild_id=${options.guildId} AND user_id=${options.userId} AND item_id=${options.itemId}`;
+		} else {
+			await tx`INSERT INTO inventories (guild_id, user_id, item_id, quantity) VALUES (${options.guildId}, ${options.userId}, ${options.itemId}, ${nextQuantity})`;
+		}
+		const ledger =
+			options.direction === 'purchase'
+				? await tx`INSERT INTO transactions (guild_id, sender_id, recipient_id, amount, transaction_type) VALUES (${options.guildId}, ${options.userId}, ${null}, ${total}, 'item_purchase')`
+				: await tx`INSERT INTO transactions (guild_id, sender_id, recipient_id, amount, transaction_type) VALUES (${options.guildId}, ${null}, ${options.userId}, ${total}, 'item_sale')`;
+		await tx`
+			INSERT INTO item_movements (guild_id, user_id, item_id, quantity_delta, movement_type, reference_type, reference_id)
+			VALUES (${options.guildId}, ${options.userId}, ${options.itemId}, ${delta}, ${options.direction}, 'transaction', ${String(ledger.lastInsertRowid)})
+		`;
+		return {
+			item: { id: options.itemId, name: String(item.name), iconEmoji: String(item.icon_emoji) },
+			quantity: options.quantity,
+			inventoryQuantity: nextQuantity,
+			total,
+			balance: centsToMoney(nextBalance)
+		};
+	});
 }
 
 export async function useCurrencyItem(guildId: string, userId: string, itemId: string) {

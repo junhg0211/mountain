@@ -183,6 +183,12 @@ export const actions: Actions = {
 			itemKind === 'currency' ? parseMoney(String(form.get('rewardAmount') || '').trim()) : null;
 		if (itemKind === 'currency' && !rewardAmount)
 			return fail(400, { message: '화폐 보상은 0.01 이상의 금액으로 입력해 주세요.' });
+		const purchasePrice = optionalPrice(form.get('purchasePrice'));
+		const sellPrice = optionalPrice(form.get('sellPrice'));
+		if (purchasePrice === undefined || sellPrice === undefined)
+			return fail(400, {
+				message: '구매가와 판매가는 비워 두거나 0.01 이상의 금액으로 입력해 주세요.'
+			});
 		const db = await getDB();
 		const permission = await db`
 			SELECT permissions FROM user_guilds
@@ -204,8 +210,8 @@ export const actions: Actions = {
 				tradable: current.tradable,
 				usable: itemKind === 'currency',
 				consumedOnUse: true,
-				purchasePrice: current.purchasePrice,
-				sellPrice: current.sellPrice,
+				purchasePrice,
+				sellPrice,
 				effect: itemKind === 'currency' ? { type: 'currency', amount: rewardAmount! } : null,
 				active: form.get('active') === 'on'
 			});
@@ -337,6 +343,12 @@ export const actions: Actions = {
 			itemKind === 'currency' ? parseMoney(String(form.get('rewardAmount') || '').trim()) : null;
 		if (itemKind === 'currency' && !rewardAmount)
 			return fail(400, { message: '화폐 보상은 0.01 이상의 금액으로 입력해 주세요.' });
+		const purchasePrice = optionalPrice(form.get('purchasePrice'));
+		const sellPrice = optionalPrice(form.get('sellPrice'));
+		if (purchasePrice === undefined || sellPrice === undefined)
+			return fail(400, {
+				message: '구매가와 판매가는 비워 두거나 0.01 이상의 금액으로 입력해 주세요.'
+			});
 		const db = await getDB();
 		const permission = await db`
 			SELECT permissions FROM user_guilds
@@ -353,6 +365,8 @@ export const actions: Actions = {
 				type: itemKind === 'currency' ? 'consumable' : 'collectible',
 				usable: itemKind === 'currency',
 				consumedOnUse: true,
+				purchasePrice,
+				sellPrice,
 				effect: itemKind === 'currency' ? { type: 'currency', amount: rewardAmount! } : null
 			});
 			return { success: true, message: `${iconEmoji} ${name} 아이템을 만들었습니다.` };
@@ -561,3 +575,8 @@ export const actions: Actions = {
 	mint: async ({ cookies, request }) => handleAdjustment(cookies, request, 'mint'),
 	burn: async ({ cookies, request }) => handleAdjustment(cookies, request, 'burn')
 };
+
+function optionalPrice(value: FormDataEntryValue | null): string | null | undefined {
+	const raw = String(value || '').trim();
+	return raw === '' ? null : (parseMoney(raw) ?? undefined);
+}
