@@ -43,8 +43,10 @@
 	let velocityY = 0;
 	let lastMovementFrameAt: number | null = null;
 	const maximumMovementSpeed = 10.8;
+	const sprintSpeedMultiplier = 1.65;
 	const movementAcceleration = 34;
 	const movementFriction = 54;
+	let sprinting = false;
 	let cameraFrame: number | null = null;
 	let zoomFrame: number | null = null;
 	let cameraX = $state(0);
@@ -87,6 +89,11 @@
 		const keydown = (event: KeyboardEvent) => {
 			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
 				return;
+			if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+				sprinting = true;
+				if (movementFrame === null && [...pressedKeys].some((pressed) => movementKeys.has(pressed))) moveAvatar();
+				return;
+			}
 			const key = movementCodes[event.code] || event.key.toLowerCase();
 			if (!movementKeys.has(key)) return;
 			event.preventDefault();
@@ -94,6 +101,10 @@
 			if (movementFrame === null) moveAvatar();
 		};
 		const keyup = (event: KeyboardEvent) => {
+			if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+				sprinting = event.getModifierState('Shift');
+				return;
+			}
 			const key = movementCodes[event.code] || event.key.toLowerCase();
 			if (!movementKeys.has(key)) return;
 			pressedKeys.delete(key);
@@ -101,8 +112,13 @@
 				if (movementFrame === null) moveAvatar();
 			}
 		};
+		const blur = () => {
+			pressedKeys.clear();
+			sprinting = false;
+		};
 		window.addEventListener('keydown', keydown);
 		window.addEventListener('keyup', keyup);
+		window.addEventListener('blur', blur);
 		return () => {
 			stopped = true;
 			connectionVersion += 1;
@@ -111,6 +127,7 @@
 			socket?.close(1000);
 			window.removeEventListener('keydown', keydown);
 			window.removeEventListener('keyup', keyup);
+			window.removeEventListener('blur', blur);
 			if (movementFrame !== null) cancelAnimationFrame(movementFrame);
 			if (cameraFrame !== null) cancelAnimationFrame(cameraFrame);
 			if (zoomFrame !== null) cancelAnimationFrame(zoomFrame);
@@ -258,14 +275,16 @@
 		const horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
 		const vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
 		const inputLength = Math.hypot(horizontal, vertical) || 1;
-		const targetVelocityX = horizontal / inputLength * maximumMovementSpeed;
-		const targetVelocityY = vertical / inputLength * maximumMovementSpeed;
+		const currentMaximumSpeed = maximumMovementSpeed * (sprinting ? sprintSpeedMultiplier : 1);
+		const targetVelocityX = horizontal / inputLength * currentMaximumSpeed;
+		const targetVelocityY = vertical / inputLength * currentMaximumSpeed;
 		velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? movementAcceleration : movementFriction) * deltaSeconds);
 		velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? movementAcceleration : movementFriction) * deltaSeconds);
 		const speed = Math.hypot(velocityX, velocityY);
-		if (speed > maximumMovementSpeed) {
-			velocityX = velocityX / speed * maximumMovementSpeed;
-			velocityY = velocityY / speed * maximumMovementSpeed;
+		const absoluteMaximumSpeed = maximumMovementSpeed * sprintSpeedMultiplier;
+		if (speed > absoluteMaximumSpeed) {
+			velocityX = velocityX / speed * absoluteMaximumSpeed;
+			velocityY = velocityY / speed * absoluteMaximumSpeed;
 		}
 		if (velocityX || velocityY) {
 			const rawX = me.x + velocityX * deltaSeconds;
@@ -766,7 +785,7 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
