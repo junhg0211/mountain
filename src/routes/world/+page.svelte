@@ -21,6 +21,9 @@
 	let building = $state(false);
 	let buildTool = $state<'room' | 'wall' | 'eraser' | 'tile' | 'prop'>('room');
 	let tileType = $state<'grass' | 'stone' | 'sand' | 'water'>('stone');
+	const propPalette = ['transparent', '#20252b', '#f4f2ea', '#d6ff66', '#ee796b', '#ffcf72', '#69c7df', '#9d75d6', '#6f9f55'];
+	let propPixels = $state<string[]>(Array(64).fill('0'));
+	let propColor = $state('1');
 	let start = $state<{ x: number; y: number } | null>(null);
 	let end = $state<{ x: number; y: number } | null>(null);
 	let socket = $state<WebSocket | null>(null);
@@ -246,6 +249,7 @@
 							selectedProp = null;
 							cancelDraft();
 							building = false;
+							propPixels = Array(64).fill('0');
 						}
 					}
 				}
@@ -394,10 +398,16 @@
 		propRequestId = send({
 			type: 'basecamp-create-prop',
 			name: form.get('name'),
-			emoji: form.get('emoji'),
+			imageData: propPixels.join(''),
 			x: draft.x,
 			y: draft.y
 		});
+	}
+
+	function paintPropPixel(index: number, event: PointerEvent) {
+		event.preventDefault();
+		propPixels[index] = propColor;
+		propPixels = [...propPixels];
 	}
 
 	function deleteProp() {
@@ -517,6 +527,11 @@
 		end = null;
 	}
 
+	function cancelPropDraft() {
+		cancelDraft();
+		propPixels = Array(64).fill('0');
+	}
+
 	function cancelEditing() {
 		cancelDraft();
 		selectedRoom = null;
@@ -561,9 +576,10 @@
 	}
 
 	function wallStyle(wall: { x: number; y: number; width: number; height: number; orientation?: 'horizontal' | 'vertical' }) {
+		const thickness = cameraLayout.cellSize * 0.12;
 		return wall.orientation === 'horizontal'
-			? `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${wall.width * cameraLayout.cellSize}px`
-			: `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;height:${wall.height * cameraLayout.cellSize}px`;
+			? `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${wall.width * cameraLayout.cellSize}px;height:${thickness}px`
+			: `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${thickness}px;height:${wall.height * cameraLayout.cellSize}px`;
 	}
 
 	function setBuildTool(tool: 'room' | 'wall' | 'eraser' | 'tile' | 'prop') {
@@ -749,7 +765,7 @@
 		const radius = Math.min(0.24, stackIndex * 0.07) * cameraLayout.cellSize;
 		const x = (prop.x + 0.5) * cameraLayout.cellSize + Math.cos(angle) * radius;
 		const y = (prop.y + 0.5) * cameraLayout.cellSize + Math.sin(angle) * radius;
-		return `left:${x}px;top:${y}px`;
+		return `left:${x}px;top:${y}px;--prop-size:${cameraLayout.cellSize * 0.78}px`;
 	}
 
 	const spawnStyle = $derived(
@@ -858,7 +874,7 @@
 						</div>
 					{/each}
 					{#each worldProps as prop (prop.id)}
-						<button class:selected={selectedProp?.id === prop.id} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{prop.emoji}</button>
+						<button class:selected={selectedProp?.id === prop.id} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</button>
 					{/each}
 					</div>
 				</div>
@@ -867,9 +883,9 @@
 
 			<aside>
 				{#if selectedProp}
-					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.emoji} {selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y}</p>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
+					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y}</p>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
 				{:else if draft && buildTool === 'prop'}
-					<form onsubmit={createProp}><small>새 소품</small><h2>이 칸에 소품 놓기</h2><label>표시<input name="emoji" maxlength="32" placeholder="예: 🪴" required /></label><label>소품 이름<input name="name" maxlength="40" placeholder="예: 화분" required /></label><p>같은 칸에 다른 소품이 있어도 함께 놓을 수 있습니다.</p><button disabled={processing || !connected}>소품 놓기</button><button class="secondary" type="button" onclick={cancelDraft}>취소</button></form>
+					<form onsubmit={createProp}><small>새 소품</small><h2>소품 직접 그리기</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" placeholder="예: 화분" required /></label><p>같은 칸에 다른 소품이 있어도 함께 놓을 수 있습니다.</p><button disabled={processing || !connected}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button></form>
 				{:else if selectedRoom && data.canManage}
 					<form onsubmit={updateRoom}>
 						<small>선택한 공간</small><h2>방 편집하기</h2>
@@ -922,5 +938,5 @@
 	.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
-	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:#111913aa;font-size:22px;line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}
+	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}
 </style>

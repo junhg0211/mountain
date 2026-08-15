@@ -96,23 +96,25 @@ export async function createBasecampProp(input: {
 	guildId: string;
 	userId: string;
 	name: string;
-	emoji: string;
+	imageData: string;
 	x: number;
 	y: number;
 }) {
 	if (!(await getGuildMember(input.guildId, input.userId)))
 		throw new BasecampError('현재 Discord 서버 구성원만 소품을 놓을 수 있습니다.');
 	const name = input.name.trim();
-	const emoji = input.emoji.trim();
+	const imageData = input.imageData.trim();
 	if (!name || name.length > 40) throw new BasecampError('소품 이름은 1~40자로 입력해 주세요.');
-	if (!emoji || emoji.length > 32) throw new BasecampError('표시할 이모지나 짧은 문자를 입력해 주세요.');
+	if (!/^[0-8]{64}$/.test(imageData) || !/[1-8]/.test(imageData))
+		throw new BasecampError('8×8 편집기에 소품 이미지를 그려 주세요.');
 	if (!Number.isInteger(input.x) || !Number.isInteger(input.y))
 		throw new BasecampError('소품을 놓을 칸을 선택해 주세요.');
 	await createWorldProp({
 		id: crypto.randomUUID(),
 		guildId: input.guildId,
 		name,
-		emoji,
+		emoji: '📦',
+		imageData,
 		x: input.x,
 		y: input.y,
 		createdBy: input.userId

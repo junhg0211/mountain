@@ -323,7 +323,7 @@ async function attachBasecampSocket(
 					guildId,
 					userId,
 					name: String(message.name || ''),
-					emoji: String(message.emoji || ''),
+					imageData: String(message.imageData || ''),
 					x: Number(message.x),
 					y: Number(message.y)
 				});

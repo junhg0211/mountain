@@ -30,6 +30,7 @@ export interface WorldProp {
 	id: string;
 	name: string;
 	emoji: string;
+	imageData: string | null;
 	x: number;
 	y: number;
 	createdBy: string;
@@ -72,13 +73,14 @@ export async function paintWorldTiles(input: {
 export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, x, y, created_by FROM world_props
+		SELECT id, name, emoji, image_data, x, y, created_by FROM world_props
 		WHERE guild_id=${guildId} ORDER BY created_at
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
 		id: String(row.id),
 		name: String(row.name),
 		emoji: String(row.emoji),
+		imageData: row.image_data ? String(row.image_data) : null,
 		x: Number(row.x),
 		y: Number(row.y),
 		createdBy: String(row.created_by)
@@ -88,15 +90,15 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 export async function createWorldProp(input: WorldProp & { guildId: string }) {
 	const db = await getDB();
 	await db`
-		INSERT INTO world_props (id, guild_id, name, emoji, x, y, created_by)
-		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.x}, ${input.y}, ${input.createdBy})
+		INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.x}, ${input.y}, ${input.createdBy})
 	`;
 }
 
 export async function getWorldProp(guildId: string, id: string): Promise<WorldProp | null> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, x, y, created_by FROM world_props
+		SELECT id, name, emoji, image_data, x, y, created_by FROM world_props
 		WHERE guild_id=${guildId} AND id=${id} LIMIT 1
 	`;
 	if (!rows.length) return null;
@@ -104,6 +106,7 @@ export async function getWorldProp(guildId: string, id: string): Promise<WorldPr
 		id: String(rows[0].id),
 		name: String(rows[0].name),
 		emoji: String(rows[0].emoji),
+		imageData: rows[0].image_data ? String(rows[0].image_data) : null,
 		x: Number(rows[0].x),
 		y: Number(rows[0].y),
 		createdBy: String(rows[0].created_by)

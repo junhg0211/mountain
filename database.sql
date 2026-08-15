@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS world_props (
     guild_id VARCHAR(255) NOT NULL,
     name VARCHAR(40) NOT NULL,
     emoji VARCHAR(32) NOT NULL,
+    image_data VARCHAR(64),
     x INT NOT NULL,
     y INT NOT NULL,
     created_by VARCHAR(255) NOT NULL,
