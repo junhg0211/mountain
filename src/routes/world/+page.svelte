@@ -48,6 +48,7 @@
 	let cameraFrame: number | null = null;
 	let cameraX = $state(0);
 	let cameraY = $state(0);
+	let worldZoom = $state(1);
 	let cameraInitialized = false;
 	let lastMovementSentAt = 0;
 	const pressedKeys = new Set<string>();
@@ -539,14 +540,18 @@
 				: null
 	);
 	const cameraLayout = $derived.by(() => {
-		const cellSize = Math.max(28, viewportWidth / columns, viewportHeight / rows) * 1.35;
+		const cellSize = Math.max(28, viewportWidth / columns, viewportHeight / rows) * 1.35 * worldZoom;
 		const mapWidth = columns * cellSize;
 		const mapHeight = rows * cellSize;
 		const me = presences.find((presence) => presence.id === presenceId);
 		const focusX = (me?.x ?? columns / 2) * cellSize;
 		const focusY = (me?.y ?? rows / 2) * cellSize;
-		const targetX = Math.min(0, Math.max(viewportWidth - mapWidth, viewportWidth / 2 - focusX));
-		const targetY = Math.min(0, Math.max(viewportHeight - mapHeight, viewportHeight / 2 - focusY));
+		const targetX = mapWidth <= viewportWidth
+			? (viewportWidth - mapWidth) / 2
+			: Math.min(0, Math.max(viewportWidth - mapWidth, viewportWidth / 2 - focusX));
+		const targetY = mapHeight <= viewportHeight
+			? (viewportHeight - mapHeight) / 2
+			: Math.min(0, Math.max(viewportHeight - mapHeight, viewportHeight / 2 - focusY));
 		return { mapWidth, mapHeight, targetX, targetY };
 	});
 	const cameraStyle = $derived(
@@ -577,6 +582,12 @@
 		cameraX += dx * 0.18;
 		cameraY += dy * 0.18;
 		cameraFrame = requestAnimationFrame(animateCamera);
+	}
+
+	function zoomWorld(event: WheelEvent) {
+		event.preventDefault();
+		const factor = Math.exp(-event.deltaY * 0.0012);
+		worldZoom = Math.max(0.4, Math.min(2.5, worldZoom * factor));
 	}
 
 	async function moveToVoiceChannel() {
@@ -692,6 +703,7 @@
 					class:building
 					class="world"
 					bind:this={worldViewport}
+					onwheel={zoomWorld}
 				>
 					<div
 						class="world-map"
@@ -731,7 +743,7 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 움직여 보세요.'}</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · 휠로 확대/축소'} · {Math.round(worldZoom * 100)}%</p>
 			</div>
 
 			<aside>
