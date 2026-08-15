@@ -1,11 +1,14 @@
 import { getClient } from '$lib/server/bot';
 import {
 	activateWorldRoom,
+	archiveWorldRoom,
 	createWorldRoomDraft,
 	failWorldRoom,
 	getWorldSettings,
 	listWorldRooms,
-	setWorldSettings
+	restoreWorldRoom,
+	setWorldSettings,
+	updateWorldRoom
 } from '$lib/server/db/world';
 import {
 	createGuildVoiceChannel,
@@ -176,4 +179,78 @@ export async function createBasecampRoom(input: {
 		console.error('Basecamp room creation failed:', error);
 		throw new BasecampError('Discord 음성 채널을 만들지 못했습니다. 봇 권한을 확인해 주세요.');
 	}
+}
+
+export async function updateBasecampRoom(input: {
+	guildId: string;
+	userId: string;
+	id: string;
+	name: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	const name = input.name.trim();
+	if (!name || name.length > 80) throw new BasecampError('방 이름은 1~80자로 입력해 주세요.');
+	if (
+		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
+		input.x < 0 || input.y < 0 || input.width < 2 || input.height < 2 ||
+		input.x + input.width > 40 || input.y + input.height > 24
+	)
+		throw new BasecampError('월드 안에 2×2 이상의 방을 배치해 주세요.');
+	const settings = await getWorldSettings(input.guildId);
+	if (!settings.categoryId || !settings.accessRoleId)
+		throw new BasecampError('먼저 Basecamp Discord 연결을 설정해 주세요.');
+	let previous: Awaited<ReturnType<typeof updateWorldRoom>>;
+	try {
+		previous = await updateWorldRoom({ ...input, name });
+	} catch (error) {
+		if (error instanceof Error && error.message === 'ROOM_OVERLAP')
+			throw new BasecampError('다른 방과 겹치지 않게 배치해 주세요.');
+		if (error instanceof Error && error.message === 'ROOM_NOT_FOUND')
+			throw new BasecampError('수정할 방을 찾을 수 없습니다.');
+		throw error;
+	}
+	try {
+		if (!previous.voiceChannelId) throw new Error('VOICE_CHANNEL_MISSING');
+		const updated = await updateGuildVoiceChannel({
+			guildId: input.guildId,
+			channelId: previous.voiceChannelId,
+			categoryId: settings.categoryId,
+			accessRoleId: settings.accessRoleId,
+			name
+		});
+		if (!updated) throw new Error('VOICE_CHANNEL_MISSING');
+	} catch (error) {
+		await updateWorldRoom({ guildId: input.guildId, ...previous }).catch((rollbackError) =>
+			console.error('Basecamp room update rollback failed:', rollbackError)
+		);
+		console.error('Basecamp voice channel update failed:', error);
+		throw new BasecampError('Discord 음성 채널을 수정하지 못했습니다. 변경을 되돌렸습니다.');
+	}
+	return getBasecampState(input.guildId);
+}
+
+export async function deleteBasecampRoom(input: { guildId: string; userId: string; id: string }) {
+	await requireGuildManager(input.guildId, input.userId);
+	let channelId: string | null;
+	try {
+		channelId = await archiveWorldRoom(input.guildId, input.id);
+	} catch (error) {
+		if (error instanceof Error && error.message === 'ROOM_NOT_FOUND')
+			throw new BasecampError('삭제할 방을 찾을 수 없습니다.');
+		throw error;
+	}
+	try {
+		if (channelId) await deleteGuildChannel(channelId);
+	} catch (error) {
+		await restoreWorldRoom(input.guildId, input.id).catch((rollbackError) =>
+			console.error('Basecamp room deletion rollback failed:', rollbackError)
+		);
+		console.error('Basecamp voice channel deletion failed:', error);
+		throw new BasecampError('Discord 음성 채널을 삭제하지 못했습니다. 방을 복구했습니다.');
+	}
+	return getBasecampState(input.guildId);
 }

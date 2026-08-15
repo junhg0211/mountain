@@ -111,3 +111,74 @@ export async function failWorldRoom(guildId: string, id: string) {
 		WHERE guild_id=${guildId} AND id=${id} AND status='creating'
 	`;
 }
+
+export async function updateWorldRoom(input: {
+	guildId: string;
+	id: string;
+	name: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const rows = await tx`
+			SELECT id, name, x, y, width, height, discord_voice_channel_id, status
+			FROM world_rooms
+			WHERE guild_id=${input.guildId} AND id=${input.id} AND status='active'
+			LIMIT 1 FOR UPDATE
+		`;
+		if (rows.length !== 1) throw new Error('ROOM_NOT_FOUND');
+		const conflicts = await tx`
+			SELECT 1 FROM world_rooms
+			WHERE guild_id=${input.guildId} AND id <> ${input.id}
+				AND status IN ('creating', 'active')
+				AND x < ${input.x + input.width} AND x + width > ${input.x}
+				AND y < ${input.y + input.height} AND y + height > ${input.y}
+			LIMIT 1
+		`;
+		if (conflicts.length) throw new Error('ROOM_OVERLAP');
+		await tx`
+			UPDATE world_rooms
+			SET name=${input.name}, x=${input.x}, y=${input.y}, width=${input.width}, height=${input.height}
+			WHERE guild_id=${input.guildId} AND id=${input.id} AND status='active'
+		`;
+		return {
+			id: String(rows[0].id),
+			name: String(rows[0].name),
+			x: Number(rows[0].x),
+			y: Number(rows[0].y),
+			width: Number(rows[0].width),
+			height: Number(rows[0].height),
+			voiceChannelId: rows[0].discord_voice_channel_id
+				? String(rows[0].discord_voice_channel_id)
+				: null
+		};
+	});
+}
+
+export async function archiveWorldRoom(guildId: string, id: string) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const rows = await tx`
+			SELECT discord_voice_channel_id FROM world_rooms
+			WHERE guild_id=${guildId} AND id=${id} AND status='active'
+			LIMIT 1 FOR UPDATE
+		`;
+		if (rows.length !== 1) throw new Error('ROOM_NOT_FOUND');
+		await tx`
+			UPDATE world_rooms SET status='archived'
+			WHERE guild_id=${guildId} AND id=${id} AND status='active'
+		`;
+		return rows[0].discord_voice_channel_id ? String(rows[0].discord_voice_channel_id) : null;
+	});
+}
+
+export async function restoreWorldRoom(guildId: string, id: string) {
+	const db = await getDB();
+	await db`
+		UPDATE world_rooms SET status='active'
+		WHERE guild_id=${guildId} AND id=${id} AND status='archived'
+	`;
+}

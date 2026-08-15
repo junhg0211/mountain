@@ -21,6 +21,14 @@
 	let connected = $state(false);
 	let processing = $state(false);
 	let roomCreationRequestId: string | null = null;
+	let roomEditRequestId: string | null = null;
+	let selectedRoom = $state<(typeof data.rooms)[number] | null>(null);
+	let editSession: {
+		mode: 'move' | 'resize';
+		pointerId: number;
+		origin: { x: number; y: number };
+		initial: (typeof data.rooms)[number];
+	} | null = null;
 	let openingVoiceChannel = $state(false);
 	let autoMoveVoiceChannel = $state(false);
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
@@ -144,6 +152,7 @@
 					processing = false;
 					const success = message.ok === true;
 					const isRoomCreation = message.requestId === roomCreationRequestId;
+					const isRoomEdit = message.requestId === roomEditRequestId;
 					notice = {
 						success,
 						message: String(success ? message.message || '' : message.error || '')
@@ -155,6 +164,13 @@
 							building = false;
 						}
 					}
+					if (isRoomEdit) {
+						roomEditRequestId = null;
+						if (success) {
+							selectedRoom = null;
+							building = false;
+						}
+					}
 				}
 			};
 			next.onclose = () => {
@@ -162,6 +178,7 @@
 				connected = false;
 				processing = false;
 				roomCreationRequestId = null;
+				roomEditRequestId = null;
 				presenceId = null;
 				presences = [];
 				if (!stopped && version === connectionVersion)
@@ -259,6 +276,22 @@
 		});
 	}
 
+	function updateRoom(event: SubmitEvent) {
+		event.preventDefault();
+		if (!selectedRoom) return;
+		const form = new FormData(event.currentTarget as HTMLFormElement);
+		roomEditRequestId = send({
+			type: 'basecamp-update-room',
+			...selectedRoom,
+			name: form.get('name')
+		});
+	}
+
+	function deleteRoom() {
+		if (!selectedRoom || !confirm(`${selectedRoom.name} 방과 Discord 음성 채널을 삭제할까요?`)) return;
+		roomEditRequestId = send({ type: 'basecamp-delete-room', id: selectedRoom.id });
+	}
+
 	function cell(event: PointerEvent) {
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		return {
@@ -274,7 +307,39 @@
 		end = start;
 	}
 
+	function beginEditRoom(
+		event: PointerEvent,
+		room: (typeof data.rooms)[number],
+		mode: 'move' | 'resize'
+	) {
+		if (!building || room.status !== 'active' || event.button !== 0) return;
+		event.stopPropagation();
+		const world = (event.currentTarget as HTMLElement).closest('.world') as HTMLElement;
+		const current = selectedRoom?.id === room.id ? selectedRoom : room;
+		world.setPointerCapture(event.pointerId);
+		selectedRoom = { ...current };
+		editSession = { mode, pointerId: event.pointerId, origin: cellFromWorld(event, world), initial: { ...current } };
+	}
+
+	function cellFromWorld(event: PointerEvent, world: HTMLElement) {
+		const rect = world.getBoundingClientRect();
+		return {
+			x: Math.max(0, Math.min(columns - 1, Math.floor(((event.clientX - rect.left) / rect.width) * columns))),
+			y: Math.max(0, Math.min(rows - 1, Math.floor(((event.clientY - rect.top) / rect.height) * rows)))
+		};
+	}
+
 	function resizeRoom(event: PointerEvent) {
+		if (editSession && (event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
+			const point = cell(event);
+			const dx = point.x - editSession.origin.x;
+			const dy = point.y - editSession.origin.y;
+			const room = editSession.initial;
+			selectedRoom = editSession.mode === 'move'
+				? { ...room, x: Math.max(0, Math.min(columns - room.width, room.x + dx)), y: Math.max(0, Math.min(rows - room.height, room.y + dy)) }
+				: { ...room, width: Math.max(2, Math.min(columns - room.x, room.width + dx)), height: Math.max(2, Math.min(rows - room.y, room.height + dy)) };
+			return;
+		}
 		if (!building || !start || !(event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			return;
 		end = cell(event);
@@ -283,11 +348,18 @@
 	function finishRoom(event: PointerEvent) {
 		if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+		editSession = null;
 	}
 
 	function cancelDraft() {
 		start = null;
 		end = null;
+	}
+
+	function cancelEditing() {
+		cancelDraft();
+		selectedRoom = null;
+		editSession = null;
 	}
 
 	const draft = $derived.by(() => {
@@ -301,6 +373,19 @@
 		if (!me) return null;
 		return rooms.find((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height) || null;
 	});
+	const selectedRoomInvalid = $derived.by(() =>
+		selectedRoom
+			? rooms.some(
+					(room) =>
+						room.id !== selectedRoom!.id &&
+						(room.status === 'active' || room.status === 'creating') &&
+						room.x < selectedRoom!.x + selectedRoom!.width &&
+						room.x + room.width > selectedRoom!.x &&
+						room.y < selectedRoom!.y + selectedRoom!.height &&
+						room.y + room.height > selectedRoom!.y
+				)
+			: false
+	);
 	const voiceTarget = $derived(
 		currentRoom?.voiceChannelId
 			? { name: currentRoom.name, channelId: currentRoom.voiceChannelId }
@@ -392,7 +477,7 @@
 		<section class="intro">
 			<div><small>SERVER WORLD</small><h1>같은 화면에서 걷고, 바로 공간을 바꿉니다.</h1></div>
 			{#if data.canManage}
-				<button class:active={building} onclick={() => { building = !building; cancelDraft(); }}>
+				<button class:active={building} onclick={() => { building = !building; cancelEditing(); }}>
 					{building ? '공사 도구 내려놓기' : '방 만들기'}
 				</button>
 			{/if}
@@ -423,8 +508,19 @@
 				>
 					<div class="plaza"><span>WORLD PLAZA</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
 					{#each rooms as room}
-						<div class:failed={room.status === 'failed'} class="room" style={roomStyle(room)}>
+						<div
+							class:failed={room.status === 'failed'}
+							class:selected={selectedRoom?.id === room.id}
+							class:invalid={selectedRoom?.id === room.id && selectedRoomInvalid}
+							class="room"
+							style={roomStyle(selectedRoom?.id === room.id ? selectedRoom : room)}
+							role="button"
+							tabindex={building ? 0 : -1}
+							onpointerdown={(event) => beginEditRoom(event, room, 'move')}
+							onkeydown={(event) => { if (building && (event.key === 'Enter' || event.key === ' ')) selectedRoom = { ...room }; }}
+						>
 							<span>{room.name}</span><small>{room.status === 'active' ? 'VOICE' : room.status}</small>
+							{#if building && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
 					{#if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
@@ -439,7 +535,18 @@
 			</div>
 
 			<aside>
-				{#if draft && data.canManage}
+				{#if selectedRoom && data.canManage}
+					<form onsubmit={updateRoom}>
+						<small>선택한 공간</small><h2>방 편집하기</h2>
+						<label>방 이름<input name="name" maxlength="80" value={selectedRoom.name} required /></label>
+						<p>방을 드래그해 이동하고 오른쪽 아래 손잡이로 크기를 조절하세요.</p>
+						<p class="room-size">위치 {selectedRoom.x}, {selectedRoom.y} · 크기 {selectedRoom.width} × {selectedRoom.height}</p>
+						{#if selectedRoomInvalid}<p class="edit-error">다른 방과 겹치지 않게 배치해 주세요.</p>{/if}
+						<button disabled={processing || !connected || selectedRoomInvalid}>변경 저장</button>
+						<button class="danger" type="button" disabled={processing || !connected} onclick={deleteRoom}>방과 채널 삭제</button>
+						<button class="secondary" type="button" onclick={() => { selectedRoom = null; editSession = null; }}>선택 해제</button>
+					</form>
+				{:else if draft && data.canManage}
 					<form onsubmit={createRoom}>
 						<small>새로운 공간</small><h2>방 확정하기</h2>
 						<label>방 이름<input name="name" maxlength="80" placeholder="예: 라운지" required /></label>
@@ -467,4 +574,6 @@
 	header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}header,.intro{transform:translateY(-10px)}aside{transform:translateX(12px)}.setup,.connection,.world-wrap>.hint{transform:translateY(10px)}main.reveal-top header,main.reveal-top .intro,header:focus-within,header:hover,.intro:focus-within,.intro:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-right aside,aside:focus-within,aside:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-bottom .setup,main.reveal-bottom .connection,main.reveal-bottom .world-wrap>.hint,.setup:focus-within,.setup:hover,.connection:hover{opacity:1;transform:none;pointer-events:auto}.edge-cue{position:absolute;z-index:17;display:block;pointer-events:none;opacity:.38;background:#d6ff66;box-shadow:0 0 12px #d6ff6688}.edge-cue.top{top:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}.edge-cue.right{top:50%;right:0;width:2px;height:52px;transform:translateY(-50%)}.edge-cue.bottom{bottom:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}main.reveal-top .edge-cue.top,main.reveal-right .edge-cue.right,main.reveal-bottom .edge-cue.bottom{opacity:0}
 	@media(hover:none){header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:1;transform:none;pointer-events:auto}.edge-cue{display:none}}
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
+	.world.building .room:not(.draft){pointer-events:auto;cursor:move}.room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
+	.room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
 </style>

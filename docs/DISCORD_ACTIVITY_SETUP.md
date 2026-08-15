@@ -43,6 +43,9 @@ lobby panels open the `월드 광장` voice-channel URL for the user's initial j
 per-guild toggle lets the bot move the already-connected member between the lobby and room voice
 channels whenever the avatar crosses a room boundary. This requires the bot's **Move Members** and
 **Connect** permissions; Discord does not allow a bot to connect a user who is not already in voice.
+Managers can select active rooms in construction mode, drag to reposition them, resize from the
+corner handle, rename the linked room and voice channel together, or delete both after confirmation.
+All edit coordinates and overlap rules are revalidated on the server.
 
 ## Authentication flow
 

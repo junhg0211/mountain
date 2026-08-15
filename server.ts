@@ -40,7 +40,9 @@ import {
 	BasecampError,
 	configureBasecamp,
 	createBasecampRoom,
-	getBasecampState
+	deleteBasecampRoom,
+	getBasecampState,
+	updateBasecampRoom
 } from './src/lib/server/basecamp.ts';
 
 const BET_AMOUNTS = new Set(['0.01','0.05','0.10','0.50','1.00','5.00','10.00','50.00','100.00','500.00']);
@@ -224,7 +226,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-create-room'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room'].includes(
 					type
 				)
 			)
@@ -283,7 +285,7 @@ async function attachBasecampSocket(
 				});
 				await syncBasecampRoles(guildId, state.settings.accessRoleId);
 				messageText = '월드 광장 채널과 Discord 연결 설정을 저장했습니다.';
-			} else {
+			} else if (type === 'basecamp-create-room') {
 				state = await createBasecampRoom({
 					guildId,
 					userId,
@@ -294,6 +296,25 @@ async function attachBasecampSocket(
 					height: Number(message.height)
 				});
 				messageText = `${String(message.name || '').trim()} 방과 Discord 음성 채널을 만들었습니다.`;
+			} else if (type === 'basecamp-update-room') {
+				state = await updateBasecampRoom({
+					guildId,
+					userId,
+					id: String(message.id || ''),
+					name: String(message.name || ''),
+					x: Number(message.x),
+					y: Number(message.y),
+					width: Number(message.width),
+					height: Number(message.height)
+				});
+				messageText = `${String(message.name || '').trim()} 방과 음성 채널을 수정했습니다.`;
+			} else {
+				state = await deleteBasecampRoom({
+					guildId,
+					userId,
+					id: String(message.id || '')
+				});
+				messageText = '방과 Discord 음성 채널을 삭제했습니다.';
 			}
 			websocket.send(
 				JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: messageText })
@@ -389,7 +410,10 @@ function broadcastBasecampState(
 	basecampWorldStates.set(guildId, state);
 	const message = JSON.stringify({ type: 'basecamp-state', ...state });
 	for (const socket of basecampSockets.get(guildId) || []) {
-		if (socket.readyState === WebSocket.OPEN) socket.send(message);
+		if (socket.readyState !== WebSocket.OPEN) continue;
+		socket.send(message);
+		const presence = basecampPresences.get(guildId)?.get(socket);
+		if (presence) updateBasecampVoiceTarget(socket, guildId, presence, state);
 	}
 }
 
