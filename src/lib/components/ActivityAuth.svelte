@@ -41,7 +41,8 @@
 			});
 			if (!authentication) throw new Error('Discord Activity 인증에 실패했습니다.');
 			await invalidateAll();
-			active = false;
+			const guildId = discord.guildId;
+			window.location.assign(guildId ? `/world?guild=${encodeURIComponent(guildId)}` : '/world');
 		} catch (error) {
 			console.error('Discord Activity authentication failed:', error);
 			errorMessage =

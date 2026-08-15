@@ -194,3 +194,86 @@ export async function getGuildTextChannels(guildId: string): Promise<DiscordChan
 		}))
 		.sort((a, b) => a.position - b.position);
 }
+
+export async function getGuildCategories(guildId: string): Promise<DiscordChannel[]> {
+	const response = await fetch(`${API_BASE_URL}/guilds/${guildId}/channels`, {
+		headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok) throw new Error(`Discord channel request failed (${response.status}).`);
+	return ((await response.json()) as DiscordChannel[])
+		.filter((channel) => channel.type === 4)
+		.sort((a, b) => a.position - b.position);
+}
+
+export async function createGuildVoiceChannel(input: {
+	guildId: string;
+	categoryId: string;
+	accessRoleId: string;
+	name: string;
+}): Promise<DiscordChannel> {
+	const response = await fetch(`${API_BASE_URL}/guilds/${input.guildId}/channels`, {
+		method: 'POST',
+		headers: {
+			Authorization: botAuthorization(),
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({
+			name: input.name,
+			type: 2,
+			parent_id: input.categoryId,
+			permission_overwrites: [
+				{ id: input.guildId, type: 0, deny: '2097152' },
+				{ id: input.accessRoleId, type: 0, allow: '2097152' }
+			]
+		})
+	});
+	if (!response.ok) {
+		const detail = await response.text();
+		throw new Error(`Discord voice channel creation failed (${response.status}): ${detail}`);
+	}
+	return (await response.json()) as DiscordChannel;
+}
+
+export async function updateGuildVoiceChannel(input: {
+	guildId: string;
+	channelId: string;
+	categoryId: string;
+	accessRoleId: string;
+	name: string;
+}): Promise<DiscordChannel | null> {
+	const channelResponse = await fetch(`${API_BASE_URL}/channels/${input.channelId}`, {
+		headers: { Authorization: botAuthorization() }
+	});
+	if (channelResponse.status === 404) return null;
+	if (!channelResponse.ok)
+		throw new Error(`Discord channel request failed (${channelResponse.status}).`);
+	const existing = (await channelResponse.json()) as DiscordChannel;
+	if (existing.type !== 2) return null;
+	const response = await fetch(`${API_BASE_URL}/channels/${input.channelId}`, {
+		method: 'PATCH',
+		headers: {
+			Authorization: botAuthorization(),
+			'Content-Type': 'application/json'
+		},
+		body: JSON.stringify({
+			name: input.name,
+			parent_id: input.categoryId,
+			permission_overwrites: [
+				{ id: input.guildId, type: 0, deny: '2097152' },
+				{ id: input.accessRoleId, type: 0, allow: '2097152' }
+			]
+		})
+	});
+	if (!response.ok)
+		throw new Error(`Discord voice channel update failed (${response.status}).`);
+	return (await response.json()) as DiscordChannel;
+}
+
+export async function deleteGuildChannel(channelId: string): Promise<void> {
+	const response = await fetch(`${API_BASE_URL}/channels/${channelId}`, {
+		method: 'DELETE',
+		headers: { Authorization: botAuthorization() }
+	});
+	if (!response.ok && response.status !== 404)
+		throw new Error(`Discord channel deletion failed (${response.status}).`);
+}

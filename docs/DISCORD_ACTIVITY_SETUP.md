@@ -16,8 +16,19 @@ Activity uses Discord's Embedded App SDK for login; it does not replace browser 
 6. Confirm the production server exposes HTTPS. Discord proxies the mapped host through
    `{CLIENT_ID}.discordsays.com`; the Activity session cookie depends on that secure origin.
 
-After saving the mapping, open a server text or voice channel, choose Mountain from the App
-Launcher, and confirm that the dashboard opens without showing the normal browser OAuth page.
+After saving the mapping, open a server text channel, choose Mountain from the App Launcher, and
+confirm that Basecamp opens without showing the normal browser OAuth page.
+
+## Basecamp permissions and first setup
+
+The bot needs **Manage Channels** and **Manage Roles** in every server that uses Basecamp. Its bot
+role must sit above the chosen Basecamp access role. A server manager then opens `/world`, chooses
+the category for Basecamp voice channels and a non-managed access role. Mountain
+creates a `월드 광장` lobby voice channel immediately. Rooms drawn and confirmed inside the world
+create their own voice channels in that same category.
+
+Mountain owns the lobby and room channel overrides: `@everyone` is denied Speak and the configured
+Basecamp access role is allowed Speak. Existing Discord restrictions such as timeouts still apply.
 
 ## Authentication flow
 
@@ -27,6 +38,7 @@ Launcher, and confirm that the dashboard opens without showing the normal browse
    and mutual guilds, then creates a seven-day HTTP-only Activity session.
 4. The access token is returned only long enough for `commands.authenticate` and is never stored in
    the database or browser storage.
+5. A guild Activity redirects to that guild's `/world` Basecamp after authentication.
 
 Normal browser sessions remain `SameSite=Lax`. Activity sessions are `Secure`, `SameSite=None`, and
 `Partitioned` so they work in Discord's sandboxed iframe without becoming general third-party

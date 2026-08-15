@@ -181,6 +181,9 @@
 		{#if data.user}
 			<div class="user">
 				<span>{data.user.username}</span>
+				{#if selectedGuild}<a class="basecamp-button" href={`/world?guild=${selectedGuild.id}`}
+						>Basecamp 입장</a
+					>{/if}
 				{#if selectedGuild}<a class="admin-button" href={`/payments?guild=${selectedGuild.id}`}
 						>자동 결제</a
 					>{/if}
@@ -733,7 +736,8 @@
 		background: #171a21;
 		color: #cbd0da;
 	}
-	.admin-button {
+	.admin-button,
+	.basecamp-button {
 		color: #c8beff;
 		background: #211b3a;
 		border: 1px solid #3b3068;
@@ -742,6 +746,11 @@
 		text-decoration: none;
 		font-size: 12px;
 		font-weight: 750;
+	}
+	.basecamp-button {
+		color: #17200d;
+		background: #d6ff66;
+		border-color: #d6ff66;
 	}
 	.hero {
 		padding: 15vh 0 8vh;
