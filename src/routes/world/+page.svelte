@@ -1056,28 +1056,33 @@
 		const previous = new Map<string, string>();
 		const points = new Map([[startKey, start]]);
 		const closed = new Set<string>();
-		push({ ...start, score: Math.abs(goal.x - start.x) + Math.abs(goal.y - start.y) });
+		const heuristic = (x: number, y: number) => {
+			const dx = Math.abs(goal.x - x);
+			const dy = Math.abs(goal.y - y);
+			return Math.max(dx, dy) + (Math.SQRT2 - 1) * Math.min(dx, dy);
+		};
+		push({ ...start, score: heuristic(start.x, start.y) });
 		let found = startKey === goalKey;
 		while (heap.length && closed.size < 25_000 && !found) {
 			const current = pop();
 			if (!current) break;
 			const currentKey = key(current.x, current.y);
 			if (closed.has(currentKey)) continue;
+			if (currentKey === goalKey) {
+				found = true;
+				break;
+			}
 			closed.add(currentKey);
-			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
 				const next = { x: current.x + dx, y: current.y + dy };
 				const nextKey = key(next.x, next.y);
 				if (closed.has(nextKey) || wallBlocksMovement(current.x + 0.5, current.y + 0.5, next.x + 0.5, next.y + 0.5)) continue;
-				const cost = (costs.get(currentKey) ?? Infinity) + 1;
+				const cost = (costs.get(currentKey) ?? Infinity) + Math.hypot(dx, dy);
 				if (cost >= (costs.get(nextKey) ?? Infinity)) continue;
 				costs.set(nextKey, cost);
 				previous.set(nextKey, currentKey);
 				points.set(nextKey, next);
-				push({ ...next, score: cost + Math.abs(goal.x - next.x) + Math.abs(goal.y - next.y) });
-				if (nextKey === goalKey) {
-					found = true;
-					break;
-				}
+				push({ ...next, score: cost + heuristic(next.x, next.y) });
 			}
 		}
 		if (!found) return null;
@@ -1094,7 +1099,21 @@
 		const path = Math.hypot(startCenter.x - startPosition.x, startCenter.y - startPosition.y) >= 0.18
 			? [startCenter]
 			: [];
-		path.push(...cells.map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 })));
+		const cellCenters = cells.map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 }));
+		let anchor = path.at(-1) || startPosition;
+		let index = 0;
+		while (index < cellCenters.length) {
+			let furthest = index;
+			for (let candidate = cellCenters.length - 1; candidate > index; candidate -= 1) {
+				if (!wallBlocksMovement(anchor.x, anchor.y, cellCenters[candidate].x, cellCenters[candidate].y)) {
+					furthest = candidate;
+					break;
+				}
+			}
+			path.push(cellCenters[furthest]);
+			anchor = cellCenters[furthest];
+			index = furthest + 1;
+		}
 		const finalStart = path.at(-1) || startPosition;
 		if (!wallBlocksMovement(finalStart.x, finalStart.y, targetPosition.x, targetPosition.y))
 			path.push(targetPosition);
