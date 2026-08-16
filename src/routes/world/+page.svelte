@@ -453,8 +453,18 @@
 			velocityY = velocityY / speed * absoluteMaximumSpeed;
 		}
 		const movementZoomTarget = 1 - Math.min(speed / absoluteMaximumSpeed, 1) * 0.06;
-		movementZoom += (movementZoomTarget - movementZoom) * (1 - Math.exp(-8 * deltaSeconds));
-		if (Math.abs(movementZoomTarget - movementZoom) < 0.0001) movementZoom = movementZoomTarget;
+		let nextMovementZoom = movementZoom + (movementZoomTarget - movementZoom) * (1 - Math.exp(-8 * deltaSeconds));
+		if (Math.abs(movementZoomTarget - nextMovementZoom) < 0.0001) nextMovementZoom = movementZoomTarget;
+		if (nextMovementZoom !== movementZoom) {
+			const ratio = nextMovementZoom / movementZoom;
+			const focusX = me.x * cameraLayout.cellSize;
+			const focusY = me.y * cameraLayout.cellSize;
+			const anchorX = cameraX + focusX;
+			const anchorY = cameraY + focusY;
+			cameraX = anchorX - focusX * ratio;
+			cameraY = anchorY - focusY * ratio;
+			movementZoom = nextMovementZoom;
+		}
 		if (velocityX || velocityY) {
 			const rawX = me.x + velocityX * deltaSeconds;
 			const rawY = me.y + velocityY * deltaSeconds;
