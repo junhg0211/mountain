@@ -44,6 +44,7 @@
 	let roomEditRequestId: string | null = null;
 	let propRequestId: string | null = null;
 	let tileTypeRequestId: string | null = null;
+	let tileTypeDeletionRequestId: string | null = null;
 	let propMoveRequestId: string | null = null;
 	let propEditRequestId: string | null = null;
 	let regionRequestId: string | null = null;
@@ -61,6 +62,7 @@
 	let copyingProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedRoom = $state<(typeof data.rooms)[number] | null>(null);
 	let roomDeletionOpen = $state(false);
+	let deletingTileType = $state<(typeof data.tileTypes)[number] | null>(null);
 	let editSession: {
 		mode: 'move' | 'resize';
 		pointerId: number;
@@ -315,6 +317,7 @@
 					const isPropEdit = message.requestId === propEditRequestId;
 					const isRegionRequest = message.requestId === regionRequestId;
 					const isTileTypeRequest = message.requestId === tileTypeRequestId;
+					const isTileTypeDeletion = message.requestId === tileTypeDeletionRequestId;
 					const isPropMove = message.requestId === propMoveRequestId;
 					const isDoorUnlock = message.requestId === unlockRequestId;
 					showNotice(success, String(success ? message.message || '' : message.error || ''));
@@ -379,6 +382,13 @@
 							buildTool = 'tile';
 						}
 					}
+					if (isTileTypeDeletion) {
+						tileTypeDeletionRequestId = null;
+						if (success) {
+							tileType = 'grass';
+							deletingTileType = null;
+						}
+					}
 					if (isDoorUnlock) {
 						unlockRequestId = null;
 						unlockError = success ? '' : String(message.error || '문을 열지 못했습니다.');
@@ -393,6 +403,7 @@
 				roomEditRequestId = null;
 				propRequestId = null;
 				tileTypeRequestId = null;
+				tileTypeDeletionRequestId = null;
 				propMoveRequestId = null;
 				propEditRequestId = null;
 				regionRequestId = null;
@@ -645,6 +656,17 @@
 			name: form.get('name'),
 			imageData: tilePixels.join('')
 		});
+	}
+
+	function askToDeleteTileType() {
+		deletingTileType = tileTypes.find((type) => type.id === tileType) || null;
+	}
+
+	function confirmTileTypeDeletion() {
+		if (!deletingTileType) return;
+		const id = deletingTileType.id;
+		deletingTileType = null;
+		tileTypeDeletionRequestId = send({ type: 'basecamp-delete-tile-type', id });
 	}
 
 	function paintTilePixel(index: number, event: PointerEvent) {
@@ -1363,6 +1385,7 @@
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
 					<button class:active={designingTile} onclick={beginTileDesign}>바닥 타일 만들기</button>
 					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option>{#each tileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select></label>
+					{#if tileType !== 'grass'}<button class="danger" disabled={processing || !connected} onclick={askToDeleteTileType}>타일 삭제</button>{/if}
 					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
 					<button class:active={building && buildTool === 'selection'} onclick={() => setBuildTool('selection')}>영역 선택</button>
 				{/if}
@@ -1546,6 +1569,16 @@
 	danger
 	onconfirm={confirmRoomDeletion}
 	oncancel={() => (roomDeletionOpen = false)}
+/>
+
+<ConfirmDialog
+	open={Boolean(deletingTileType)}
+	title={`${deletingTileType?.name || '선택한 타일'}을 삭제할까요?`}
+	description="이 타일로 칠한 모든 칸이 기본 잔디로 돌아갑니다. 이 작업은 되돌릴 수 없습니다."
+	confirmLabel="바닥 타일 삭제"
+	danger
+	onconfirm={confirmTileTypeDeletion}
+	oncancel={() => (deletingTileType = null)}
 />
 
 <style>

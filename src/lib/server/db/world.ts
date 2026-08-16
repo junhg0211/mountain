@@ -110,6 +110,15 @@ export async function getWorldTileType(guildId: string, id: string) {
 	return rows.length ? { id: String(rows[0].id) } : null;
 }
 
+export async function deleteWorldTileType(guildId: string, id: string) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		await tx`DELETE FROM world_tiles WHERE guild_id=${guildId} AND tile_type=${id}`;
+		const result = await tx`DELETE FROM world_tile_types WHERE guild_id=${guildId} AND id=${id}`;
+		if (Number(result.affectedRows) !== 1) throw new Error('TILE_TYPE_NOT_FOUND');
+	});
+}
+
 export async function paintWorldTiles(input: {
 	guildId: string;
 	userId: string;

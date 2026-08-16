@@ -44,6 +44,7 @@ import {
 	closeBasecampDoor,
 	copyBasecampRegion,
 	deleteBasecampRegion,
+	deleteBasecampTileType,
 	copyBasecampProp,
 	createBasecampDoor,
 	createBasecampProp,
@@ -321,7 +322,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -465,6 +466,9 @@ async function attachBasecampSocket(
 					imageData: String(message.imageData || '')
 				});
 				messageText = '새 바닥 타일을 저장했습니다.';
+			} else if (type === 'basecamp-delete-tile-type') {
+				state = await deleteBasecampTileType({ guildId, userId, id: String(message.id || '') });
+				messageText = '바닥 타일을 삭제하고 칠해진 칸을 잔디로 되돌렸습니다.';
 			} else if (type === 'basecamp-paint-tiles') {
 				state = await paintBasecampTiles({
 					guildId,

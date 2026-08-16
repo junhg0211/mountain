@@ -9,6 +9,7 @@ import {
 	createWorldTileType,
 	copyWorldRegion,
 	deleteWorldRegion,
+	deleteWorldTileType,
 	deleteWorldDoor,
 	deleteWorldProp,
 	cutWorldWalls,
@@ -103,6 +104,14 @@ export async function createBasecampTileType(input: {
 		imageData,
 		createdBy: input.userId
 	});
+	return getBasecampState(input.guildId);
+}
+
+export async function deleteBasecampTileType(input: { guildId: string; userId: string; id: string }) {
+	await requireGuildManager(input.guildId, input.userId);
+	if (!(await getWorldTileType(input.guildId, input.id)))
+		throw new BasecampError('삭제할 바닥 타일을 찾을 수 없습니다.');
+	await deleteWorldTileType(input.guildId, input.id);
 	return getBasecampState(input.guildId);
 }
 
