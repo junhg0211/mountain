@@ -394,10 +394,11 @@
 		const vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
 		const inputLength = Math.hypot(horizontal, vertical) || 1;
 		const currentMaximumSpeed = maximumMovementSpeed * (sprinting ? sprintSpeedMultiplier : 1);
+		const currentAcceleration = movementAcceleration * (sprinting ? sprintSpeedMultiplier : 1);
 		const targetVelocityX = horizontal / inputLength * currentMaximumSpeed;
 		const targetVelocityY = vertical / inputLength * currentMaximumSpeed;
-		velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? movementAcceleration : movementFriction) * deltaSeconds);
-		velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? movementAcceleration : movementFriction) * deltaSeconds);
+		velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? currentAcceleration : movementFriction) * deltaSeconds);
+		velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? currentAcceleration : movementFriction) * deltaSeconds);
 		const speed = Math.hypot(velocityX, velocityY);
 		const absoluteMaximumSpeed = maximumMovementSpeed * sprintSpeedMultiplier;
 		if (speed > absoluteMaximumSpeed) {
