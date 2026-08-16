@@ -80,6 +80,7 @@
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
 	let mobileTopOverlayOpen = $state(false);
 	let mobileRightOverlayOpen = $state(false);
+	let inventoryOpen = $state(false);
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
 	let movementFrame: number | null = null;
@@ -138,6 +139,11 @@
 		});
 		if (worldViewport) resizeObserver.observe(worldViewport);
 		const keydown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape' && inventoryOpen) {
+				event.preventDefault();
+				inventoryOpen = false;
+				return;
+			}
 			if (event.key === 'Escape' && unlockingDoor) {
 				event.preventDefault();
 				cancelDoorUnlock();
@@ -1605,6 +1611,13 @@
 		aria-expanded={mobileRightOverlayOpen}
 		onclick={() => (mobileRightOverlayOpen = !mobileRightOverlayOpen)}
 	>{mobileRightOverlayOpen ? '×' : '›'}</button>
+	<button
+		class="inventory-toggle"
+		type="button"
+		aria-label="인벤토리 열기"
+		aria-expanded={inventoryOpen}
+		onclick={() => (inventoryOpen = true)}
+	><span>🎒</span><b>인벤토리</b></button>
 	<header>
 		<a class="brand" href="/"><span>M</span>Mountain Basecamp</a>
 		{#if data.guilds.length}
@@ -1810,6 +1823,32 @@
 	</div>
 {/if}
 
+{#if inventoryOpen}
+	<div class="inventory-backdrop" role="presentation" onpointerdown={() => (inventoryOpen = false)}>
+		<div class="inventory-panel" role="dialog" aria-modal="true" aria-labelledby="basecamp-inventory-title" tabindex="-1" onpointerdown={(event) => event.stopPropagation()}>
+			<header>
+				<div><small>MY INVENTORY</small><h2 id="basecamp-inventory-title">마운틴 인벤토리</h2></div>
+				<button type="button" aria-label="인벤토리 닫기" onclick={() => (inventoryOpen = false)}>×</button>
+			</header>
+			<p class="inventory-summary">이 서버에서 보유 중인 아이템 · {data.inventory.length}종</p>
+			{#if data.inventory.length}
+				<div class="inventory-list">
+					{#each data.inventory as entry}
+						<article>
+							<span>{entry.item.iconEmoji}</span>
+							<div><strong>{entry.item.name}</strong><p>{entry.item.description || '설명이 없는 아이템입니다.'}</p></div>
+							<b>× {entry.quantity}</b>
+						</article>
+					{/each}
+				</div>
+			{:else}
+				<div class="inventory-empty"><span>🎒</span><strong>아직 보유한 아이템이 없습니다.</strong><p>아이템을 획득하면 이곳에서 바로 확인할 수 있습니다.</p></div>
+			{/if}
+			<footer>Basecamp에서 사용할 수 있는 아이템은 추후 이 화면에서 바로 사용할 수 있게 됩니다.</footer>
+		</div>
+	</div>
+{/if}
+
 <ConfirmDialog
 	open={roomDeletionOpen}
 	title={`${selectedRoom?.name || '선택한 방'}을 삭제할까요?`}
@@ -1861,4 +1900,5 @@
 	.world,.mobile-controls,.mobile-controls button{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
 	.notification-queue{position:fixed;z-index:30;bottom:52px;left:14px;display:flex;width:min(420px,calc(100vw - 28px));flex-direction:column;gap:8px;pointer-events:none}.notification-queue .notice{position:relative;inset:auto;width:auto;max-width:none;margin:0;padding:10px 13px;box-sizing:border-box;transform:none;box-shadow:0 10px 30px #0009;backdrop-filter:blur(12px);animation:notice-in .16s ease-out}.notification-queue .notice.success{background:#172619e8}.notification-queue .notice:not(.success){background:#2a1717e8}@keyframes notice-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@media(hover:none),(pointer:coarse){.notification-queue{bottom:calc(160px + env(safe-area-inset-bottom))}}
+	.inventory-toggle{position:absolute;z-index:32;top:14px;right:14px;display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #ffffff24;border-radius:14px;background:#0a0d12db;color:#f4f2ea;font:inherit;box-shadow:0 8px 24px #0008;backdrop-filter:blur(12px);cursor:pointer}.inventory-toggle span{font-size:18px}.inventory-toggle b{font-size:11px}.inventory-backdrop{position:fixed;z-index:50;inset:0;display:grid;place-items:center;padding:18px;background:#050805aa;backdrop-filter:blur(7px)}.inventory-panel{display:flex;width:min(520px,100%);max-height:min(680px,calc(100dvh - 36px));box-sizing:border-box;overflow:hidden;flex-direction:column;border:1px solid #3d493f;border-radius:20px;background:#111713;box-shadow:0 24px 80px #000c}.inventory-panel>header{position:static;display:flex;width:auto;max-width:none;padding:18px 20px;align-items:center;border:0;border-bottom:1px solid #ffffff12;border-radius:0;background:transparent;box-shadow:none;opacity:1;transform:none;pointer-events:auto}.inventory-panel header small{color:#b4d75c;font-size:9px;font-weight:900;letter-spacing:.16em}.inventory-panel header h2{margin:3px 0 0;font-size:20px}.inventory-panel header button{display:grid;width:36px;height:36px;padding:0;place-items:center;border:1px solid #ffffff18;border-radius:10px;background:#242b25;color:#fff;font-size:22px;cursor:pointer}.inventory-summary{margin:0;padding:12px 20px 0;color:#8f978f;font-size:11px}.inventory-list{display:grid;min-height:0;overflow:auto;gap:8px;padding:14px 20px 20px}.inventory-list article{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px;border:1px solid #ffffff0e;border-radius:13px;background:#1a211b}.inventory-list article>span{display:grid;width:44px;height:44px;place-items:center;border-radius:11px;background:#0d120e;font-size:25px}.inventory-list article strong{font-size:13px}.inventory-list article p{margin:4px 0 0;color:#8f978f;font-size:10px;line-height:1.4}.inventory-list article>b{color:#d6ff66;font-size:13px}.inventory-empty{display:grid;margin:26px 20px;padding:28px;place-items:center;border:1px dashed #ffffff1c;border-radius:14px;color:#cbd3c9;text-align:center}.inventory-empty>span{font-size:34px}.inventory-empty strong{margin-top:8px;font-size:13px}.inventory-empty p{margin:5px 0 0;color:#7f897f;font-size:10px}.inventory-panel>footer{padding:12px 20px;border-top:1px solid #ffffff10;color:#737c74;font-size:9px;line-height:1.5}@media(hover:none),(pointer:coarse){.inventory-toggle{top:calc(max(8px,env(safe-area-inset-top)) + 104px);right:max(8px,env(safe-area-inset-right));width:44px;height:44px;padding:0;justify-content:center}.inventory-toggle b{display:none}.inventory-panel{max-height:calc(100dvh - 24px)}.inventory-panel>header{padding:14px 16px}.inventory-list{padding:12px 14px 16px}}
 </style>

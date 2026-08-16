@@ -1,5 +1,6 @@
 import { getSessionUser } from '$lib/server/auth';
 import { getDB } from '$lib/server/db';
+import { getInventory } from '$lib/server/db/items';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { getWorldSettings, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
@@ -30,7 +31,8 @@ const emptyWorld = {
 	settings: null,
 	canManage: false,
 	categories: [],
-	roles: []
+	roles: [],
+	inventory: []
 } as const;
 
 export const load: PageServerLoad = async ({ cookies, url }) => {
@@ -43,14 +45,15 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	if (!guildId || !(await getGuildMember(guildId, user.id))) return { user, guilds, ...emptyWorld };
 
 	const canManage = canManageGuild(selectedGuild.permissions);
-	const [rooms, walls, doors, tiles, tileTypes, props, settings] = await Promise.all([
+	const [rooms, walls, doors, tiles, tileTypes, props, settings, inventory] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
 		listWorldDoors(guildId),
 		listWorldTiles(guildId),
 		listWorldTileTypes(guildId),
 		listWorldProps(guildId),
-		getWorldSettings(guildId)
+		getWorldSettings(guildId),
+		getInventory(guildId, user.id)
 	]);
 	const [categories, roles] = canManage
 		? await Promise.all([getGuildCategories(guildId), getGuildRoles(guildId)])
@@ -66,6 +69,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		tileTypes,
 		props,
 		settings,
+		inventory,
 		canManage,
 		categories,
 		roles: roles.filter((role) => !role.managed && role.name !== '@everyone')
