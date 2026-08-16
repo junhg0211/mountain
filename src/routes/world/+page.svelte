@@ -954,9 +954,35 @@
 	function zoomWorld(event: WheelEvent) {
 		event.preventDefault();
 		const factor = Math.exp(-event.deltaY * 0.0012);
-		targetZoom = Math.max(0.25, Math.min(2, targetZoom * factor));
+		setZoom(targetZoom * factor);
+	}
+
+	function setZoom(value: number) {
+		targetZoom = Math.max(0.25, Math.min(2, value));
 		zooming = true;
 		if (zoomFrame === null) zoomFrame = requestAnimationFrame(animateZoom);
+	}
+
+	function startTouchMovement(event: PointerEvent, key: 'arrowup' | 'arrowdown' | 'arrowleft' | 'arrowright') {
+		event.preventDefault();
+		event.stopPropagation();
+		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		pressedKeys.add(key);
+		if (movementFrame === null) moveAvatar();
+	}
+
+	function stopTouchMovement(event: PointerEvent, key: 'arrowup' | 'arrowdown' | 'arrowleft' | 'arrowright') {
+		event.preventDefault();
+		event.stopPropagation();
+		pressedKeys.delete(key);
+		if (![...pressedKeys].some((pressed) => movementKeys.has(pressed)) && movementFrame === null) moveAvatar();
+	}
+
+	function setTouchSprint(event: PointerEvent, enabled: boolean) {
+		event.preventDefault();
+		event.stopPropagation();
+		if (enabled) (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		sprinting = enabled;
 	}
 
 	function animateZoom() {
@@ -1169,6 +1195,20 @@
 						<div class="door-interaction-prompt" style={`left:${(presences.find((presence) => presence.id === presenceId)?.x ?? 0) * cameraLayout.cellSize}px;top:${(presences.find((presence) => presence.id === presenceId)?.y ?? 0) * cameraLayout.cellSize}px`}>Space · 문 열기</div>
 					{/if}
 					</div>
+					<div class="mobile-controls" role="group" aria-label="모바일 월드 조작" onpointerdown={(event) => event.stopPropagation()} onpointermove={(event) => event.stopPropagation()} onpointerup={(event) => event.stopPropagation()}>
+						<div class="mobile-dpad">
+							<button class="up" type="button" aria-label="위로 이동" onpointerdown={(event) => startTouchMovement(event, 'arrowup')} onpointerup={(event) => stopTouchMovement(event, 'arrowup')} onpointercancel={(event) => stopTouchMovement(event, 'arrowup')}>▲</button>
+							<button class="left" type="button" aria-label="왼쪽으로 이동" onpointerdown={(event) => startTouchMovement(event, 'arrowleft')} onpointerup={(event) => stopTouchMovement(event, 'arrowleft')} onpointercancel={(event) => stopTouchMovement(event, 'arrowleft')}>◀</button>
+							<button class="right" type="button" aria-label="오른쪽으로 이동" onpointerdown={(event) => startTouchMovement(event, 'arrowright')} onpointerup={(event) => stopTouchMovement(event, 'arrowright')} onpointercancel={(event) => stopTouchMovement(event, 'arrowright')}>▶</button>
+							<button class="down" type="button" aria-label="아래로 이동" onpointerdown={(event) => startTouchMovement(event, 'arrowdown')} onpointerup={(event) => stopTouchMovement(event, 'arrowdown')} onpointercancel={(event) => stopTouchMovement(event, 'arrowdown')}>▼</button>
+						</div>
+						<div class="mobile-actions">
+							<button type="button" aria-label="축소" onclick={() => setZoom(targetZoom / 1.2)}>−</button>
+							<button type="button" aria-label="확대" onclick={() => setZoom(targetZoom * 1.2)}>＋</button>
+							<button class="sprint" type="button" aria-label="누르는 동안 달리기" onpointerdown={(event) => setTouchSprint(event, true)} onpointerup={(event) => setTouchSprint(event, false)} onpointercancel={(event) => setTouchSprint(event, false)}>달리기</button>
+							<button class="interact" type="button" disabled={!nearestDoor} onclick={interactWithNearestDoor}>문 열기</button>
+						</div>
+					</div>
 				</div>
 				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '빈 영역을 드래그해 만들거나 기존 소품을 드래그해 옮기세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
@@ -1255,4 +1295,5 @@
 	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
 	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;overflow:hidden;background:#19231c;pointer-events:none}.painted-tile>svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}.painted-tile.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}.tile-pixel-editor{background:#19231c}
+	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
 </style>
