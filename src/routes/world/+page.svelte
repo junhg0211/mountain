@@ -1129,6 +1129,11 @@
 			walls: walls.filter(containsSegment).length
 		};
 	});
+	const rightPanelPinned = $derived(Boolean(
+		designingTile || selectedDoor || copyingProp || copiedRegion || editingProp || selectedProp || selectedRoom ||
+		(building && (buildTool === 'door' || buildTool === 'prop')) ||
+		(draft && (buildTool === 'room' || buildTool === 'prop'))
+	));
 	const voiceTarget = $derived(
 		currentRoom?.voiceChannelId
 			? { name: currentRoom.name, channelId: currentRoom.voiceChannelId }
@@ -1300,7 +1305,7 @@
 
 <main
 	class:reveal-top={revealedEdge === 'top' || revealedEdge === 'all'}
-	class:reveal-right={revealedEdge === 'right' || revealedEdge === 'all'}
+	class:reveal-right={rightPanelPinned || revealedEdge === 'right' || revealedEdge === 'all'}
 	class:reveal-bottom={revealedEdge === 'bottom' || revealedEdge === 'all'}
 	onpointermove={revealHud}
 	onpointerleave={() => { if (revealedEdge !== 'all') revealedEdge = null; }}
