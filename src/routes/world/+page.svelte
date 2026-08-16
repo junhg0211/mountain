@@ -65,7 +65,7 @@
 		initial: (typeof data.props)[number];
 	} | null = null;
 	let movingToVoiceChannel = $state(false);
-	let autoMoveVoiceChannel = $state(true);
+	let autoMoveVoiceChannel = $state(false);
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
@@ -113,7 +113,7 @@
 
 	onMount(() => {
 		const savedAutoMove = localStorage.getItem(`basecamp-auto-move:${data.guildId}`);
-		autoMoveVoiceChannel = savedAutoMove === null || savedAutoMove === 'true';
+		autoMoveVoiceChannel = savedAutoMove === 'true';
 		const resizeObserver = new ResizeObserver(([entry]) => {
 			viewportWidth = entry.contentRect.width;
 			viewportHeight = entry.contentRect.height;
