@@ -223,6 +223,81 @@ export async function createWorldWall(input: WorldWall & { guildId: string; crea
 	`;
 }
 
+export async function mergeWorldWall(input: WorldWall & { guildId: string; createdBy: string }) {
+	const db = await getDB();
+	await db.begin(async (tx) => {
+		const rows = await tx`
+			SELECT id, x, y, width, height FROM world_walls
+			WHERE guild_id=${input.guildId} AND orientation=${input.orientation}
+			FOR UPDATE
+		`;
+		const horizontal = input.orientation === 'horizontal';
+		const fixed = horizontal ? input.y : input.x;
+		let start = horizontal ? input.x : input.y;
+		let end = start + (horizontal ? input.width : input.height);
+		const mergedIds = new Set<string>();
+		let expanded = true;
+		while (expanded) {
+			expanded = false;
+			for (const row of rows as Array<Record<string, unknown>>) {
+				const id = String(row.id);
+				if (mergedIds.has(id) || Number(horizontal ? row.y : row.x) !== fixed) continue;
+				const wallStart = Number(horizontal ? row.x : row.y);
+				const wallEnd = wallStart + Number(horizontal ? row.width : row.height);
+				if (wallEnd < start || wallStart > end) continue;
+				mergedIds.add(id);
+				start = Math.min(start, wallStart);
+				end = Math.max(end, wallEnd);
+				expanded = true;
+			}
+		}
+		for (const id of mergedIds)
+			await tx`DELETE FROM world_walls WHERE guild_id=${input.guildId} AND id=${id}`;
+		await tx`
+			INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by)
+			VALUES (${input.id}, ${input.guildId}, ${horizontal ? start : fixed},
+				${horizontal ? fixed : start}, ${horizontal ? end - start : 1},
+				${horizontal ? 1 : end - start}, ${input.orientation}, ${input.createdBy})
+		`;
+	});
+}
+
+export async function cutWorldWalls(input: Omit<WorldWall, 'id'> & { guildId: string }) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const horizontal = input.orientation === 'horizontal';
+		const fixed = horizontal ? input.y : input.x;
+		const cutStart = horizontal ? input.x : input.y;
+		const cutEnd = cutStart + (horizontal ? input.width : input.height);
+		const rows = await tx`
+			SELECT id, x, y, width, height, created_by FROM world_walls
+			WHERE guild_id=${input.guildId} AND orientation=${input.orientation}
+			FOR UPDATE
+		`;
+		let cutCount = 0;
+		for (const row of rows as Array<Record<string, unknown>>) {
+			if (Number(horizontal ? row.y : row.x) !== fixed) continue;
+			const wallStart = Number(horizontal ? row.x : row.y);
+			const wallEnd = wallStart + Number(horizontal ? row.width : row.height);
+			const overlapStart = Math.max(wallStart, cutStart);
+			const overlapEnd = Math.min(wallEnd, cutEnd);
+			if (overlapEnd <= overlapStart) continue;
+			await tx`DELETE FROM world_walls WHERE guild_id=${input.guildId} AND id=${String(row.id)}`;
+			cutCount += 1;
+			for (const [fragmentStart, fragmentEnd] of [[wallStart, overlapStart], [overlapEnd, wallEnd]]) {
+				if (fragmentEnd <= fragmentStart) continue;
+				await tx`
+					INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by)
+					VALUES (${crypto.randomUUID()}, ${input.guildId}, ${horizontal ? fragmentStart : fixed},
+						${horizontal ? fixed : fragmentStart}, ${horizontal ? fragmentEnd - fragmentStart : 1},
+						${horizontal ? 1 : fragmentEnd - fragmentStart}, ${input.orientation}, ${String(row.created_by)})
+				`;
+			}
+		}
+		return cutCount;
+	});
+}
+
 export async function deleteWorldWall(guildId: string, id: string) {
 	const db = await getDB();
 	const result = await db`DELETE FROM world_walls WHERE guild_id=${guildId} AND id=${id}`;

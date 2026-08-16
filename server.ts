@@ -568,8 +568,16 @@ async function attachBasecampSocket(
 				});
 				messageText = '벽을 만들었습니다.';
 			} else {
-				state = await deleteBasecampWall({ guildId, userId, id: String(message.id || '') });
-				messageText = '벽을 삭제했습니다.';
+				state = await deleteBasecampWall({
+					guildId,
+					userId,
+					x: Number(message.x),
+					y: Number(message.y),
+					width: Number(message.width),
+					height: Number(message.height),
+					orientation: String(message.orientation || '')
+				});
+				messageText = '선택한 벽 구간을 잘라냈습니다.';
 			}
 			websocket.send(
 				JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: messageText })

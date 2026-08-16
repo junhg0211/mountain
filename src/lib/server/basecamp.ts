@@ -3,13 +3,13 @@ import {
 	activateWorldRoom,
 	archiveWorldRoom,
 	createWorldRoomDraft,
-	createWorldWall,
+	mergeWorldWall,
 	createWorldDoor,
 	createWorldProp,
 	createWorldTileType,
 	deleteWorldDoor,
 	deleteWorldProp,
-	deleteWorldWall,
+	cutWorldWalls,
 	failWorldRoom,
 	getWorldProp,
 	getWorldDoor,
@@ -250,7 +250,7 @@ export async function createBasecampWall(input: {
 		(horizontal ? input.height !== 1 : input.width !== 1)
 	)
 		throw new BasecampError('가로 또는 세로 벽을 그려 주세요.');
-	await createWorldWall({
+	await mergeWorldWall({
 		...input,
 		orientation: input.orientation as 'horizontal' | 'vertical',
 		id: crypto.randomUUID(),
@@ -259,15 +259,32 @@ export async function createBasecampWall(input: {
 	return getBasecampState(input.guildId);
 }
 
-export async function deleteBasecampWall(input: { guildId: string; userId: string; id: string }) {
+export async function deleteBasecampWall(input: {
+	guildId: string;
+	userId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	orientation: string;
+}) {
 	await requireGuildManager(input.guildId, input.userId);
-	try {
-		await deleteWorldWall(input.guildId, input.id);
-	} catch (error) {
-		if (error instanceof Error && error.message === 'WALL_NOT_FOUND')
-			throw new BasecampError('삭제할 벽을 찾을 수 없습니다.');
-		throw error;
-	}
+	const horizontal = input.orientation === 'horizontal';
+	if (
+		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
+		input.width < 1 || input.height < 1 ||
+		!['horizontal', 'vertical'].includes(input.orientation) ||
+		(horizontal ? input.height !== 1 : input.width !== 1)
+	) throw new BasecampError('자를 벽 구간을 가로 또는 세로로 선택해 주세요.');
+	const cutCount = await cutWorldWalls({
+		x: input.x,
+		y: input.y,
+		width: input.width,
+		height: input.height,
+		orientation: input.orientation as 'horizontal' | 'vertical',
+		guildId: input.guildId
+	});
+	if (!cutCount) throw new BasecampError('선택한 구간에 자를 벽이 없습니다.');
 	return getBasecampState(input.guildId);
 }
 
