@@ -461,7 +461,8 @@ async function attachBasecampSocket(
 					height: Number(message.height),
 					actionType: String(message.actionType || ''),
 					teleportX: message.teleportX === null || message.teleportX === '' ? null : Number(message.teleportX),
-					teleportY: message.teleportY === null || message.teleportY === '' ? null : Number(message.teleportY)
+					teleportY: message.teleportY === null || message.teleportY === '' ? null : Number(message.teleportY),
+					signText: message.signText === null ? null : String(message.signText || '')
 				});
 				messageText = '소품을 월드에 놓았습니다.';
 			} else if (type === 'basecamp-copy-prop') {
@@ -484,7 +485,8 @@ async function attachBasecampSocket(
 					height: Number(message.height),
 					actionType: String(message.actionType || ''),
 					teleportX: message.teleportX === null || message.teleportX === '' ? null : Number(message.teleportX),
-					teleportY: message.teleportY === null || message.teleportY === '' ? null : Number(message.teleportY)
+					teleportY: message.teleportY === null || message.teleportY === '' ? null : Number(message.teleportY),
+					signText: message.signText === null ? null : String(message.signText || '')
 				});
 				messageText = '소품을 편집했습니다.';
 			} else if (type === 'basecamp-delete-prop') {

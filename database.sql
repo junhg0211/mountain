@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS world_props (
     action_type VARCHAR(16),
     teleport_x DOUBLE,
     teleport_y DOUBLE,
+    sign_text VARCHAR(500),
     created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX world_props_guild_idx (guild_id),

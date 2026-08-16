@@ -52,9 +52,10 @@ export interface WorldProp {
 	y: number;
 	width: number;
 	height: number;
-	actionType: 'teleport' | null;
+	actionType: 'teleport' | 'sign' | null;
 	teleportX: number | null;
 	teleportY: number | null;
+	signText: string | null;
 	createdBy: string;
 }
 
@@ -134,7 +135,7 @@ export async function paintWorldTiles(input: {
 export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, created_by FROM world_props
+		SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props
 		WHERE guild_id=${guildId} ORDER BY created_at
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
@@ -146,9 +147,10 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 		y: Number(row.y),
 		width: Number(row.width),
 		height: Number(row.height),
-		actionType: row.action_type === 'teleport' ? 'teleport' : null,
+		actionType: row.action_type === 'teleport' || row.action_type === 'sign' ? row.action_type : null,
 		teleportX: row.teleport_x === null ? null : Number(row.teleport_x),
 		teleportY: row.teleport_y === null ? null : Number(row.teleport_y),
+		signText: row.sign_text === null ? null : String(row.sign_text),
 		createdBy: String(row.created_by)
 	}));
 }
@@ -156,15 +158,15 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 export async function createWorldProp(input: WorldProp & { guildId: string }) {
 	const db = await getDB();
 	await db`
-		INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, created_by)
-		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.x}, ${input.y}, ${input.width}, ${input.height}, ${input.actionType}, ${input.teleportX}, ${input.teleportY}, ${input.createdBy})
+		INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.x}, ${input.y}, ${input.width}, ${input.height}, ${input.actionType}, ${input.teleportX}, ${input.teleportY}, ${input.signText}, ${input.createdBy})
 	`;
 }
 
 export async function getWorldProp(guildId: string, id: string): Promise<WorldProp | null> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, created_by FROM world_props
+		SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props
 		WHERE guild_id=${guildId} AND id=${id} LIMIT 1
 	`;
 	if (!rows.length) return null;
@@ -177,9 +179,10 @@ export async function getWorldProp(guildId: string, id: string): Promise<WorldPr
 		y: Number(rows[0].y),
 		width: Number(rows[0].width),
 		height: Number(rows[0].height),
-		actionType: rows[0].action_type === 'teleport' ? 'teleport' : null,
+		actionType: rows[0].action_type === 'teleport' || rows[0].action_type === 'sign' ? rows[0].action_type : null,
 		teleportX: rows[0].teleport_x === null ? null : Number(rows[0].teleport_x),
 		teleportY: rows[0].teleport_y === null ? null : Number(rows[0].teleport_y),
+		signText: rows[0].sign_text === null ? null : String(rows[0].sign_text),
 		createdBy: String(rows[0].created_by)
 	};
 }
@@ -208,12 +211,13 @@ export async function updateWorldProp(input: {
 	actionType: WorldProp['actionType'];
 	teleportX: number | null;
 	teleportY: number | null;
+	signText: string | null;
 }) {
 	const db = await getDB();
 	await db`
 		UPDATE world_props SET name=${input.name}, image_data=${input.imageData},
 			width=${input.width}, height=${input.height}, action_type=${input.actionType},
-			teleport_x=${input.teleportX}, teleport_y=${input.teleportY}
+			teleport_x=${input.teleportX}, teleport_y=${input.teleportY}, sign_text=${input.signText}
 		WHERE guild_id=${input.guildId} AND id=${input.id}
 	`;
 }
