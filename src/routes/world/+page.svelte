@@ -17,12 +17,17 @@
 	let walls = $state<typeof data.walls>([]);
 	let doors = $state<typeof data.doors>([]);
 	let tiles = $state<typeof data.tiles>([]);
+	let tileTypes = $state<typeof data.tileTypes>([]);
 	let worldProps = $state<typeof data.props>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
 	let buildTool = $state<'room' | 'wall' | 'door' | 'eraser' | 'tile' | 'prop'>('room');
 	let doorPassword = $state('');
-	let tileType = $state<'grass' | 'stone' | 'sand' | 'water'>('stone');
+	let tileType = $state('grass');
+	const tilePalette = ['transparent', '#263129', '#323a34', '#3d3a32', '#29363b', '#3b3237', '#343148', '#444034', '#293b38'];
+	let tilePixels = $state<string[]>(Array(64).fill('0'));
+	let tileColor = $state('1');
+	let designingTile = $state(false);
 	const propPalette = ['transparent', '#20252b', '#f4f2ea', '#d6ff66', '#ee796b', '#ffcf72', '#69c7df', '#9d75d6', '#6f9f55'];
 	let propPixels = $state<string[]>(Array(64).fill('0'));
 	let propColor = $state('1');
@@ -34,6 +39,7 @@
 	let roomCreationRequestId: string | null = null;
 	let roomEditRequestId: string | null = null;
 	let propRequestId: string | null = null;
+	let tileTypeRequestId: string | null = null;
 	let propMoveRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
@@ -248,6 +254,8 @@
 						unlockError = '';
 					}
 					tiles = message.tiles as typeof tiles;
+					tileTypes = message.tileTypes as typeof tileTypes;
+					if (tileType !== 'grass' && !tileTypes.some((type) => type.id === tileType)) tileType = 'grass';
 					worldProps = message.props as typeof worldProps;
 					if (selectedProp && !propMoveSession)
 						selectedProp = worldProps.find((prop) => prop.id === selectedProp?.id) || null;
@@ -260,6 +268,7 @@
 					const isRoomCreation = message.requestId === roomCreationRequestId;
 					const isRoomEdit = message.requestId === roomEditRequestId;
 					const isPropRequest = message.requestId === propRequestId;
+					const isTileTypeRequest = message.requestId === tileTypeRequestId;
 					const isPropMove = message.requestId === propMoveRequestId;
 					const isDoorUnlock = message.requestId === unlockRequestId;
 					notice = {
@@ -291,6 +300,16 @@
 						}
 					}
 					if (isPropMove) propMoveRequestId = null;
+					if (isTileTypeRequest) {
+						tileTypeRequestId = null;
+						if (success) {
+							tileType = tileTypes.at(-1)?.id || 'grass';
+							tilePixels = Array(64).fill('0');
+							designingTile = false;
+							building = true;
+							buildTool = 'tile';
+						}
+					}
 					if (isDoorUnlock) {
 						unlockRequestId = null;
 						unlockError = success ? '' : String(message.error || '문을 열지 못했습니다.');
@@ -304,6 +323,7 @@
 				roomCreationRequestId = null;
 				roomEditRequestId = null;
 				propRequestId = null;
+				tileTypeRequestId = null;
 				propMoveRequestId = null;
 				presenceId = null;
 				presences = [];
@@ -467,6 +487,36 @@
 		event.preventDefault();
 		propPixels[index] = propColor;
 		propPixels = [...propPixels];
+	}
+
+	function createTileType(event: SubmitEvent) {
+		event.preventDefault();
+		const form = new FormData(event.currentTarget as HTMLFormElement);
+		tileTypeRequestId = send({
+			type: 'basecamp-create-tile-type',
+			name: form.get('name'),
+			imageData: tilePixels.join('')
+		});
+	}
+
+	function paintTilePixel(index: number, event: PointerEvent) {
+		event.preventDefault();
+		tilePixels[index] = tileColor;
+		tilePixels = [...tilePixels];
+	}
+
+	function beginTileDesign() {
+		designingTile = true;
+		building = false;
+		cancelEditing();
+		selectedProp = null;
+		copyingProp = null;
+		selectedDoor = null;
+	}
+
+	function cancelTileDesign() {
+		designingTile = false;
+		tilePixels = Array(64).fill('0');
 	}
 
 	function deleteProp() {
@@ -744,6 +794,7 @@
 	}
 
 	function setBuildTool(tool: 'room' | 'wall' | 'door' | 'eraser' | 'tile' | 'prop') {
+		designingTile = false;
 		if (building && buildTool === tool) building = false;
 		else { building = true; buildTool = tool; }
 		cancelEditing();
@@ -1018,7 +1069,8 @@
 					<button class:active={building && buildTool === 'wall'} onclick={() => setBuildTool('wall')}>벽 만들기</button>
 					<button class:active={building && buildTool === 'door'} onclick={() => setBuildTool('door')}>문 만들기</button>
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
-					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option><option value="stone">석재</option><option value="sand">모래</option><option value="water">물결</option></select></label>
+					<button class:active={designingTile} onclick={beginTileDesign}>바닥 타일 만들기</button>
+					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option>{#each tileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select></label>
 					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
 				{/if}
 				<button class:active={building && buildTool === 'prop'} onclick={() => setBuildTool('prop')}>소품 놓기</button>
@@ -1057,7 +1109,7 @@
 						style={cameraStyle}
 					>
 					<div class="plaza" style={spawnStyle}><span>START</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
-					{#each tiles as tile}<div class:stone={tile.tileType === 'stone'} class:sand={tile.tileType === 'sand'} class:water={tile.tileType === 'water'} class="painted-tile" style={tileStyle(tile)}></div>{/each}
+					{#each tiles as tile}<div class:stone={tile.tileType === 'stone'} class:sand={tile.tileType === 'sand'} class:water={tile.tileType === 'water'} class="painted-tile" style={tileStyle(tile)}>{#if tile.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tile.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{/each}
 					{#each walls as wall}
 						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)} role="button" tabindex={building && buildTool === 'eraser' ? 0 : -1} aria-label="벽 삭제" onpointerdown={(event) => deleteWall(event, wall)}></div>
 					{/each}
@@ -1080,7 +1132,7 @@
 							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class:grass={tileType === 'grass'} class="painted-tile tile-draft" style={roomStyle(draft)}>{#if tileTypes.find((type) => type.id === tileType)?.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tileTypes.find((type) => type.id === tileType)?.imageData || '') as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
@@ -1099,7 +1151,9 @@
 			</div>
 
 			<aside>
-				{#if selectedDoor}
+				{#if designingTile && data.canManage}
+					<form onsubmit={createTileType}><small>새 바닥 무늬</small><h2>바닥 타일 직접 그리기</h2><div class="pixel-palette" aria-label="바닥 타일 색상">{#each tilePalette as color, index}<button type="button" class:active={tileColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (tileColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor tile-pixel-editor" aria-label="8×8 바닥 타일 편집기">{#each tilePixels as pixel, index}<button type="button" style={`--pixel-color:${tilePalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintTilePixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintTilePixel(index, event); }}></button>{/each}</div><label>타일 이름<input name="name" maxlength="40" placeholder="예: 어두운 돌길" required /></label><p>월드보다 튀지 않도록 차분하고 어두운 색으로 구성된 팔레트입니다.</p><button disabled={processing || !connected || !tilePixels.some((pixel) => pixel !== '0')}>타일 저장하고 칠하기</button><button class="secondary" type="button" onclick={cancelTileDesign}>취소</button></form>
+				{:else if selectedDoor}
 					<div class="guide"><small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small><h2>문</h2><p>{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.</p>{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button></div>
 				{:else if building && buildTool === 'door'}
 					<div class="guide"><small>새 문 설정</small><h2>문 만들기</h2><label>비밀번호 (선택)<input bind:value={doorPassword} type="password" maxlength="40" placeholder="비워 두면 누구나 열 수 있음" /></label><p>설정한 뒤 월드의 격자선을 1칸 또는 2칸 드래그하세요.</p></div>
@@ -1177,5 +1231,5 @@
 	.door-interaction-prompt{position:absolute;z-index:9;padding:5px 8px;border:1px solid #ffffff22;border-radius:7px;background:#0a0d12e6;color:#f4f2ea;font-size:10px;font-weight:800;white-space:nowrap;transform:translate(-50%,calc(-100% - 28px));box-shadow:0 6px 18px #0008;pointer-events:none}
 	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
-	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}
+	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;overflow:hidden;background:#19231c;pointer-events:none}.painted-tile>svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}.painted-tile.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}.tile-pixel-editor{background:#19231c}
 </style>

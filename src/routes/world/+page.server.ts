@@ -1,7 +1,7 @@
 import { getSessionUser } from '$lib/server/auth';
 import { requireGuildManager } from '$lib/server/basecamp';
 import { getDB } from '$lib/server/db';
-import { getWorldSettings, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldWalls } from '$lib/server/db/world';
+import { getWorldSettings, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -24,6 +24,7 @@ const emptyWorld = {
 	walls: [],
 	doors: [],
 	tiles: [],
+	tileTypes: [],
 	props: [],
 	settings: null,
 	canManage: false,
@@ -48,11 +49,12 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	} catch (error) {
 		console.error('Basecamp permission check failed:', error);
 	}
-	const [rooms, walls, doors, tiles, props, settings] = await Promise.all([
+	const [rooms, walls, doors, tiles, tileTypes, props, settings] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
 		listWorldDoors(guildId),
 		listWorldTiles(guildId),
+		listWorldTileTypes(guildId),
 		listWorldProps(guildId),
 		getWorldSettings(guildId)
 	]);
@@ -67,6 +69,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		walls,
 		doors,
 		tiles,
+		tileTypes,
 		props,
 		settings,
 		canManage,

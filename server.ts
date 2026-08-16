@@ -44,6 +44,7 @@ import {
 	copyBasecampProp,
 	createBasecampDoor,
 	createBasecampProp,
+	createBasecampTileType,
 	createBasecampWall,
 	createBasecampRoom,
 	deleteBasecampProp,
@@ -280,7 +281,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -355,6 +356,14 @@ async function attachBasecampSocket(
 					y: presence.y
 				});
 				messageText = '현재 위치를 새로운 시작 위치로 설정했습니다.';
+			} else if (type === 'basecamp-create-tile-type') {
+				state = await createBasecampTileType({
+					guildId,
+					userId,
+					name: String(message.name || ''),
+					imageData: String(message.imageData || '')
+				});
+				messageText = '새 바닥 타일을 저장했습니다.';
 			} else if (type === 'basecamp-paint-tiles') {
 				state = await paintBasecampTiles({
 					guildId,

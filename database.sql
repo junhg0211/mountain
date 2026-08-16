@@ -195,11 +195,22 @@ CREATE TABLE IF NOT EXISTS world_doors (
     CHECK (length BETWEEN 1 AND 2)
 );
 
+CREATE TABLE IF NOT EXISTS world_tile_types (
+    id CHAR(36) PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    name VARCHAR(40) NOT NULL,
+    image_data VARCHAR(64) NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX world_tile_types_guild_idx (guild_id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS world_tiles (
     guild_id VARCHAR(255) NOT NULL,
     x INT NOT NULL,
     y INT NOT NULL,
-    tile_type VARCHAR(16) NOT NULL,
+    tile_type VARCHAR(36) NOT NULL,
     updated_by VARCHAR(255) NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (guild_id, x, y),

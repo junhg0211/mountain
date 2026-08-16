@@ -187,11 +187,21 @@ const TABLES = [
 		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
 		CHECK (length BETWEEN 1 AND 2)
 	)`,
+	`CREATE TABLE IF NOT EXISTS world_tile_types (
+		id CHAR(36) PRIMARY KEY,
+		guild_id VARCHAR(255) NOT NULL,
+		name VARCHAR(40) NOT NULL,
+		image_data VARCHAR(64) NOT NULL,
+		created_by VARCHAR(255) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		INDEX world_tile_types_guild_idx (guild_id),
+		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+	)`,
 	`CREATE TABLE IF NOT EXISTS world_tiles (
 		guild_id VARCHAR(255) NOT NULL,
 		x INT NOT NULL,
 		y INT NOT NULL,
-		tile_type VARCHAR(16) NOT NULL,
+		tile_type VARCHAR(36) NOT NULL,
 		updated_by VARCHAR(255) NOT NULL,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 		PRIMARY KEY (guild_id, x, y),
@@ -435,6 +445,7 @@ const REPAIRS = [
 	`ALTER TABLE world_props ADD COLUMN IF NOT EXISTS width INT NOT NULL DEFAULT 1`,
 	`ALTER TABLE world_props ADD COLUMN IF NOT EXISTS height INT NOT NULL DEFAULT 1`,
 	`ALTER TABLE world_doors ADD COLUMN IF NOT EXISTS length INT NOT NULL DEFAULT 1`,
+	`ALTER TABLE world_tiles MODIFY COLUMN tile_type VARCHAR(36) NOT NULL`,
 	`ALTER TABLE world_walls ADD COLUMN IF NOT EXISTS orientation VARCHAR(10) NOT NULL DEFAULT 'horizontal'`,
 	`UPDATE world_walls SET orientation='vertical' WHERE height > width`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,

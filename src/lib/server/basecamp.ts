@@ -6,17 +6,20 @@ import {
 	createWorldWall,
 	createWorldDoor,
 	createWorldProp,
+	createWorldTileType,
 	deleteWorldDoor,
 	deleteWorldProp,
 	deleteWorldWall,
 	failWorldRoom,
 	getWorldProp,
 	getWorldDoor,
+	getWorldTileType,
 	getWorldSettings,
 	listWorldProps,
 	listWorldDoors,
 	listWorldRooms,
 	listWorldTiles,
+	listWorldTileTypes,
 	listWorldWalls,
 	moveWorldProp,
 	paintWorldTiles,
@@ -66,15 +69,38 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 }
 
 export async function getBasecampState(guildId: string) {
-	const [rooms, walls, doors, tiles, props, settings] = await Promise.all([
+	const [rooms, walls, doors, tiles, tileTypes, props, settings] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
 		listWorldDoors(guildId),
 		listWorldTiles(guildId),
+		listWorldTileTypes(guildId),
 		listWorldProps(guildId),
 		getWorldSettings(guildId)
 	]);
-	return { rooms, walls, doors, tiles, props, settings };
+	return { rooms, walls, doors, tiles, tileTypes, props, settings };
+}
+
+export async function createBasecampTileType(input: {
+	guildId: string;
+	userId: string;
+	name: string;
+	imageData: string;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	const name = input.name.trim();
+	const imageData = input.imageData.trim();
+	if (!name || name.length > 40) throw new BasecampError('바닥 타일 이름은 1~40자로 입력해 주세요.');
+	if (!/^[0-8]{64}$/.test(imageData) || !/[1-8]/.test(imageData))
+		throw new BasecampError('8×8 편집기에 바닥 무늬를 그려 주세요.');
+	await createWorldTileType({
+		id: crypto.randomUUID(),
+		guildId: input.guildId,
+		name,
+		imageData,
+		createdBy: input.userId
+	});
+	return getBasecampState(input.guildId);
 }
 
 export async function paintBasecampTiles(input: {
@@ -84,8 +110,8 @@ export async function paintBasecampTiles(input: {
 	cells: Array<{ x: number; y: number }>;
 }) {
 	await requireGuildManager(input.guildId, input.userId);
-	if (!['grass', 'stone', 'sand', 'water'].includes(input.tileType))
-		throw new BasecampError('지원하는 바닥 타일을 선택해 주세요.');
+	if (input.tileType !== 'grass' && !(await getWorldTileType(input.guildId, input.tileType)))
+		throw new BasecampError('이 서버에서 만든 바닥 타일을 선택해 주세요.');
 	if (!Array.isArray(input.cells) || input.cells.length < 1 || input.cells.length > 2_000 ||
 		!input.cells.every((cell) => Number.isInteger(cell.x) && Number.isInteger(cell.y)))
 		throw new BasecampError('한 번에 1~2,000칸을 칠해 주세요.');
@@ -93,7 +119,7 @@ export async function paintBasecampTiles(input: {
 	await paintWorldTiles({
 		guildId: input.guildId,
 		userId: input.userId,
-		tileType: input.tileType as 'grass' | 'stone' | 'sand' | 'water',
+		tileType: input.tileType,
 		cells
 	});
 	return getBasecampState(input.guildId);

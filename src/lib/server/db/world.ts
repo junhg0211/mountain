@@ -33,7 +33,14 @@ export interface WorldDoor {
 export interface WorldTile {
 	x: number;
 	y: number;
-	tileType: 'stone' | 'sand' | 'water';
+	tileType: string;
+	imageData: string | null;
+}
+
+export interface WorldTileType {
+	id: string;
+	name: string;
+	imageData: string;
 }
 
 export interface WorldProp {
@@ -51,19 +58,58 @@ export interface WorldProp {
 export async function listWorldTiles(guildId: string): Promise<WorldTile[]> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT x, y, tile_type FROM world_tiles WHERE guild_id=${guildId}
+		SELECT t.x, t.y, t.tile_type, d.image_data
+		FROM world_tiles t
+		LEFT JOIN world_tile_types d ON d.guild_id=t.guild_id AND d.id=t.tile_type
+		WHERE t.guild_id=${guildId}
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
 		x: Number(row.x),
 		y: Number(row.y),
-		tileType: String(row.tile_type) as WorldTile['tileType']
+		tileType: String(row.tile_type),
+		imageData: row.image_data ? String(row.image_data) : null
 	}));
+}
+
+export async function listWorldTileTypes(guildId: string): Promise<WorldTileType[]> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id, name, image_data FROM world_tile_types
+		WHERE guild_id=${guildId} ORDER BY created_at
+	`;
+	return rows.map((row: Record<string, unknown>) => ({
+		id: String(row.id),
+		name: String(row.name),
+		imageData: String(row.image_data)
+	}));
+}
+
+export async function createWorldTileType(input: {
+	id: string;
+	guildId: string;
+	name: string;
+	imageData: string;
+	createdBy: string;
+}) {
+	const db = await getDB();
+	await db`
+		INSERT INTO world_tile_types (id, guild_id, name, image_data, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.imageData}, ${input.createdBy})
+	`;
+}
+
+export async function getWorldTileType(guildId: string, id: string) {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id FROM world_tile_types WHERE guild_id=${guildId} AND id=${id} LIMIT 1
+	`;
+	return rows.length ? { id: String(rows[0].id) } : null;
 }
 
 export async function paintWorldTiles(input: {
 	guildId: string;
 	userId: string;
-	tileType: 'grass' | WorldTile['tileType'];
+	tileType: string;
 	cells: Array<{ x: number; y: number }>;
 }) {
 	const db = await getDB();
