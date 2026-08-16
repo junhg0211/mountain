@@ -81,6 +81,8 @@ const basecampVoiceTargets = new Map<WebSocket, string | null>();
 const basecampVoiceMoveTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>();
 const basecampVoiceMoveAttempts = new Map<WebSocket, number>();
 const basecampVoiceMoveQueues = new Map<WebSocket, Promise<void>>();
+const basecampVoiceMoveRetryTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>();
+const basecampVoiceMoveRetryCounts = new Map<WebSocket, number>();
 const basecampDoorCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const basecampDoorSides = new Map<WebSocket, Map<string, number>>();
 
@@ -229,6 +231,7 @@ async function attachBasecampSocket(
 		clearBasecampVoiceMoveTimer(websocket);
 		basecampVoiceMoveAttempts.delete(websocket);
 		basecampVoiceMoveQueues.delete(websocket);
+		clearBasecampVoiceMoveRetry(websocket);
 		basecampDoorSides.delete(websocket);
 		if (!clients.size) basecampWorldStates.delete(guildId);
 		if (roleId) scheduleBasecampRoleRemoval(guildId, userId, roleId);
@@ -288,7 +291,10 @@ async function attachBasecampSocket(
 			if (type === 'basecamp-auto-move') {
 				const enabled = message.enabled === true;
 				basecampAutoMoves.set(websocket, enabled);
-				if (!enabled) clearBasecampVoiceMoveTimer(websocket);
+				if (!enabled) {
+					clearBasecampVoiceMoveTimer(websocket);
+					clearBasecampVoiceMoveRetry(websocket);
+				}
 				const state = basecampWorldStates.get(guildId);
 				if (enabled && state) {
 					const target = getBasecampVoiceTarget(state, presence);
@@ -680,9 +686,11 @@ function updateBasecampVoiceTarget(
 	basecampVoiceTargets.set(websocket, target);
 	if (!basecampAutoMoves.get(websocket) || !target) {
 		clearBasecampVoiceMoveTimer(websocket);
+		clearBasecampVoiceMoveRetry(websocket);
 		return;
 	}
 	if (changed) {
+		clearBasecampVoiceMoveRetry(websocket);
 		scheduleBasecampVoiceMove(websocket, guildId, presence.userId, target);
 		return;
 	}
@@ -718,6 +726,38 @@ function clearBasecampVoiceMoveTimer(websocket: WebSocket) {
 	basecampVoiceMoveTimers.delete(websocket);
 }
 
+function clearBasecampVoiceMoveRetry(websocket: WebSocket) {
+	const timer = basecampVoiceMoveRetryTimers.get(websocket);
+	if (timer) clearTimeout(timer);
+	basecampVoiceMoveRetryTimers.delete(websocket);
+	basecampVoiceMoveRetryCounts.delete(websocket);
+}
+
+function scheduleBasecampVoiceMoveRetry(
+	websocket: WebSocket,
+	guildId: string,
+	userId: string,
+	channelId: string
+) {
+	if (
+		websocket.readyState !== WebSocket.OPEN ||
+		!basecampAutoMoves.get(websocket) ||
+		basecampVoiceTargets.get(websocket) !== channelId ||
+		basecampVoiceMoveRetryTimers.has(websocket)
+	) return;
+	const retryCount = basecampVoiceMoveRetryCounts.get(websocket) || 0;
+	if (retryCount >= 4) return;
+	basecampVoiceMoveRetryCounts.set(websocket, retryCount + 1);
+	basecampVoiceMoveRetryTimers.set(websocket, setTimeout(() => {
+		basecampVoiceMoveRetryTimers.delete(websocket);
+		if (
+			websocket.readyState === WebSocket.OPEN &&
+			basecampAutoMoves.get(websocket) &&
+			basecampVoiceTargets.get(websocket) === channelId
+		) queueBasecampVoiceMove(websocket, guildId, userId, channelId);
+	}, Math.min(4_000, 500 * 2 ** retryCount)));
+}
+
 function queueBasecampVoiceMove(
 	websocket: WebSocket,
 	guildId: string,
@@ -743,10 +783,15 @@ function queueBasecampVoiceMove(
 						message: '먼저 월드 광장 음성 채널에 참가해 주세요.'
 					})
 				);
+				scheduleBasecampVoiceMoveRetry(websocket, guildId, userId, channelId);
 				return;
 			}
-			if (member.voice.channelId === channelId) return;
+			if (member.voice.channelId === channelId) {
+				clearBasecampVoiceMoveRetry(websocket);
+				return;
+			}
 			await member.voice.setChannel(channelId, 'Basecamp room transition');
+			clearBasecampVoiceMoveRetry(websocket);
 			if (websocket.readyState === WebSocket.OPEN)
 				websocket.send(
 					JSON.stringify({
@@ -766,6 +811,7 @@ function queueBasecampVoiceMove(
 						message: '음성 채널을 이동하지 못했습니다. 봇의 멤버 이동 권한을 확인해 주세요.'
 					})
 				);
+			scheduleBasecampVoiceMoveRetry(websocket, guildId, userId, channelId);
 		});
 	basecampVoiceMoveQueues.set(websocket, next);
 }
