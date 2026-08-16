@@ -1,6 +1,6 @@
 import { getSessionUser } from '$lib/server/auth';
-import { requireGuildManager } from '$lib/server/basecamp';
 import { getDB } from '$lib/server/db';
+import { canManageGuild } from '$lib/server/db/user-guilds';
 import { getWorldSettings, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
 import { redirect } from '@sveltejs/kit';
@@ -9,12 +9,13 @@ import type { PageServerLoad } from './$types';
 async function userGuilds(userId: string) {
 	const db = await getDB();
 	const rows = await db`
-		SELECT guild_id, guild_name FROM user_guilds
+		SELECT guild_id, guild_name, permissions FROM user_guilds
 		WHERE user_id=${userId} ORDER BY guild_name
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
 		id: String(row.guild_id),
-		name: String(row.guild_name)
+		name: String(row.guild_name),
+		permissions: String(row.permissions)
 	}));
 }
 
@@ -37,18 +38,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	if (!user) redirect(303, '/login');
 	const guilds = await userGuilds(user.id);
 	const requested = url.searchParams.get('guild');
-	const guildId = guilds.some((guild: { id: string }) => guild.id === requested)
-		? requested!
-		: guilds[0]?.id;
+	const selectedGuild = guilds.find((guild: { id: string }) => guild.id === requested) || guilds[0];
+	const guildId = selectedGuild?.id;
 	if (!guildId || !(await getGuildMember(guildId, user.id))) return { user, guilds, ...emptyWorld };
 
-	let canManage = false;
-	try {
-		await requireGuildManager(guildId, user.id);
-		canManage = true;
-	} catch (error) {
-		console.error('Basecamp permission check failed:', error);
-	}
+	const canManage = canManageGuild(selectedGuild.permissions);
 	const [rooms, walls, doors, tiles, tileTypes, props, settings] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
