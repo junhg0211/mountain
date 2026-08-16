@@ -322,6 +322,144 @@ export async function cutWorldWalls(input: Omit<WorldWall, 'id'> & { guildId: st
 	});
 }
 
+export async function copyWorldRegion(input: {
+	guildId: string;
+	userId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	targetX: number;
+	targetY: number;
+}) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const xEnd = input.x + input.width;
+		const yEnd = input.y + input.height;
+		const [tiles, props, doors, allWalls] = await Promise.all([
+			tx`SELECT x, y, tile_type FROM world_tiles WHERE guild_id=${input.guildId} AND x>=${input.x} AND x<${xEnd} AND y>=${input.y} AND y<${yEnd}`,
+			tx`SELECT name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text FROM world_props WHERE guild_id=${input.guildId} AND x>=${input.x} AND x+width<=${xEnd} AND y>=${input.y} AND y+height<=${yEnd}`,
+			tx`SELECT x, y, orientation, length, password_hash FROM world_doors WHERE guild_id=${input.guildId} FOR UPDATE`,
+			tx`SELECT x, y, width, height, orientation, created_by FROM world_walls WHERE guild_id=${input.guildId} FOR UPDATE`
+		]);
+		const offsetX = input.targetX - input.x;
+		const offsetY = input.targetY - input.y;
+		await tx`
+			DELETE FROM world_tiles WHERE guild_id=${input.guildId}
+				AND x>=${input.targetX} AND x<${input.targetX + input.width}
+				AND y>=${input.targetY} AND y<${input.targetY + input.height}
+		`;
+		for (const row of tiles as Array<Record<string, unknown>>)
+			await tx`
+				INSERT INTO world_tiles (guild_id, x, y, tile_type, updated_by)
+				VALUES (${input.guildId}, ${Number(row.x) + offsetX}, ${Number(row.y) + offsetY}, ${String(row.tile_type)}, ${input.userId})
+				ON DUPLICATE KEY UPDATE tile_type=VALUES(tile_type), updated_by=VALUES(updated_by)
+			`;
+		for (const row of props as Array<Record<string, unknown>>) {
+			const teleportX = row.teleport_x === null ? null : Number(row.teleport_x);
+			const teleportY = row.teleport_y === null ? null : Number(row.teleport_y);
+			const moveTeleport = teleportX !== null && teleportY !== null &&
+				teleportX >= input.x && teleportX < xEnd && teleportY >= input.y && teleportY < yEnd;
+			await tx`
+				INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height,
+					action_type, teleport_x, teleport_y, sign_text, created_by)
+				VALUES (${crypto.randomUUID()}, ${input.guildId}, ${String(row.name)}, ${String(row.emoji)},
+					${row.image_data === null ? null : String(row.image_data)}, ${Number(row.x) + offsetX},
+					${Number(row.y) + offsetY}, ${Number(row.width)}, ${Number(row.height)},
+					${row.action_type === null ? null : String(row.action_type)},
+					${moveTeleport ? teleportX! + offsetX : teleportX},
+					${moveTeleport ? teleportY! + offsetY : teleportY},
+					${row.sign_text === null ? null : String(row.sign_text)}, ${input.userId})
+			`;
+		}
+		const selectedDoors = (doors as Array<Record<string, unknown>>).filter((row) => {
+			const horizontal = String(row.orientation) === 'horizontal';
+			const x = Number(row.x);
+			const y = Number(row.y);
+			const length = Number(row.length);
+			return horizontal
+				? y >= input.y && y <= yEnd && x >= input.x && x + length <= xEnd
+				: x >= input.x && x <= xEnd && y >= input.y && y + length <= yEnd;
+		});
+		for (const row of selectedDoors)
+			await tx`
+				INSERT INTO world_doors (id, guild_id, x, y, orientation, length, password_hash, created_by)
+				VALUES (${crypto.randomUUID()}, ${input.guildId}, ${Number(row.x) + offsetX},
+					${Number(row.y) + offsetY}, ${String(row.orientation)}, ${Number(row.length)},
+					${row.password_hash === null ? null : String(row.password_hash)}, ${input.userId})
+			`;
+		const selectedWalls = (allWalls as Array<Record<string, unknown>>).filter((row) => {
+			const horizontal = String(row.orientation) === 'horizontal';
+			const x = Number(row.x);
+			const y = Number(row.y);
+			return horizontal
+				? y >= input.y && y <= yEnd && x >= input.x && x + Number(row.width) <= xEnd
+				: x >= input.x && x <= xEnd && y >= input.y && y + Number(row.height) <= yEnd;
+		});
+		if (selectedWalls.length > 0) {
+			type WallSegment = {
+				orientation: 'horizontal' | 'vertical';
+				fixed: number;
+				start: number;
+				end: number;
+				createdBy: string;
+			};
+			const segments: WallSegment[] = (allWalls as Array<Record<string, unknown>>).map((row) => {
+				const horizontal = String(row.orientation) === 'horizontal';
+				return {
+					orientation: horizontal ? 'horizontal' : 'vertical',
+					fixed: Number(horizontal ? row.y : row.x),
+					start: Number(horizontal ? row.x : row.y),
+					end: Number(horizontal ? row.x : row.y) + Number(horizontal ? row.width : row.height),
+					createdBy: String(row.created_by)
+				};
+			});
+			for (const row of selectedWalls) {
+				const horizontal = String(row.orientation) === 'horizontal';
+				const start = Number(horizontal ? row.x : row.y) + (horizontal ? offsetX : offsetY);
+				segments.push({
+					orientation: horizontal ? 'horizontal' : 'vertical',
+					fixed: Number(horizontal ? row.y : row.x) + (horizontal ? offsetY : offsetX),
+					start,
+					end: start + Number(horizontal ? row.width : row.height),
+					createdBy: input.userId
+				});
+			}
+			const groups = new Map<string, WallSegment[]>();
+			for (const segment of segments) {
+				const key = `${segment.orientation}:${segment.fixed}`;
+				groups.set(key, [...(groups.get(key) ?? []), segment]);
+			}
+			const merged: WallSegment[] = [];
+			for (const group of groups.values()) {
+				group.sort((left, right) => left.start - right.start || left.end - right.end);
+				for (const segment of group) {
+					const previous = merged.at(-1);
+					if (previous && previous.orientation === segment.orientation && previous.fixed === segment.fixed && segment.start <= previous.end)
+						previous.end = Math.max(previous.end, segment.end);
+					else merged.push({ ...segment });
+				}
+			}
+			await tx`DELETE FROM world_walls WHERE guild_id=${input.guildId}`;
+			for (const segment of merged) {
+				const horizontal = segment.orientation === 'horizontal';
+				await tx`
+					INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by)
+					VALUES (${crypto.randomUUID()}, ${input.guildId}, ${horizontal ? segment.start : segment.fixed},
+						${horizontal ? segment.fixed : segment.start}, ${horizontal ? segment.end - segment.start : 1},
+						${horizontal ? 1 : segment.end - segment.start}, ${segment.orientation}, ${segment.createdBy})
+				`;
+			}
+		}
+		return {
+			tiles: input.width * input.height,
+			props: props.length,
+			doors: selectedDoors.length,
+			walls: selectedWalls.length
+		};
+	});
+}
+
 export async function deleteWorldWall(guildId: string, id: string) {
 	const db = await getDB();
 	const result = await db`DELETE FROM world_walls WHERE guild_id=${guildId} AND id=${id}`;

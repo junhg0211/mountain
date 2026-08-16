@@ -42,6 +42,7 @@ import {
 	configureBasecamp,
 	configureBasecampSpawn,
 	closeBasecampDoor,
+	copyBasecampRegion,
 	copyBasecampProp,
 	createBasecampDoor,
 	createBasecampProp,
@@ -319,7 +320,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-copy-region', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -416,7 +417,21 @@ async function attachBasecampSocket(
 			processing = true;
 			let state: Awaited<ReturnType<typeof getBasecampState>>;
 			let messageText: string;
-			if (type === 'basecamp-configure') {
+			if (type === 'basecamp-copy-region') {
+				const result = await copyBasecampRegion({
+					guildId,
+					userId,
+					x: Number(message.x),
+					y: Number(message.y),
+					width: Number(message.width),
+					height: Number(message.height),
+					targetX: Number(message.targetX),
+					targetY: Number(message.targetY)
+				});
+				state = result.state;
+				const { tiles, props, doors, walls } = result.counts;
+				messageText = `영역을 붙여넣었습니다. 배경 ${tiles}칸 · 소품 ${props}개 · 문 ${doors}개 · 벽 ${walls}개`;
+			} else if (type === 'basecamp-configure') {
 				state = await configureBasecamp({
 					guildId,
 					userId,
