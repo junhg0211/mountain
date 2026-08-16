@@ -34,6 +34,7 @@
 	let roomCreationRequestId: string | null = null;
 	let roomEditRequestId: string | null = null;
 	let propRequestId: string | null = null;
+	let propMoveRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
 	let unlockingDoor = $state<(typeof data.doors)[number] | null>(null);
@@ -48,6 +49,11 @@
 		pointerId: number;
 		origin: { x: number; y: number };
 		initial: (typeof data.rooms)[number];
+	} | null = null;
+	let propMoveSession: {
+		pointerId: number;
+		origin: { x: number; y: number };
+		initial: (typeof data.props)[number];
 	} | null = null;
 	let movingToVoiceChannel = $state(false);
 	let autoMoveVoiceChannel = $state(true);
@@ -243,6 +249,8 @@
 					}
 					tiles = message.tiles as typeof tiles;
 					worldProps = message.props as typeof worldProps;
+					if (selectedProp && !propMoveSession)
+						selectedProp = worldProps.find((prop) => prop.id === selectedProp?.id) || null;
 					settings = message.settings as typeof settings;
 					return;
 				}
@@ -252,6 +260,7 @@
 					const isRoomCreation = message.requestId === roomCreationRequestId;
 					const isRoomEdit = message.requestId === roomEditRequestId;
 					const isPropRequest = message.requestId === propRequestId;
+					const isPropMove = message.requestId === propMoveRequestId;
 					const isDoorUnlock = message.requestId === unlockRequestId;
 					notice = {
 						success,
@@ -281,6 +290,7 @@
 							propPixels = Array(64).fill('0');
 						}
 					}
+					if (isPropMove) propMoveRequestId = null;
 					if (isDoorUnlock) {
 						unlockRequestId = null;
 						unlockError = success ? '' : String(message.error || '문을 열지 못했습니다.');
@@ -293,6 +303,8 @@
 				processing = false;
 				roomCreationRequestId = null;
 				roomEditRequestId = null;
+				propRequestId = null;
+				propMoveRequestId = null;
 				presenceId = null;
 				presences = [];
 				if (!stopped && version === connectionVersion)
@@ -573,6 +585,15 @@
 	}
 
 	function resizeRoom(event: PointerEvent) {
+		if (propMoveSession && (event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
+			const point = cell(event);
+			selectedProp = {
+				...propMoveSession.initial,
+				x: propMoveSession.initial.x + point.x - propMoveSession.origin.x,
+				y: propMoveSession.initial.y + point.y - propMoveSession.origin.y
+			};
+			return;
+		}
 		if (editSession && (event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
 			const point = cell(event);
 			const dx = point.x - editSession.origin.x;
@@ -592,6 +613,13 @@
 		if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 		editSession = null;
+		if (propMoveSession) {
+			const initial = propMoveSession.initial;
+			propMoveSession = null;
+			if (selectedProp && (selectedProp.x !== initial.x || selectedProp.y !== initial.y))
+				propMoveRequestId = send({ type: 'basecamp-move-prop', id: selectedProp.id, x: selectedProp.x, y: selectedProp.y });
+			return;
+		}
 		if (building && buildTool === 'wall' && draft) {
 			send({ type: 'basecamp-create-wall', ...draft });
 			cancelDraft();
@@ -623,6 +651,7 @@
 		cancelDraft();
 		selectedRoom = null;
 		editSession = null;
+		propMoveSession = null;
 	}
 
 	const draft = $derived.by(() => {
@@ -758,6 +787,9 @@
 		event.stopPropagation();
 		selectedProp = prop;
 		cancelDraft();
+		if (prop.createdBy !== data.user.id && !data.canManage) return;
+		worldViewport!.setPointerCapture(event.pointerId);
+		propMoveSession = { pointerId: event.pointerId, origin: cell(event), initial: { ...prop } };
 	}
 
 	function deleteWall(event: PointerEvent, wall: (typeof data.walls)[number]) {
@@ -1063,7 +1095,7 @@
 					{/if}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '빈 영역을 드래그해 만들거나 기존 소품을 드래그해 옮기세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>

@@ -18,6 +18,7 @@ import {
 	listWorldRooms,
 	listWorldTiles,
 	listWorldWalls,
+	moveWorldProp,
 	paintWorldTiles,
 	setWorldDoorOpen,
 	restoreWorldRoom,
@@ -164,6 +165,22 @@ export async function deleteBasecampProp(input: { guildId: string; userId: strin
 	if (!prop) throw new BasecampError('삭제할 소품을 찾을 수 없습니다.');
 	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
 	await deleteWorldProp(input.guildId, input.id);
+	return getBasecampState(input.guildId);
+}
+
+export async function moveBasecampProp(input: {
+	guildId: string;
+	userId: string;
+	id: string;
+	x: number;
+	y: number;
+}) {
+	if (!Number.isInteger(input.x) || !Number.isInteger(input.y))
+		throw new BasecampError('소품을 놓을 칸을 선택해 주세요.');
+	const prop = await getWorldProp(input.guildId, input.id);
+	if (!prop) throw new BasecampError('이동할 소품을 찾을 수 없습니다.');
+	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
+	await moveWorldProp(input.guildId, input.id, input.x, input.y);
 	return getBasecampState(input.guildId);
 }
 

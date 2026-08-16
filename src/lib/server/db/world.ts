@@ -135,6 +135,14 @@ export async function deleteWorldProp(guildId: string, id: string) {
 	if (Number(result.affectedRows) !== 1) throw new Error('PROP_NOT_FOUND');
 }
 
+export async function moveWorldProp(guildId: string, id: string, x: number, y: number) {
+	const db = await getDB();
+	const result = await db`
+		UPDATE world_props SET x=${x}, y=${y} WHERE guild_id=${guildId} AND id=${id}
+	`;
+	if (Number(result.affectedRows) !== 1) throw new Error('PROP_NOT_FOUND');
+}
+
 export async function listWorldWalls(guildId: string): Promise<WorldWall[]> {
 	const db = await getDB();
 	const rows = await db`
