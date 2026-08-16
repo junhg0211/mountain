@@ -40,6 +40,7 @@ import {
 	BasecampError,
 	configureBasecamp,
 	configureBasecampSpawn,
+	copyBasecampProp,
 	createBasecampProp,
 	createBasecampWall,
 	createBasecampRoom,
@@ -234,7 +235,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-copy-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
 					type
 				)
 			)
@@ -325,9 +326,20 @@ async function attachBasecampSocket(
 					name: String(message.name || ''),
 					imageData: String(message.imageData || ''),
 					x: Number(message.x),
-					y: Number(message.y)
+					y: Number(message.y),
+					width: Number(message.width),
+					height: Number(message.height)
 				});
 				messageText = '소품을 월드에 놓았습니다.';
+			} else if (type === 'basecamp-copy-prop') {
+				state = await copyBasecampProp({
+					guildId,
+					userId,
+					sourceId: String(message.sourceId || ''),
+					x: Number(message.x),
+					y: Number(message.y)
+				});
+				messageText = '소품을 복사해 놓았습니다.';
 			} else if (type === 'basecamp-delete-prop') {
 				state = await deleteBasecampProp({
 					guildId,

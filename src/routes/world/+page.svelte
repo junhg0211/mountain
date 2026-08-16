@@ -33,6 +33,7 @@
 	let roomEditRequestId: string | null = null;
 	let propRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
+	let copyingProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedRoom = $state<(typeof data.rooms)[number] | null>(null);
 	let roomDeletionOpen = $state(false);
 	let editSession: {
@@ -247,6 +248,7 @@
 						propRequestId = null;
 						if (success) {
 							selectedProp = null;
+							copyingProp = null;
 							cancelDraft();
 							building = false;
 							propPixels = Array(64).fill('0');
@@ -400,8 +402,22 @@
 			name: form.get('name'),
 			imageData: propPixels.join(''),
 			x: draft.x,
-			y: draft.y
+			y: draft.y,
+			width: draft.width,
+			height: draft.height
 		});
+	}
+
+	function beginCopyProp() {
+		if (!selectedProp) return;
+		copyingProp = selectedProp;
+		selectedProp = null;
+		cancelDraft();
+	}
+
+	function cancelCopyProp() {
+		copyingProp = null;
+		cancelDraft();
 	}
 
 	function paintPropPixel(index: number, event: PointerEvent) {
@@ -459,7 +475,18 @@
 	function beginRoom(event: PointerEvent) {
 		if (!building || buildTool === 'eraser' || event.button !== 0) return;
 		if (buildTool === 'prop') {
-			start = cell(event);
+			const point = cell(event);
+			if (copyingProp) {
+				propRequestId = send({
+					type: 'basecamp-copy-prop',
+					sourceId: copyingProp.id,
+					x: point.x,
+					y: point.y
+				});
+				return;
+			}
+			(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+			start = point;
 			end = start;
 			selectedProp = null;
 			return;
@@ -615,6 +642,7 @@
 		else { building = true; buildTool = tool; }
 		cancelEditing();
 		selectedProp = null;
+		copyingProp = null;
 	}
 
 	function selectProp(event: PointerEvent, prop: (typeof data.props)[number]) {
@@ -785,15 +813,15 @@
 		return `left:${tile.x * cameraLayout.cellSize}px;top:${tile.y * cameraLayout.cellSize}px;width:${cameraLayout.cellSize}px;height:${cameraLayout.cellSize}px`;
 	}
 
-	function propStyle(prop: { id: string; x: number; y: number }) {
+	function propStyle(prop: { id: string; x: number; y: number; width: number; height: number }) {
 		const stackIndex = worldProps
-			.filter((item) => item.x === prop.x && item.y === prop.y)
+			.filter((item) => item.x === prop.x && item.y === prop.y && item.width === prop.width && item.height === prop.height)
 			.findIndex((item) => item.id === prop.id);
 		const angle = stackIndex * 2.4;
-		const radius = Math.min(0.24, stackIndex * 0.07) * cameraLayout.cellSize;
-		const x = (prop.x + 0.5) * cameraLayout.cellSize + Math.cos(angle) * radius;
-		const y = (prop.y + 0.5) * cameraLayout.cellSize + Math.sin(angle) * radius;
-		return `left:${x}px;top:${y}px;--prop-size:${cameraLayout.cellSize * 0.78}px`;
+		const radius = Math.min(0.18, stackIndex * 0.05) * cameraLayout.cellSize;
+		const x = (prop.x + prop.width / 2) * cameraLayout.cellSize + Math.cos(angle) * radius;
+		const y = (prop.y + prop.height / 2) * cameraLayout.cellSize + Math.sin(angle) * radius;
+		return `left:${x}px;top:${y}px;width:${prop.width * cameraLayout.cellSize}px;height:${prop.height * cameraLayout.cellSize}px;--prop-size:${Math.min(prop.width, prop.height) * cameraLayout.cellSize}px`;
 	}
 
 	const spawnStyle = $derived(
@@ -894,7 +922,7 @@
 							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + 0.5) * cameraLayout.cellSize}px;top:${(draft.y + 0.5) * cameraLayout.cellSize}px`}>＋</div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
@@ -906,14 +934,16 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? '소품을 놓거나 선택할 칸을 누르세요.' : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
-				{#if selectedProp}
-					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y}</p>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
+				{#if copyingProp}
+					<div class="guide"><small>소품 복사</small><h2>{copyingProp.name}</h2><p>월드에서 복사본을 놓을 칸을 선택하세요. 크기 {copyingProp.width} × {copyingProp.height}가 유지됩니다.</p><button class="secondary" onclick={cancelCopyProp}>복사 취소</button></div>
+				{:else if selectedProp}
+					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y} · 크기 {selectedProp.width} × {selectedProp.height}</p><button disabled={processing || !connected} onclick={beginCopyProp}>복사해서 놓기</button>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
 				{:else if draft && buildTool === 'prop'}
-					<form onsubmit={createProp}><small>새 소품</small><h2>소품 직접 그리기</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" placeholder="예: 화분" required /></label><p>같은 칸에 다른 소품이 있어도 함께 놓을 수 있습니다.</p><button disabled={processing || !connected}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button></form>
+					<form onsubmit={createProp}><small>새 소품 · {draft.width} × {draft.height}칸</small><h2>소품 직접 그리기</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" placeholder="예: 화분" required /></label><p>최대 32×32칸이며 같은 영역에 다른 소품도 함께 놓을 수 있습니다.</p><button disabled={processing || !connected || draft.width > 32 || draft.height > 32}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button></form>
 				{:else if selectedRoom && data.canManage}
 					<form onsubmit={updateRoom}>
 						<small>선택한 공간</small><h2>방 편집하기</h2>

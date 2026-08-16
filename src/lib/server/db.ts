@@ -190,10 +190,13 @@ const TABLES = [
 		image_data VARCHAR(64),
 		x INT NOT NULL,
 		y INT NOT NULL,
+		width INT NOT NULL DEFAULT 1,
+		height INT NOT NULL DEFAULT 1,
 		created_by VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		INDEX world_props_guild_idx (guild_id),
-		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+		CHECK (width BETWEEN 1 AND 32 AND height BETWEEN 1 AND 32)
 	)`,
 	`CREATE TABLE IF NOT EXISTS monthly_burn_runs (
 		guild_id VARCHAR(255) NOT NULL,
@@ -414,6 +417,8 @@ const REPAIRS = [
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS world_spawn_x DOUBLE NOT NULL DEFAULT 20`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS world_spawn_y DOUBLE NOT NULL DEFAULT 15`,
 	`ALTER TABLE world_props ADD COLUMN IF NOT EXISTS image_data VARCHAR(64)`,
+	`ALTER TABLE world_props ADD COLUMN IF NOT EXISTS width INT NOT NULL DEFAULT 1`,
+	`ALTER TABLE world_props ADD COLUMN IF NOT EXISTS height INT NOT NULL DEFAULT 1`,
 	`ALTER TABLE world_walls ADD COLUMN IF NOT EXISTS orientation VARCHAR(10) NOT NULL DEFAULT 'horizontal'`,
 	`UPDATE world_walls SET orientation='vertical' WHERE height > width`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,

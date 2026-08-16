@@ -99,6 +99,8 @@ export async function createBasecampProp(input: {
 	imageData: string;
 	x: number;
 	y: number;
+	width: number;
+	height: number;
 }) {
 	if (!(await getGuildMember(input.guildId, input.userId)))
 		throw new BasecampError('현재 Discord 서버 구성원만 소품을 놓을 수 있습니다.');
@@ -109,12 +111,41 @@ export async function createBasecampProp(input: {
 		throw new BasecampError('8×8 편집기에 소품 이미지를 그려 주세요.');
 	if (!Number.isInteger(input.x) || !Number.isInteger(input.y))
 		throw new BasecampError('소품을 놓을 칸을 선택해 주세요.');
+	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
+		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
+		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
 	await createWorldProp({
 		id: crypto.randomUUID(),
 		guildId: input.guildId,
 		name,
 		emoji: '📦',
 		imageData,
+		x: input.x,
+		y: input.y,
+		width: input.width,
+		height: input.height,
+		createdBy: input.userId
+	});
+	return getBasecampState(input.guildId);
+}
+
+export async function copyBasecampProp(input: {
+	guildId: string;
+	userId: string;
+	sourceId: string;
+	x: number;
+	y: number;
+}) {
+	if (!(await getGuildMember(input.guildId, input.userId)))
+		throw new BasecampError('현재 Discord 서버 구성원만 소품을 놓을 수 있습니다.');
+	if (!Number.isInteger(input.x) || !Number.isInteger(input.y))
+		throw new BasecampError('복사한 소품을 놓을 칸을 선택해 주세요.');
+	const source = await getWorldProp(input.guildId, input.sourceId);
+	if (!source) throw new BasecampError('복사할 소품을 찾을 수 없습니다.');
+	await createWorldProp({
+		...source,
+		id: crypto.randomUUID(),
+		guildId: input.guildId,
 		x: input.x,
 		y: input.y,
 		createdBy: input.userId

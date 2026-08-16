@@ -33,6 +33,8 @@ export interface WorldProp {
 	imageData: string | null;
 	x: number;
 	y: number;
+	width: number;
+	height: number;
 	createdBy: string;
 }
 
@@ -73,7 +75,7 @@ export async function paintWorldTiles(input: {
 export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, image_data, x, y, created_by FROM world_props
+		SELECT id, name, emoji, image_data, x, y, width, height, created_by FROM world_props
 		WHERE guild_id=${guildId} ORDER BY created_at
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
@@ -83,6 +85,8 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 		imageData: row.image_data ? String(row.image_data) : null,
 		x: Number(row.x),
 		y: Number(row.y),
+		width: Number(row.width),
+		height: Number(row.height),
 		createdBy: String(row.created_by)
 	}));
 }
@@ -90,15 +94,15 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 export async function createWorldProp(input: WorldProp & { guildId: string }) {
 	const db = await getDB();
 	await db`
-		INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, created_by)
-		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.x}, ${input.y}, ${input.createdBy})
+		INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.x}, ${input.y}, ${input.width}, ${input.height}, ${input.createdBy})
 	`;
 }
 
 export async function getWorldProp(guildId: string, id: string): Promise<WorldProp | null> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, image_data, x, y, created_by FROM world_props
+		SELECT id, name, emoji, image_data, x, y, width, height, created_by FROM world_props
 		WHERE guild_id=${guildId} AND id=${id} LIMIT 1
 	`;
 	if (!rows.length) return null;
@@ -109,6 +113,8 @@ export async function getWorldProp(guildId: string, id: string): Promise<WorldPr
 		imageData: rows[0].image_data ? String(rows[0].image_data) : null,
 		x: Number(rows[0].x),
 		y: Number(rows[0].y),
+		width: Number(rows[0].width),
+		height: Number(rows[0].height),
 		createdBy: String(rows[0].created_by)
 	};
 }

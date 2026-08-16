@@ -198,10 +198,13 @@ CREATE TABLE IF NOT EXISTS world_props (
     image_data VARCHAR(64),
     x INT NOT NULL,
     y INT NOT NULL,
+    width INT NOT NULL DEFAULT 1,
+    height INT NOT NULL DEFAULT 1,
     created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX world_props_guild_idx (guild_id),
-    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+    CHECK (width BETWEEN 1 AND 32 AND height BETWEEN 1 AND 32)
 );
 
 CREATE TABLE IF NOT EXISTS monthly_burn_runs (
