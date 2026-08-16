@@ -99,7 +99,8 @@
 	const pressedKeys = new Set<string>();
 	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
 	const movementCodes: Record<string, string> = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' };
-	let notice = $state<{ success: boolean; message: string } | null>(null);
+	let notices = $state<Array<{ id: number; success: boolean; message: string }>>([]);
+	let nextNoticeId = 0;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 	let lastMessageAt = Date.now();
@@ -110,14 +111,14 @@
 	let viewportWidth = $state(0);
 	let viewportHeight = $state(0);
 
-	$effect(() => {
-		const currentNotice = notice;
-		if (!currentNotice) return;
-		const timer = window.setTimeout(() => {
-			if (notice === currentNotice) notice = null;
+	function showNotice(success: boolean, message: string) {
+		if (!message) return;
+		const id = ++nextNoticeId;
+		notices = [...notices.slice(-3), { id, success, message }];
+		window.setTimeout(() => {
+			notices = notices.filter((notice) => notice.id !== id);
 		}, 3_000);
-		return () => window.clearTimeout(timer);
-	});
+	}
 
 	onMount(() => {
 		const savedAutoMove = localStorage.getItem(`basecamp-auto-move:${data.guildId}`);
@@ -224,7 +225,6 @@
 			socket = next;
 			next.onopen = () => {
 				connected = true;
-				notice = null;
 				lastMessageAt = Date.now();
 				if (!heartbeatTimer)
 					heartbeatTimer = setInterval(() => {
@@ -247,17 +247,14 @@
 					return;
 				}
 				if (message.type === 'basecamp-voice-status') {
-					notice = { success: message.ok === true, message: String(message.message || '') };
+					showNotice(message.ok === true, String(message.message || ''));
 					return;
 				}
 				if (message.type === 'basecamp-voice-result') {
 					if (message.requestId !== voiceMoveRequestId) return;
 					voiceMoveRequestId = null;
 					movingToVoiceChannel = false;
-					notice = {
-						success: message.ok === true,
-						message: String(message.ok === true ? message.message || '' : message.error || '')
-					};
+					showNotice(message.ok === true, String(message.ok === true ? message.message || '' : message.error || ''));
 					return;
 				}
 				if (message.type === 'basecamp-presences') {
@@ -319,10 +316,7 @@
 					const isTileTypeRequest = message.requestId === tileTypeRequestId;
 					const isPropMove = message.requestId === propMoveRequestId;
 					const isDoorUnlock = message.requestId === unlockRequestId;
-					notice = {
-						success,
-						message: String(success ? message.message || '' : message.error || '')
-					};
+					showNotice(success, String(success ? message.message || '' : message.error || ''));
 					if (isRoomCreation) {
 						roomCreationRequestId = null;
 						if (success) {
@@ -410,10 +404,7 @@
 			next.onerror = () => next.close();
 		} catch (error) {
 			connected = false;
-			notice = {
-				success: false,
-				message: error instanceof Error ? error.message : 'Basecamp에 연결하지 못했습니다.'
-			};
+			showNotice(false, error instanceof Error ? error.message : 'Basecamp에 연결하지 못했습니다.');
 			if (!stopped && version === connectionVersion)
 				reconnectTimer = setTimeout(() => void connect(version), 1500);
 		}
@@ -529,11 +520,10 @@
 
 	function send(message: Record<string, unknown>) {
 		if (!socket || socket.readyState !== WebSocket.OPEN) {
-			notice = { success: false, message: 'Basecamp에 다시 연결하고 있습니다. 잠시만 기다려 주세요.' };
+			showNotice(false, 'Basecamp에 다시 연결하고 있습니다. 잠시만 기다려 주세요.');
 			return null;
 		}
 		processing = true;
-		notice = null;
 		const requestId = crypto.randomUUID();
 		socket.send(JSON.stringify({ ...message, requestId }));
 		return requestId;
@@ -623,7 +613,7 @@
 
 	function beginTeleportTargetSelection() {
 		selectingTeleportTarget = true;
-		notice = { success: true, message: '월드에서 이동할 목적지 칸을 선택해 주세요.' };
+		showNotice(true, '월드에서 이동할 목적지 칸을 선택해 주세요.');
 	}
 
 	function changePropAction(event: Event) {
@@ -751,7 +741,7 @@
 			const point = cell(event);
 			teleportTarget = { x: point.x + 0.5, y: point.y + 0.5 };
 			selectingTeleportTarget = false;
-			notice = { success: true, message: '텔레포트 목적지를 선택했습니다.' };
+			showNotice(true, '텔레포트 목적지를 선택했습니다.');
 			return;
 		}
 		if (!building || event.button !== 0) return;
@@ -846,7 +836,7 @@
 		}
 		if (building && buildTool === 'selection' && draft) {
 			if (draft.width > 100 || draft.height > 100) {
-				notice = { success: false, message: '복사할 영역은 최대 100×100칸까지 선택할 수 있습니다.' };
+				showNotice(false, '복사할 영역은 최대 100×100칸까지 선택할 수 있습니다.');
 				cancelDraft();
 				return;
 			}
@@ -859,7 +849,7 @@
 		} else if (building && buildTool === 'door' && draft) {
 			const length = draft.orientation === 'horizontal' ? draft.width : draft.height;
 			if (length === 1 || length === 2) send({ type: 'basecamp-create-door', x: draft.x, y: draft.y, orientation: draft.orientation, length, password: doorPassword });
-			else notice = { success: false, message: '문은 격자선 1칸 또는 2칸 길이로 그려 주세요.' };
+			else showNotice(false, '문은 격자선 1칸 또는 2칸 길이로 그려 주세요.');
 			cancelDraft();
 		} else if (building && buildTool === 'eraser' && draft) {
 			send({ type: 'basecamp-delete-wall', ...draft });
@@ -1262,11 +1252,10 @@
 	function moveToVoiceChannel() {
 		if (!voiceTarget || movingToVoiceChannel) return;
 		if (!socket || socket.readyState !== WebSocket.OPEN) {
-			notice = { success: false, message: 'Basecamp에 다시 연결한 뒤 시도해 주세요.' };
+			showNotice(false, 'Basecamp에 다시 연결한 뒤 시도해 주세요.');
 			return;
 		}
 		movingToVoiceChannel = true;
-		notice = null;
 		voiceMoveRequestId = crypto.randomUUID();
 		socket.send(JSON.stringify({ type: 'basecamp-move-voice', requestId: voiceMoveRequestId }));
 	}
@@ -1281,7 +1270,7 @@
 			socket.send(
 				JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel })
 			);
-		else notice = { success: false, message: 'Basecamp에 다시 연결한 뒤 설정해 주세요.' };
+		else showNotice(false, 'Basecamp에 다시 연결한 뒤 설정해 주세요.');
 	}
 
 	function switchGuild(event: MouseEvent, guildId: string) {
@@ -1361,7 +1350,11 @@
 		</section>
 
 		<div class="connection" class:connected><i></i>{connected ? '실시간 연결됨' : '자동 재연결 중'}</div>
-		{#if notice}<p class:success={notice.success} class="notice">{notice.message}</p>{/if}
+		<div class="notification-queue" aria-live="polite">
+			{#each notices as notice (notice.id)}
+				<p class:success={notice.success} class="notice">{notice.message}</p>
+			{/each}
+		</div>
 
 		{#if data.canManage && (!settings?.categoryId || !settings?.accessRoleId)}
 			<form class="setup" onsubmit={configure}>
@@ -1549,4 +1542,5 @@
 	.world-grid{z-index:2;display:block;overflow:visible;background-image:none}
 	.region-selection{position:absolute;z-index:8;display:grid;place-items:center;box-sizing:border-box;border:2px dashed #69c7df;background:#69c7df22;color:#d9f8ff;pointer-events:none}.region-selection.selected{border-style:solid;background:#69c7df16}.region-selection.pasting{border-color:#ffcf72;background:#ffcf7218;color:#fff0c3}.region-selection small{padding:4px 7px;border-radius:6px;background:#0a0d12d9;font-size:10px;font-weight:850;white-space:nowrap}
 	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
+	.notification-queue{position:fixed;z-index:30;bottom:52px;left:14px;display:flex;width:min(420px,calc(100vw - 28px));flex-direction:column;gap:8px;pointer-events:none}.notification-queue .notice{position:relative;inset:auto;width:auto;max-width:none;margin:0;padding:10px 13px;box-sizing:border-box;transform:none;box-shadow:0 10px 30px #0009;backdrop-filter:blur(12px);animation:notice-in .16s ease-out}.notification-queue .notice.success{background:#172619e8}.notification-queue .notice:not(.success){background:#2a1717e8}@keyframes notice-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@media(hover:none),(pointer:coarse){.notification-queue{bottom:calc(160px + env(safe-area-inset-bottom))}}
 </style>
