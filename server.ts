@@ -77,6 +77,7 @@ interface BasecampPresence {
 const basecampPresences = new Map<string, Map<WebSocket, BasecampPresence>>();
 const basecampSocketRoles = new Map<WebSocket, string | null>();
 const basecampRoleRemovalTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const basecampLobbyReturnTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const basecampWorldStates = new Map<string, Awaited<ReturnType<typeof getBasecampState>>>();
 const basecampAutoMoves = new Map<WebSocket, boolean>();
 const basecampVoiceTargets = new Map<WebSocket, string | null>();
@@ -215,6 +216,7 @@ async function attachBasecampSocket(
 	const presences = basecampPresences.get(guildId) || new Map<WebSocket, BasecampPresence>();
 	presences.set(websocket, presence);
 	basecampPresences.set(guildId, presences);
+	cancelBasecampLobbyReturn(guildId, userId);
 	basecampSocketRoles.set(websocket, initialState.settings.accessRoleId);
 	basecampAutoMoves.set(websocket, false);
 	basecampVoiceTargets.set(websocket, getBasecampVoiceTarget(initialState, presence));
@@ -257,6 +259,7 @@ async function attachBasecampSocket(
 	if (initialState.settings.accessRoleId)
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
+		const closingState = basecampWorldStates.get(guildId) || initialState;
 		if (pendingMoveTimer) clearTimeout(pendingMoveTimer);
 		pendingMoveTimer = null;
 		pendingMove = null;
@@ -275,6 +278,12 @@ async function attachBasecampSocket(
 		basecampDoorSides.delete(websocket);
 		if (!clients.size) basecampWorldStates.delete(guildId);
 		if (roleId) scheduleBasecampRoleRemoval(guildId, userId, roleId);
+		scheduleBasecampLobbyReturn(
+			guildId,
+			userId,
+			closingState.settings.lobbyChannelId,
+			closingState.rooms.flatMap((room) => room.voiceChannelId ? [room.voiceChannelId] : [])
+		);
 		broadcastBasecampPresences(guildId);
 	});
 	websocket.send(JSON.stringify({ type: 'basecamp-connected', presenceId: presence.id }));
@@ -534,6 +543,55 @@ async function attachBasecampSocket(
 
 function basecampRoleKey(guildId: string, userId: string, roleId: string) {
 	return `${guildId}:${userId}:${roleId}`;
+}
+
+function basecampMemberKey(guildId: string, userId: string) {
+	return `${guildId}:${userId}`;
+}
+
+function cancelBasecampLobbyReturn(guildId: string, userId: string) {
+	const key = basecampMemberKey(guildId, userId);
+	const timer = basecampLobbyReturnTimers.get(key);
+	if (timer) clearTimeout(timer);
+	basecampLobbyReturnTimers.delete(key);
+}
+
+function scheduleBasecampLobbyReturn(
+	guildId: string,
+	userId: string,
+	lobbyChannelId: string | null,
+	roomChannelIds: string[]
+) {
+	cancelBasecampLobbyReturn(guildId, userId);
+	if (!lobbyChannelId) return;
+	const key = basecampMemberKey(guildId, userId);
+	basecampLobbyReturnTimers.set(key, setTimeout(() => {
+		basecampLobbyReturnTimers.delete(key);
+		const stillConnected = [...(basecampPresences.get(guildId)?.values() || [])].some(
+			(presence) => presence.userId === userId
+		);
+		if (stillConnected) return;
+		void returnBasecampMemberToLobby(guildId, userId, lobbyChannelId, new Set(roomChannelIds));
+	}, 5_000));
+}
+
+async function returnBasecampMemberToLobby(
+	guildId: string,
+	userId: string,
+	lobbyChannelId: string,
+	roomChannelIds: Set<string>
+) {
+	try {
+		const client = getClient();
+		if (!client?.isReady()) throw new Error('Discord bot is not ready');
+		const guild = await client.guilds.fetch(guildId);
+		const member = await guild.members.fetch(userId);
+		if (!member.voice.channelId || member.voice.channelId === lobbyChannelId) return;
+		if (!roomChannelIds.has(member.voice.channelId)) return;
+		await member.voice.setChannel(lobbyChannelId, 'Basecamp activity closed');
+	} catch (error) {
+		console.error(`Basecamp lobby return failed for ${guildId}/${userId}:`, error);
+	}
 }
 
 async function grantBasecampRole(guildId: string, userId: string, roleId: string) {
