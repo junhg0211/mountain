@@ -403,6 +403,18 @@ async function attachBasecampSocket(
 				messageText = '문을 설치했습니다.';
 			} else if (type === 'basecamp-open-door') {
 				const id = String(message.id || '');
+				const door = basecampWorldStates.get(guildId)?.doors.find((item) => item.id === id);
+				if (!door) throw new BasecampError('열 문을 찾을 수 없습니다.');
+				const doorEndX = door.orientation === 'horizontal' ? door.x + door.length : door.x;
+				const doorEndY = door.orientation === 'vertical' ? door.y + door.length : door.y;
+				if (basecampPointSegmentDistanceSquared(
+					presence.x,
+					presence.y,
+					door.x,
+					door.y,
+					doorEndX,
+					doorEndY
+				) > 1.5 ** 2) throw new BasecampError('문 가까이에서 다시 시도해 주세요.');
 				state = await openBasecampDoor({
 					guildId,
 					userId,

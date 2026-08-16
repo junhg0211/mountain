@@ -103,8 +103,13 @@
 		});
 		if (worldViewport) resizeObserver.observe(worldViewport);
 		const keydown = (event: KeyboardEvent) => {
-			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement)
+			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement)
 				return;
+			if (event.code === 'Space') {
+				event.preventDefault();
+				if (!event.repeat) interactWithNearestDoor();
+				return;
+			}
 			if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
 				sprinting = true;
 				if (movementFrame === null && [...pressedKeys].some((pressed) => movementKeys.has(pressed))) moveAvatar();
@@ -458,6 +463,10 @@
 		selectedDoor = null;
 	}
 
+	function focusOnMount(node: HTMLInputElement) {
+		queueMicrotask(() => node.focus());
+	}
+
 	function unlockDoor(event: SubmitEvent) {
 		event.preventDefault();
 		if (!unlockingDoor) return;
@@ -719,6 +728,25 @@
 			cancelDraft();
 			return;
 		}
+		interactWithDoor(door);
+	}
+
+	function interactWithNearestDoor() {
+		if (building || unlockingDoor) return;
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (!me) return;
+		const nearest = doors
+			.map((door) => {
+				const endX = door.orientation === 'horizontal' ? door.x + door.length : door.x;
+				const endY = door.orientation === 'vertical' ? door.y + door.length : door.y;
+				return { door, distance: pointSegmentDistanceSquared(me.x, me.y, door.x, door.y, endX, endY) };
+			})
+			.filter(({ distance }) => distance <= 1.5 ** 2)
+			.sort((left, right) => left.distance - right.distance)[0]?.door;
+		if (nearest) interactWithDoor(nearest);
+	}
+
+	function interactWithDoor(door: (typeof data.doors)[number]) {
 		if (door.isOpen) return;
 		if (door.hasPassword) {
 			unlockingDoor = door;
@@ -1022,7 +1050,7 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
@@ -1068,7 +1096,7 @@
 		<form class="door-unlock" onsubmit={unlockDoor} onpointerdown={(event) => event.stopPropagation()}>
 			<small>잠긴 문</small>
 			<h2>비밀번호 입력</h2>
-			<input bind:value={unlockPassword} type="password" maxlength="40" placeholder="문 비밀번호" aria-label="문 비밀번호" required />
+			<input use:focusOnMount bind:value={unlockPassword} type="password" maxlength="40" placeholder="문 비밀번호" aria-label="문 비밀번호" required />
 			{#if unlockError}<p class="door-unlock-error">{unlockError}</p>{/if}
 			<div><button disabled={processing || !connected}>문 열기</button><button class="secondary" type="button" onclick={cancelDoorUnlock}>취소</button></div>
 		</form>
