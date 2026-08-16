@@ -1100,8 +1100,11 @@
 	const currentRoom = $derived.by(() => {
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
-		return rooms.find((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height) || null;
+		return rooms
+			.filter((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height)
+			.sort((left, right) => left.width * left.height - right.width * right.height)[0] || null;
 	});
+	const roomsByArea = $derived([...rooms].sort((left, right) => right.width * right.height - left.width * left.height));
 	const nearestDoor = $derived.by(() => {
 		if (building || unlockingDoor) return null;
 		const me = presences.find((presence) => presence.id === presenceId);
@@ -1157,19 +1160,30 @@
 			.filter(({ distance }) => distance <= 2 ** 2)
 			.sort((left, right) => left.distance - right.distance)[0]?.prop || null;
 	});
+	function roomsConflict(
+		left: { x: number; y: number; width: number; height: number },
+		right: { x: number; y: number; width: number; height: number }
+	) {
+		const overlaps = left.x < right.x + right.width && left.x + left.width > right.x &&
+			left.y < right.y + right.height && left.y + left.height > right.y;
+		const leftContainsRight = left.x < right.x && left.x + left.width > right.x + right.width &&
+			left.y < right.y && left.y + left.height > right.y + right.height;
+		const rightContainsLeft = right.x < left.x && right.x + right.width > left.x + left.width &&
+			right.y < left.y && right.y + right.height > left.y + left.height;
+		return overlaps && !leftContainsRight && !rightContainsLeft;
+	}
 	const selectedRoomInvalid = $derived.by(() =>
 		selectedRoom
 			? rooms.some(
 					(room) =>
 						room.id !== selectedRoom!.id &&
 						(room.status === 'active' || room.status === 'creating') &&
-						room.x < selectedRoom!.x + selectedRoom!.width &&
-						room.x + room.width > selectedRoom!.x &&
-						room.y < selectedRoom!.y + selectedRoom!.height &&
-						room.y + room.height > selectedRoom!.y
+						roomsConflict(room, selectedRoom!)
 				)
 			: false
 	);
+	const draftRoomInvalid = $derived(Boolean(draft && buildTool === 'room' &&
+		rooms.some((room) => (room.status === 'active' || room.status === 'creating') && roomsConflict(room, draft!))));
 	const selectedRegionContents = $derived.by(() => {
 		const region = copiedRegion;
 		if (!region) return { tiles: [], props: [], doors: [], walls: [] };
@@ -1467,7 +1481,7 @@
 					{#each doors as door}
 						<button class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} class:open={door.isOpen} class="door" style={doorStyle(door)} aria-label={`${door.isOpen ? '열린' : '닫힌'} 문${door.hasPassword ? ', 비밀번호 필요' : ''}`} onpointerdown={(event) => selectDoor(event, door)}></button>
 					{/each}
-					{#each rooms as room}
+					{#each roomsByArea as room}
 						<div
 							class:failed={room.status === 'failed'}
 							class:selected={selectedRoom?.id === room.id}
@@ -1483,7 +1497,7 @@
 							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && (buildTool === 'wall' || buildTool === 'eraser')}<div class:cut-wall={buildTool === 'eraser'} class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class:grass={tileType === 'grass'} class="painted-tile tile-draft" style={roomStyle(draft)}>{#if tileTypes.find((type) => type.id === tileType)?.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tileTypes.find((type) => type.id === tileType)?.imageData || '') as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft && buildTool === 'selection'}<div class="region-selection" style={roomStyle(draft)}><small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && (buildTool === 'wall' || buildTool === 'eraser')}<div class:cut-wall={buildTool === 'eraser'} class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class:grass={tileType === 'grass'} class="painted-tile tile-draft" style={roomStyle(draft)}>{#if tileTypes.find((type) => type.id === tileType)?.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tileTypes.find((type) => type.id === tileType)?.imageData || '') as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft && buildTool === 'selection'}<div class="region-selection" style={roomStyle(draft)}><small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2 || draftRoomInvalid} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#if copiedRegion}<div class:pasting={pastingRegion} class="region-selection selected" style={roomStyle(copiedRegion)}><small>{pastingRegion ? '붙여넣을 기준 칸을 선택하세요' : `${copiedRegion.width} × ${copiedRegion.height}`}</small></div>{/if}
 					{#if copiedRegion && pasteTarget && pastePreviewOffset}
 						<div class="paste-preview">
@@ -1550,7 +1564,7 @@
 						<label>방 이름<input name="name" maxlength="80" value={selectedRoom.name} required /></label>
 						<p>방을 드래그해 이동하고 오른쪽 아래 손잡이로 크기를 조절하세요.</p>
 						<p class="room-size">위치 {selectedRoom.x}, {selectedRoom.y} · 크기 {selectedRoom.width} × {selectedRoom.height}</p>
-						{#if selectedRoomInvalid}<p class="edit-error">다른 방과 겹치지 않게 배치해 주세요.</p>{/if}
+						{#if selectedRoomInvalid}<p class="edit-error">방을 완전히 안쪽에 넣거나 다른 방과 겹치지 않게 배치해 주세요.</p>{/if}
 						<button disabled={processing || !connected || selectedRoomInvalid}>변경 저장</button>
 						<button class="danger" type="button" disabled={processing || !connected} onclick={deleteRoom}>방과 채널 삭제</button>
 						<button class="secondary" type="button" onclick={() => { selectedRoom = null; editSession = null; }}>선택 해제</button>
@@ -1560,7 +1574,8 @@
 						<small>새로운 공간</small><h2>방 확정하기</h2>
 						<label>방 이름<input name="name" maxlength="80" placeholder="예: 라운지" required /></label>
 						<p>확정하면 <strong>{data.categories.find((item) => item.id === settings?.categoryId)?.name || '설정한 카테고리'}</strong>에 같은 이름의 음성 채널이 생성됩니다.</p>
-						<button disabled={processing || !connected || draft.width < 2 || draft.height < 2 || !settings?.categoryId}>방과 채널 만들기</button>
+						{#if draftRoomInvalid}<p class="edit-error">방을 완전히 안쪽에 넣거나 다른 방과 겹치지 않게 그려 주세요.</p>{/if}
+						<button disabled={processing || !connected || draft.width < 2 || draft.height < 2 || draftRoomInvalid || !settings?.categoryId}>방과 채널 만들기</button>
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
 				{:else}

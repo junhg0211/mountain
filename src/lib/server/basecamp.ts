@@ -560,7 +560,7 @@ export async function createBasecampRoom(input: {
 		await createWorldRoomDraft({ ...input, id, name, createdBy: input.userId });
 	} catch (error) {
 		if (error instanceof Error && error.message === 'ROOM_OVERLAP')
-			throw new BasecampError('다른 방과 겹치지 않게 그려 주세요.');
+			throw new BasecampError('방을 완전히 안쪽에 넣거나 다른 방과 겹치지 않게 그려 주세요.');
 		if (error instanceof Error && error.message === 'ROOM_LIMIT')
 			throw new BasecampError('한 월드에는 방을 최대 50개까지 만들 수 있습니다.');
 		throw error;
@@ -621,7 +621,7 @@ export async function updateBasecampRoom(input: {
 		previous = await updateWorldRoom({ ...input, name });
 	} catch (error) {
 		if (error instanceof Error && error.message === 'ROOM_OVERLAP')
-			throw new BasecampError('다른 방과 겹치지 않게 배치해 주세요.');
+			throw new BasecampError('방을 완전히 안쪽에 넣거나 다른 방과 겹치지 않게 배치해 주세요.');
 		if (error instanceof Error && error.message === 'ROOM_NOT_FOUND')
 			throw new BasecampError('수정할 방을 찾을 수 없습니다.');
 		throw error;

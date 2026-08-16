@@ -863,14 +863,15 @@ function getBasecampVoiceTarget(
 	state: Awaited<ReturnType<typeof getBasecampState>>,
 	presence: BasecampPresence
 ) {
-	const room = state.rooms.find(
-		(item) =>
+	const room = state.rooms
+		.filter((item) =>
 			item.status === 'active' &&
 			presence.x >= item.x &&
 			presence.x < item.x + item.width &&
 			presence.y >= item.y &&
 			presence.y < item.y + item.height
-	);
+		)
+		.sort((left, right) => left.width * left.height - right.width * right.height)[0];
 	return room?.voiceChannelId || state.settings.lobbyChannelId;
 }
 

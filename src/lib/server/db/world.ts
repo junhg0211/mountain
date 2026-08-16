@@ -745,6 +745,13 @@ export async function createWorldRoomDraft(input: {
 		WHERE guild_id=${input.guildId} AND status IN ('creating', 'active')
 			AND x < ${input.x + input.width} AND x + width > ${input.x}
 			AND y < ${input.y + input.height} AND y + height > ${input.y}
+			AND NOT (
+				(x < ${input.x} AND x + width > ${input.x + input.width}
+					AND y < ${input.y} AND y + height > ${input.y + input.height})
+				OR
+				(${input.x} < x AND ${input.x + input.width} > x + width
+					AND ${input.y} < y AND ${input.y + input.height} > y + height)
+			)
 		LIMIT 1
 	`;
 	if (conflicts.length) throw new Error('ROOM_OVERLAP');
@@ -800,6 +807,13 @@ export async function updateWorldRoom(input: {
 				AND status IN ('creating', 'active')
 				AND x < ${input.x + input.width} AND x + width > ${input.x}
 				AND y < ${input.y + input.height} AND y + height > ${input.y}
+				AND NOT (
+					(x < ${input.x} AND x + width > ${input.x + input.width}
+						AND y < ${input.y} AND y + height > ${input.y + input.height})
+					OR
+					(${input.x} < x AND ${input.x + input.width} > x + width
+						AND ${input.y} < y AND ${input.y + input.height} > y + height)
+				)
 			LIMIT 1
 		`;
 		if (conflicts.length) throw new Error('ROOM_OVERLAP');
