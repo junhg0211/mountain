@@ -36,6 +36,10 @@
 	let propRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
+	let unlockingDoor = $state<(typeof data.doors)[number] | null>(null);
+	let unlockPassword = $state('');
+	let unlockRequestId: string | null = null;
+	let unlockError = $state('');
 	let copyingProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedRoom = $state<(typeof data.rooms)[number] | null>(null);
 	let roomDeletionOpen = $state(false);
@@ -221,6 +225,12 @@
 					walls = message.walls as typeof walls;
 					doors = message.doors as typeof doors;
 					if (selectedDoor) selectedDoor = doors.find((door) => door.id === selectedDoor?.id) || null;
+					if (unlockingDoor && doors.find((door) => door.id === unlockingDoor?.id)?.isOpen) {
+						unlockingDoor = null;
+						unlockPassword = '';
+						unlockRequestId = null;
+						unlockError = '';
+					}
 					tiles = message.tiles as typeof tiles;
 					worldProps = message.props as typeof worldProps;
 					settings = message.settings as typeof settings;
@@ -232,6 +242,7 @@
 					const isRoomCreation = message.requestId === roomCreationRequestId;
 					const isRoomEdit = message.requestId === roomEditRequestId;
 					const isPropRequest = message.requestId === propRequestId;
+					const isDoorUnlock = message.requestId === unlockRequestId;
 					notice = {
 						success,
 						message: String(success ? message.message || '' : message.error || '')
@@ -259,6 +270,10 @@
 							building = false;
 							propPixels = Array(64).fill('0');
 						}
+					}
+					if (isDoorUnlock) {
+						unlockRequestId = null;
+						unlockError = success ? '' : String(message.error || '문을 열지 못했습니다.');
 					}
 				}
 			};
@@ -441,6 +456,20 @@
 		if (!selectedDoor) return;
 		send({ type: 'basecamp-delete-door', id: selectedDoor.id });
 		selectedDoor = null;
+	}
+
+	function unlockDoor(event: SubmitEvent) {
+		event.preventDefault();
+		if (!unlockingDoor) return;
+		unlockError = '';
+		unlockRequestId = send({ type: 'basecamp-open-door', id: unlockingDoor.id, password: unlockPassword });
+	}
+
+	function cancelDoorUnlock() {
+		unlockingDoor = null;
+		unlockPassword = '';
+		unlockRequestId = null;
+		unlockError = '';
 	}
 
 	function createRoom(event: SubmitEvent) {
@@ -691,9 +720,13 @@
 			return;
 		}
 		if (door.isOpen) return;
-		const password = door.hasPassword ? window.prompt('문 비밀번호를 입력해 주세요.') : '';
-		if (password === null) return;
-		send({ type: 'basecamp-open-door', id: door.id, password });
+		if (door.hasPassword) {
+			unlockingDoor = door;
+			unlockPassword = '';
+			unlockError = '';
+			return;
+		}
+		send({ type: 'basecamp-open-door', id: door.id, password: '' });
 	}
 
 	function selectProp(event: PointerEvent, prop: (typeof data.props)[number]) {
@@ -959,7 +992,7 @@
 						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)} role="button" tabindex={building && buildTool === 'eraser' ? 0 : -1} aria-label="벽 삭제" onpointerdown={(event) => deleteWall(event, wall)}></div>
 					{/each}
 					{#each doors as door}
-						<button class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} class:open={door.isOpen} class="door" style={doorStyle(door)} aria-label={`${door.isOpen ? '열린' : '닫힌'} 문${door.hasPassword ? ', 비밀번호 필요' : ''}`} onpointerdown={(event) => selectDoor(event, door)}>{door.isOpen ? '↗' : '▥'}</button>
+						<button class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} class:open={door.isOpen} class="door" style={doorStyle(door)} aria-label={`${door.isOpen ? '열린' : '닫힌'} 문${door.hasPassword ? ', 비밀번호 필요' : ''}`} onpointerdown={(event) => selectDoor(event, door)}></button>
 					{/each}
 					{#each rooms as room}
 						<div
@@ -977,7 +1010,7 @@
 							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}>문</div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
@@ -1030,6 +1063,18 @@
 	{/if}
 </main>
 
+{#if unlockingDoor}
+	<div class="door-unlock-backdrop" role="presentation" onpointerdown={cancelDoorUnlock}>
+		<form class="door-unlock" onsubmit={unlockDoor} onpointerdown={(event) => event.stopPropagation()}>
+			<small>잠긴 문</small>
+			<h2>비밀번호 입력</h2>
+			<input bind:value={unlockPassword} type="password" maxlength="40" placeholder="문 비밀번호" aria-label="문 비밀번호" required />
+			{#if unlockError}<p class="door-unlock-error">{unlockError}</p>{/if}
+			<div><button disabled={processing || !connected}>문 열기</button><button class="secondary" type="button" onclick={cancelDoorUnlock}>취소</button></div>
+		</form>
+	</div>
+{/if}
+
 <ConfirmDialog
 	open={roomDeletionOpen}
 	title={`${selectedRoom?.name || '선택한 방'}을 삭제할까요?`}
@@ -1054,6 +1099,8 @@
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 	.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
+	.door-unlock-backdrop{position:fixed;z-index:40;inset:0;display:grid;place-items:center;padding:20px;background:#050805aa;backdrop-filter:blur(6px)}.door-unlock{display:grid;width:min(320px,100%);box-sizing:border-box;gap:12px;padding:20px;border:1px solid #3d493f;border-radius:16px;background:#141916;box-shadow:0 20px 70px #000b}.door-unlock small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.door-unlock h2{margin:0}.door-unlock input{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:11px;font:inherit}.door-unlock>div{display:flex;gap:8px}.door-unlock button{flex:1;border:0;border-radius:10px;background:#d6ff66;color:#15200c;padding:10px;font:inherit;font-weight:850;cursor:pointer}.door-unlock button.secondary{background:#282f29;color:#b8c0b8}.door-unlock button:disabled{cursor:not-allowed;opacity:.4}
+	.door-unlock-error{margin:0;color:#ff9f9f;font-size:12px}
 	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
 	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}
