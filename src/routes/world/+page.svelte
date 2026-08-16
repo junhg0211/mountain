@@ -83,6 +83,7 @@
 	let renderedZoom = $state(1);
 	let cameraInitialized = false;
 	let lastMovementSentAt = 0;
+	let movementSequence = 0;
 	const pressedKeys = new Set<string>();
 	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
 	const movementCodes: Record<string, string> = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' };
@@ -154,9 +155,11 @@
 			pressedKeys.clear();
 			sprinting = false;
 		};
+		const pagehide = () => sendCurrentPosition();
 		window.addEventListener('keydown', keydown);
 		window.addEventListener('keyup', keyup);
 		window.addEventListener('blur', blur);
+		window.addEventListener('pagehide', pagehide);
 		return () => {
 			stopped = true;
 			connectionVersion += 1;
@@ -166,6 +169,7 @@
 			window.removeEventListener('keydown', keydown);
 			window.removeEventListener('keyup', keyup);
 			window.removeEventListener('blur', blur);
+			window.removeEventListener('pagehide', pagehide);
 			if (movementFrame !== null) cancelAnimationFrame(movementFrame);
 			if (cameraFrame !== null) cancelAnimationFrame(cameraFrame);
 			if (zoomFrame !== null) cancelAnimationFrame(zoomFrame);
@@ -240,6 +244,16 @@
 					presences = incoming.map((presence) =>
 						presence.id === presenceId && me ? { ...presence, x: me.x, y: me.y } : presence
 					);
+					return;
+				}
+				if (message.type === 'basecamp-position') {
+					const sequence = Number(message.sequence);
+					if (message.final === true && sequence === movementSequence) {
+						const x = Number(message.x);
+						const y = Number(message.y);
+						if (Number.isFinite(x) && Number.isFinite(y))
+							presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
+					}
 					return;
 				}
 				if (message.type === 'basecamp-state') {
@@ -387,9 +401,9 @@
 				velocityY = 0;
 			}
 			presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
-			if (Date.now() - lastMovementSentAt >= 50 && socket?.readyState === WebSocket.OPEN) {
+			if (Date.now() - lastMovementSentAt >= 50) {
 				lastMovementSentAt = Date.now();
-				socket.send(JSON.stringify({ type: 'basecamp-move', x, y }));
+				sendPosition(x, y, false);
 			}
 		}
 		if (horizontal || vertical || velocityX || velocityY)
@@ -408,8 +422,13 @@
 
 	function sendCurrentPosition() {
 		const me = presences.find((presence) => presence.id === presenceId);
-		if (me && socket?.readyState === WebSocket.OPEN)
-			socket.send(JSON.stringify({ type: 'basecamp-move', x: me.x, y: me.y, final: true }));
+		if (me) sendPosition(me.x, me.y, true);
+	}
+
+	function sendPosition(x: number, y: number, final: boolean) {
+		if (socket?.readyState !== WebSocket.OPEN) return;
+		movementSequence += 1;
+		socket.send(JSON.stringify({ type: 'basecamp-move', x, y, final, sequence: movementSequence }));
 	}
 
 	function revealHud(event: PointerEvent) {

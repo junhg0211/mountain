@@ -220,7 +220,7 @@ async function attachBasecampSocket(
 	basecampVoiceTargets.set(websocket, getBasecampVoiceTarget(initialState, presence));
 	basecampDoorSides.set(websocket, new Map());
 	let lastMoveAt = 0;
-	let pendingMove: { x: number; y: number } | null = null;
+	let pendingMove: { x: number; y: number; sequence: number } | null = null;
 	let pendingMoveTimer: ReturnType<typeof setTimeout> | null = null;
 	const applyBasecampMovement = (x: number, y: number) => {
 		const state = basecampWorldStates.get(guildId);
@@ -231,12 +231,13 @@ async function attachBasecampSocket(
 				basecampDoorBlocksMovement(presence.x, presence.y, x, presence.y, state.doors) ||
 				basecampDoorBlocksMovement(x, presence.y, x, y, state.doors)
 			)
-		) return;
+		) return false;
 		if (state) trackBasecampDoorPassages(websocket, guildId, presence.x, presence.y, x, y, state.doors);
 		presence.x = x;
 		presence.y = y;
 		broadcastBasecampPresences(guildId);
 		if (state) updateBasecampVoiceTarget(websocket, guildId, presence, state);
+		return true;
 	};
 	const flushPendingMove = () => {
 		pendingMoveTimer = null;
@@ -245,6 +246,7 @@ async function attachBasecampSocket(
 		pendingMove = null;
 		lastMoveAt = Date.now();
 		applyBasecampMovement(move.x, move.y);
+		websocket.send(JSON.stringify({ type: 'basecamp-position', x: presence.x, y: presence.y, sequence: move.sequence, final: false }));
 	};
 	if (initialState.settings.accessRoleId)
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
@@ -297,10 +299,11 @@ async function attachBasecampSocket(
 				const now = Date.now();
 				const x = Number(message.x);
 				const y = Number(message.y);
+				const sequence = Number(message.sequence);
 				if (!Number.isFinite(x) || !Number.isFinite(y))
 					throw new BasecampError('올바르지 않은 이동 좌표입니다.');
 				if (message.final !== true && now - lastMoveAt < 30) {
-					pendingMove = { x, y };
+					pendingMove = { x, y, sequence };
 					if (!pendingMoveTimer)
 						pendingMoveTimer = setTimeout(flushPendingMove, 30 - (now - lastMoveAt));
 					return;
@@ -310,6 +313,13 @@ async function attachBasecampSocket(
 				pendingMove = null;
 				lastMoveAt = now;
 				applyBasecampMovement(x, y);
+				websocket.send(JSON.stringify({
+					type: 'basecamp-position',
+					x: presence.x,
+					y: presence.y,
+					sequence,
+					final: message.final === true
+				}));
 				return;
 			}
 			if (type === 'basecamp-auto-move') {
