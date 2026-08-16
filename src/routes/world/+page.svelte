@@ -733,17 +733,7 @@
 
 	function interactWithNearestDoor() {
 		if (building || unlockingDoor) return;
-		const me = presences.find((presence) => presence.id === presenceId);
-		if (!me) return;
-		const nearest = doors
-			.map((door) => {
-				const endX = door.orientation === 'horizontal' ? door.x + door.length : door.x;
-				const endY = door.orientation === 'vertical' ? door.y + door.length : door.y;
-				return { door, distance: pointSegmentDistanceSquared(me.x, me.y, door.x, door.y, endX, endY) };
-			})
-			.filter(({ distance }) => distance <= 1.5 ** 2)
-			.sort((left, right) => left.distance - right.distance)[0]?.door;
-		if (nearest) interactWithDoor(nearest);
+		if (nearestDoor) interactWithDoor(nearestDoor);
 	}
 
 	function interactWithDoor(door: (typeof data.doors)[number]) {
@@ -773,6 +763,20 @@
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
 		return rooms.find((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height) || null;
+	});
+	const nearestDoor = $derived.by(() => {
+		if (building || unlockingDoor) return null;
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (!me) return null;
+		return doors
+			.filter((door) => !door.isOpen)
+			.map((door) => {
+				const endX = door.orientation === 'horizontal' ? door.x + door.length : door.x;
+				const endY = door.orientation === 'vertical' ? door.y + door.length : door.y;
+				return { door, distance: pointSegmentDistanceSquared(me.x, me.y, door.x, door.y, endX, endY) };
+			})
+			.filter(({ distance }) => distance <= 1.5 ** 2)
+			.sort((left, right) => left.distance - right.distance)[0]?.door || null;
 	});
 	const selectedRoomInvalid = $derived.by(() =>
 		selectedRoom
@@ -1048,6 +1052,9 @@
 					{#each worldProps as prop (prop.id)}
 						<button class:selected={selectedProp?.id === prop.id} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</button>
 					{/each}
+					{#if nearestDoor}
+						<div class="door-interaction-prompt" style={`left:${(presences.find((presence) => presence.id === presenceId)?.x ?? 0) * cameraLayout.cellSize}px;top:${(presences.find((presence) => presence.id === presenceId)?.y ?? 0) * cameraLayout.cellSize}px`}>Space · 문 열기</div>
+					{/if}
 					</div>
 				</div>
 				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
@@ -1129,6 +1136,7 @@
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
 	.door-unlock-backdrop{position:fixed;z-index:40;inset:0;display:grid;place-items:center;padding:20px;background:#050805aa;backdrop-filter:blur(6px)}.door-unlock{display:grid;width:min(320px,100%);box-sizing:border-box;gap:12px;padding:20px;border:1px solid #3d493f;border-radius:16px;background:#141916;box-shadow:0 20px 70px #000b}.door-unlock small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.door-unlock h2{margin:0}.door-unlock input{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:11px;font:inherit}.door-unlock>div{display:flex;gap:8px}.door-unlock button{flex:1;border:0;border-radius:10px;background:#d6ff66;color:#15200c;padding:10px;font:inherit;font-weight:850;cursor:pointer}.door-unlock button.secondary{background:#282f29;color:#b8c0b8}.door-unlock button:disabled{cursor:not-allowed;opacity:.4}
 	.door-unlock-error{margin:0;color:#ff9f9f;font-size:12px}
+	.door-interaction-prompt{position:absolute;z-index:9;padding:5px 8px;border:1px solid #ffffff22;border-radius:7px;background:#0a0d12e6;color:#f4f2ea;font-size:10px;font-weight:800;white-space:nowrap;transform:translate(-50%,calc(-100% - 28px));box-shadow:0 6px 18px #0008;pointer-events:none}
 	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
 	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}
