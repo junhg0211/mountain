@@ -217,9 +217,39 @@ async function attachBasecampSocket(
 	basecampAutoMoves.set(websocket, false);
 	basecampVoiceTargets.set(websocket, getBasecampVoiceTarget(initialState, presence));
 	basecampDoorSides.set(websocket, new Map());
+	let lastMoveAt = 0;
+	let pendingMove: { x: number; y: number } | null = null;
+	let pendingMoveTimer: ReturnType<typeof setTimeout> | null = null;
+	const applyBasecampMovement = (x: number, y: number) => {
+		const state = basecampWorldStates.get(guildId);
+		if (
+			state && (
+				basecampWallBlocksMovement(presence.x, presence.y, x, presence.y, state.walls) ||
+				basecampWallBlocksMovement(x, presence.y, x, y, state.walls) ||
+				basecampDoorBlocksMovement(presence.x, presence.y, x, presence.y, state.doors) ||
+				basecampDoorBlocksMovement(x, presence.y, x, y, state.doors)
+			)
+		) return;
+		if (state) trackBasecampDoorPassages(websocket, guildId, presence.x, presence.y, x, y, state.doors);
+		presence.x = x;
+		presence.y = y;
+		broadcastBasecampPresences(guildId);
+		if (state) updateBasecampVoiceTarget(websocket, guildId, presence, state);
+	};
+	const flushPendingMove = () => {
+		pendingMoveTimer = null;
+		if (!pendingMove || websocket.readyState !== WebSocket.OPEN) return;
+		const move = pendingMove;
+		pendingMove = null;
+		lastMoveAt = Date.now();
+		applyBasecampMovement(move.x, move.y);
+	};
 	if (initialState.settings.accessRoleId)
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
+		if (pendingMoveTimer) clearTimeout(pendingMoveTimer);
+		pendingMoveTimer = null;
+		pendingMove = null;
 		clients.delete(websocket);
 		if (!clients.size) basecampSockets.delete(guildId);
 		presences.delete(websocket);
@@ -242,7 +272,6 @@ async function attachBasecampSocket(
 	broadcastBasecampPresences(guildId);
 
 	let processing = false;
-	let lastMoveAt = 0;
 	websocket.on('message', async (raw) => {
 		let requestId = '';
 		try {
@@ -264,28 +293,21 @@ async function attachBasecampSocket(
 			}
 			if (type === 'basecamp-move') {
 				const now = Date.now();
-				if (now - lastMoveAt < 30) return;
-				lastMoveAt = now;
 				const x = Number(message.x);
 				const y = Number(message.y);
 				if (!Number.isFinite(x) || !Number.isFinite(y))
 					throw new BasecampError('올바르지 않은 이동 좌표입니다.');
-				const nextX = x;
-				const nextY = y;
-				const state = basecampWorldStates.get(guildId);
-				if (
-					state && (
-						basecampWallBlocksMovement(presence.x, presence.y, nextX, presence.y, state.walls) ||
-						basecampWallBlocksMovement(nextX, presence.y, nextX, nextY, state.walls) ||
-						basecampDoorBlocksMovement(presence.x, presence.y, nextX, presence.y, state.doors) ||
-						basecampDoorBlocksMovement(nextX, presence.y, nextX, nextY, state.doors)
-					)
-				) return;
-				if (state) trackBasecampDoorPassages(websocket, guildId, presence.x, presence.y, nextX, nextY, state.doors);
-				presence.x = nextX;
-				presence.y = nextY;
-				broadcastBasecampPresences(guildId);
-				if (state) updateBasecampVoiceTarget(websocket, guildId, presence, state);
+				if (message.final !== true && now - lastMoveAt < 30) {
+					pendingMove = { x, y };
+					if (!pendingMoveTimer)
+						pendingMoveTimer = setTimeout(flushPendingMove, 30 - (now - lastMoveAt));
+					return;
+				}
+				if (pendingMoveTimer) clearTimeout(pendingMoveTimer);
+				pendingMoveTimer = null;
+				pendingMove = null;
+				lastMoveAt = now;
+				applyBasecampMovement(x, y);
 				return;
 			}
 			if (type === 'basecamp-auto-move') {

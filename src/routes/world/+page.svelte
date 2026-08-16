@@ -352,7 +352,7 @@
 	function sendCurrentPosition() {
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (me && socket?.readyState === WebSocket.OPEN)
-			socket.send(JSON.stringify({ type: 'basecamp-move', x: me.x, y: me.y }));
+			socket.send(JSON.stringify({ type: 'basecamp-move', x: me.x, y: me.y, final: true }));
 	}
 
 	function revealHud(event: PointerEvent) {
