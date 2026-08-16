@@ -457,27 +457,42 @@
 		lastMovementFrameAt = timestamp;
 		let horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
 		let vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
-		while (automaticPath.length && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < (automaticPath.length === 1 ? 0.04 : 0.22))
+		while (automaticPath.length > 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.22)
 			automaticPath.shift();
-		let automaticSpeed: number | null = null;
+		if (automaticPath.length === 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.01 && Math.hypot(velocityX, velocityY) < 0.05) {
+			automaticPath = [];
+		}
 		if (!horizontal && !vertical && automaticPath.length) {
 			const waypoint = automaticPath[0];
 			const dx = waypoint.x - me.x;
 			const dy = waypoint.y - me.y;
 			const distance = Math.hypot(dx, dy);
-			horizontal = dx / distance;
-			vertical = dy / distance;
-			if (automaticPath.length === 1)
-				automaticSpeed = Math.min(maximumMovementSpeed, Math.sqrt(2 * movementFriction * distance));
+			if (distance > 0) {
+				horizontal = dx / distance;
+				vertical = dy / distance;
+			}
 		}
 		const inputLength = Math.hypot(horizontal, vertical) || 1;
 		const currentMaximumSpeed = maximumMovementSpeed * (sprinting ? sprintSpeedMultiplier : 1);
 		const currentAcceleration = movementAcceleration * (sprinting ? sprintSpeedMultiplier : 1);
-		const desiredSpeed = automaticSpeed ?? currentMaximumSpeed;
-		const targetVelocityX = horizontal / inputLength * desiredSpeed;
-		const targetVelocityY = vertical / inputLength * desiredSpeed;
-		velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? currentAcceleration : movementFriction) * deltaSeconds);
-		velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? currentAcceleration : movementFriction) * deltaSeconds);
+		const targetVelocityX = horizontal / inputLength * currentMaximumSpeed;
+		const targetVelocityY = vertical / inputLength * currentMaximumSpeed;
+		if (!pressedKeys.size && automaticPath.length === 1) {
+			const target = automaticPath[0];
+			const angularFrequency = 7;
+			let accelerationX = angularFrequency ** 2 * (target.x - me.x) - 2 * angularFrequency * velocityX;
+			let accelerationY = angularFrequency ** 2 * (target.y - me.y) - 2 * angularFrequency * velocityY;
+			const accelerationLength = Math.hypot(accelerationX, accelerationY);
+			if (accelerationLength > currentAcceleration) {
+				accelerationX = accelerationX / accelerationLength * currentAcceleration;
+				accelerationY = accelerationY / accelerationLength * currentAcceleration;
+			}
+			velocityX += accelerationX * deltaSeconds;
+			velocityY += accelerationY * deltaSeconds;
+		} else {
+			velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? currentAcceleration : movementFriction) * deltaSeconds);
+			velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? currentAcceleration : movementFriction) * deltaSeconds);
+		}
 		const speed = Math.hypot(velocityX, velocityY);
 		const absoluteMaximumSpeed = maximumMovementSpeed * sprintSpeedMultiplier;
 		if (speed > absoluteMaximumSpeed) {
@@ -1095,10 +1110,7 @@
 			cursor = previous.get(cursor) || startKey;
 		}
 		cells.reverse();
-		const startCenter = { x: start.x + 0.5, y: start.y + 0.5 };
-		const path = Math.hypot(startCenter.x - startPosition.x, startCenter.y - startPosition.y) >= 0.18
-			? [startCenter]
-			: [];
+		const path: Array<{ x: number; y: number }> = [];
 		const cellCenters = cells.map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 }));
 		let anchor = path.at(-1) || startPosition;
 		let index = 0;
