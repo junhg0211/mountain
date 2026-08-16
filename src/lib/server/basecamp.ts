@@ -4,17 +4,22 @@ import {
 	archiveWorldRoom,
 	createWorldRoomDraft,
 	createWorldWall,
+	createWorldDoor,
 	createWorldProp,
+	deleteWorldDoor,
 	deleteWorldProp,
 	deleteWorldWall,
 	failWorldRoom,
 	getWorldProp,
+	getWorldDoor,
 	getWorldSettings,
 	listWorldProps,
+	listWorldDoors,
 	listWorldRooms,
 	listWorldTiles,
 	listWorldWalls,
 	paintWorldTiles,
+	setWorldDoorOpen,
 	restoreWorldRoom,
 	setWorldSpawn,
 	setWorldSettings,
@@ -60,14 +65,15 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 }
 
 export async function getBasecampState(guildId: string) {
-	const [rooms, walls, tiles, props, settings] = await Promise.all([
+	const [rooms, walls, doors, tiles, props, settings] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
+		listWorldDoors(guildId),
 		listWorldTiles(guildId),
 		listWorldProps(guildId),
 		getWorldSettings(guildId)
 	]);
-	return { rooms, walls, tiles, props, settings };
+	return { rooms, walls, doors, tiles, props, settings };
 }
 
 export async function paintBasecampTiles(input: {
@@ -210,6 +216,62 @@ export async function deleteBasecampWall(input: { guildId: string; userId: strin
 			throw new BasecampError('삭제할 벽을 찾을 수 없습니다.');
 		throw error;
 	}
+	return getBasecampState(input.guildId);
+}
+
+export async function createBasecampDoor(input: {
+	guildId: string;
+	userId: string;
+	x: number;
+	y: number;
+	orientation: string;
+	length: number;
+	password: string;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	if (!Number.isInteger(input.x) || !Number.isInteger(input.y) ||
+		!['horizontal', 'vertical'].includes(input.orientation) ||
+		!Number.isInteger(input.length) || input.length < 1 || input.length > 2)
+		throw new BasecampError('격자선을 따라 1칸 또는 2칸 길이로 문을 그려 주세요.');
+	if (input.password.length > 40) throw new BasecampError('문 비밀번호는 40자 이내로 설정해 주세요.');
+	const passwordHash = input.password ? await Bun.password.hash(input.password) : null;
+	await createWorldDoor({
+		id: crypto.randomUUID(),
+		guildId: input.guildId,
+		x: input.x,
+		y: input.y,
+		orientation: input.orientation as 'horizontal' | 'vertical',
+		length: input.length,
+		passwordHash,
+		createdBy: input.userId
+	});
+	return getBasecampState(input.guildId);
+}
+
+export async function openBasecampDoor(input: {
+	guildId: string;
+	userId: string;
+	id: string;
+	password: string;
+}) {
+	if (!(await getGuildMember(input.guildId, input.userId)))
+		throw new BasecampError('현재 Discord 서버 구성원만 문을 열 수 있습니다.');
+	const door = await getWorldDoor(input.guildId, input.id);
+	if (!door) throw new BasecampError('열 문을 찾을 수 없습니다.');
+	if (door.passwordHash && !(await Bun.password.verify(input.password, door.passwordHash)))
+		throw new BasecampError('문 비밀번호가 맞지 않습니다.');
+	await setWorldDoorOpen(input.guildId, input.id, true);
+	return getBasecampState(input.guildId);
+}
+
+export async function closeBasecampDoor(guildId: string, id: string) {
+	await setWorldDoorOpen(guildId, id, false);
+	return getBasecampState(guildId);
+}
+
+export async function deleteBasecampDoor(input: { guildId: string; userId: string; id: string }) {
+	await requireGuildManager(input.guildId, input.userId);
+	await deleteWorldDoor(input.guildId, input.id);
 	return getBasecampState(input.guildId);
 }
 

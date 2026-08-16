@@ -20,6 +20,16 @@ export interface WorldWall {
 	orientation: 'horizontal' | 'vertical';
 }
 
+export interface WorldDoor {
+	id: string;
+	x: number;
+	y: number;
+	orientation: 'horizontal' | 'vertical';
+	length: number;
+	isOpen: boolean;
+	hasPassword: boolean;
+}
+
 export interface WorldTile {
 	x: number;
 	y: number;
@@ -154,6 +164,67 @@ export async function deleteWorldWall(guildId: string, id: string) {
 	const db = await getDB();
 	const result = await db`DELETE FROM world_walls WHERE guild_id=${guildId} AND id=${id}`;
 	if (Number(result.affectedRows) !== 1) throw new Error('WALL_NOT_FOUND');
+}
+
+export async function listWorldDoors(guildId: string): Promise<WorldDoor[]> {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id, x, y, orientation, length, is_open, password_hash FROM world_doors
+		WHERE guild_id=${guildId} ORDER BY created_at
+	`;
+	return rows.map((row: Record<string, unknown>) => ({
+		id: String(row.id),
+		x: Number(row.x),
+		y: Number(row.y),
+		orientation: String(row.orientation) as WorldDoor['orientation'],
+		length: Number(row.length),
+		isOpen: Boolean(row.is_open),
+		hasPassword: Boolean(row.password_hash)
+	}));
+}
+
+export async function createWorldDoor(input: {
+	id: string;
+	guildId: string;
+	x: number;
+	y: number;
+	orientation: WorldDoor['orientation'];
+	length: number;
+	passwordHash: string | null;
+	createdBy: string;
+}) {
+	const db = await getDB();
+	await db`
+		INSERT INTO world_doors (id, guild_id, x, y, orientation, length, password_hash, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.x}, ${input.y}, ${input.orientation}, ${input.length}, ${input.passwordHash}, ${input.createdBy})
+	`;
+}
+
+export async function getWorldDoor(guildId: string, id: string) {
+	const db = await getDB();
+	const rows = await db`
+		SELECT id, password_hash, is_open FROM world_doors
+		WHERE guild_id=${guildId} AND id=${id} LIMIT 1
+	`;
+	return rows[0] ? {
+		id: String(rows[0].id),
+		passwordHash: rows[0].password_hash ? String(rows[0].password_hash) : null,
+		isOpen: Boolean(rows[0].is_open)
+	} : null;
+}
+
+export async function setWorldDoorOpen(guildId: string, id: string, isOpen: boolean) {
+	const db = await getDB();
+	const result = await db`
+		UPDATE world_doors SET is_open=${isOpen} WHERE guild_id=${guildId} AND id=${id}
+	`;
+	if (Number(result.affectedRows) !== 1) throw new Error('DOOR_NOT_FOUND');
+}
+
+export async function deleteWorldDoor(guildId: string, id: string) {
+	const db = await getDB();
+	const result = await db`DELETE FROM world_doors WHERE guild_id=${guildId} AND id=${id}`;
+	if (Number(result.affectedRows) !== 1) throw new Error('DOOR_NOT_FOUND');
 }
 
 export async function getWorldSettings(guildId: string) {

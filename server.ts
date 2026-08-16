@@ -40,14 +40,18 @@ import {
 	BasecampError,
 	configureBasecamp,
 	configureBasecampSpawn,
+	closeBasecampDoor,
 	copyBasecampProp,
+	createBasecampDoor,
 	createBasecampProp,
 	createBasecampWall,
 	createBasecampRoom,
 	deleteBasecampProp,
+	deleteBasecampDoor,
 	deleteBasecampWall,
 	deleteBasecampRoom,
 	getBasecampState,
+	openBasecampDoor,
 	paintBasecampTiles,
 	updateBasecampRoom
 } from './src/lib/server/basecamp.ts';
@@ -77,6 +81,7 @@ const basecampVoiceTargets = new Map<WebSocket, string | null>();
 const basecampVoiceMoveTimers = new Map<WebSocket, ReturnType<typeof setTimeout>>();
 const basecampVoiceMoveAttempts = new Map<WebSocket, number>();
 const basecampVoiceMoveQueues = new Map<WebSocket, Promise<void>>();
+const basecampDoorCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
@@ -184,6 +189,10 @@ async function attachBasecampSocket(
 		return;
 	}
 	const initialState = await getBasecampState(guildId);
+	for (const door of initialState.doors) {
+		if (door.isOpen && !basecampDoorCloseTimers.has(basecampDoorTimerKey(guildId, door.id)))
+			scheduleBasecampDoorClose(guildId, door.id, 30_000);
+	}
 	const presence: BasecampPresence = {
 		id: crypto.randomUUID(),
 		userId,
@@ -235,7 +244,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-copy-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-copy-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -261,9 +270,17 @@ async function attachBasecampSocket(
 				if (
 					state && (
 						basecampWallBlocksMovement(presence.x, presence.y, nextX, presence.y, state.walls) ||
-						basecampWallBlocksMovement(nextX, presence.y, nextX, nextY, state.walls)
+						basecampWallBlocksMovement(nextX, presence.y, nextX, nextY, state.walls) ||
+						basecampDoorBlocksMovement(presence.x, presence.y, nextX, presence.y, state.doors) ||
+						basecampDoorBlocksMovement(nextX, presence.y, nextX, nextY, state.doors)
 					)
 				) return;
+				if (state) {
+					for (const door of state.doors) {
+						if (door.isOpen && basecampCrossesDoor(presence.x, presence.y, nextX, nextY, door))
+							scheduleBasecampDoorClose(guildId, door.id, 5_000);
+					}
+				}
 				presence.x = nextX;
 				presence.y = nextY;
 				broadcastBasecampPresences(guildId);
@@ -347,6 +364,32 @@ async function attachBasecampSocket(
 					id: String(message.id || '')
 				});
 				messageText = '소품을 치웠습니다.';
+			} else if (type === 'basecamp-create-door') {
+				state = await createBasecampDoor({
+					guildId,
+					userId,
+					x: Number(message.x),
+					y: Number(message.y),
+					orientation: String(message.orientation || ''),
+					length: Number(message.length),
+					password: String(message.password || '')
+				});
+				messageText = '문을 설치했습니다.';
+			} else if (type === 'basecamp-open-door') {
+				const id = String(message.id || '');
+				state = await openBasecampDoor({
+					guildId,
+					userId,
+					id,
+					password: String(message.password || '')
+				});
+				scheduleBasecampDoorClose(guildId, id, 30_000);
+				messageText = '문을 열었습니다. 30초 후 자동으로 닫힙니다.';
+			} else if (type === 'basecamp-delete-door') {
+				const id = String(message.id || '');
+				state = await deleteBasecampDoor({ guildId, userId, id });
+				clearBasecampDoorCloseTimer(guildId, id);
+				messageText = '문을 철거했습니다.';
 			} else if (type === 'basecamp-create-room') {
 				state = await createBasecampRoom({
 					guildId,
@@ -493,6 +536,28 @@ function broadcastBasecampState(
 	}
 }
 
+function basecampDoorTimerKey(guildId: string, id: string) {
+	return `${guildId}:${id}`;
+}
+
+function clearBasecampDoorCloseTimer(guildId: string, id: string) {
+	const key = basecampDoorTimerKey(guildId, id);
+	const timer = basecampDoorCloseTimers.get(key);
+	if (timer) clearTimeout(timer);
+	basecampDoorCloseTimers.delete(key);
+}
+
+function scheduleBasecampDoorClose(guildId: string, id: string, delay: number) {
+	clearBasecampDoorCloseTimer(guildId, id);
+	const key = basecampDoorTimerKey(guildId, id);
+	basecampDoorCloseTimers.set(key, setTimeout(() => {
+		basecampDoorCloseTimers.delete(key);
+		void closeBasecampDoor(guildId, id)
+			.then((state) => broadcastBasecampState(guildId, state))
+			.catch((error) => console.error(`Basecamp door close failed for ${key}:`, error));
+	}, delay));
+}
+
 function getBasecampVoiceTarget(
 	state: Awaited<ReturnType<typeof getBasecampState>>,
 	presence: BasecampPresence
@@ -524,6 +589,46 @@ function basecampWallBlocksMovement(
 		if (startDistance < radius * radius) return endDistance + 1e-9 < startDistance;
 		return basecampSegmentDistanceSquared(fromX, fromY, toX, toY, wall.x, wall.y, wallEndX, wallEndY) < radius * radius;
 	});
+}
+
+function basecampDoorSegment(door: { x: number; y: number; orientation: string; length: number }) {
+	return {
+		x: door.orientation === 'horizontal' ? door.x + door.length : door.x,
+		y: door.orientation === 'vertical' ? door.y + door.length : door.y
+	};
+}
+
+function basecampDoorBlocksMovement(
+	fromX: number,
+	fromY: number,
+	toX: number,
+	toY: number,
+	doors: Array<{ x: number; y: number; orientation: string; length: number; isOpen: boolean }>
+) {
+	return basecampWallBlocksMovement(
+		fromX,
+		fromY,
+		toX,
+		toY,
+		doors.filter((door) => !door.isOpen).map((door) => ({
+			x: door.x,
+			y: door.y,
+			width: door.orientation === 'horizontal' ? door.length : 0,
+			height: door.orientation === 'vertical' ? door.length : 0,
+			orientation: door.orientation
+		}))
+	);
+}
+
+function basecampCrossesDoor(
+	fromX: number,
+	fromY: number,
+	toX: number,
+	toY: number,
+	door: { x: number; y: number; orientation: string; length: number }
+) {
+	const end = basecampDoorSegment(door);
+	return basecampSegmentsIntersect(fromX, fromY, toX, toY, door.x, door.y, end.x, end.y);
 }
 
 function basecampPointSegmentDistanceSquared(px: number, py: number, ax: number, ay: number, bx: number, by: number) {

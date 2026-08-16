@@ -15,11 +15,13 @@
 	};
 	let rooms = $state<typeof data.rooms>([]);
 	let walls = $state<typeof data.walls>([]);
+	let doors = $state<typeof data.doors>([]);
 	let tiles = $state<typeof data.tiles>([]);
 	let worldProps = $state<typeof data.props>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
-	let buildTool = $state<'room' | 'wall' | 'eraser' | 'tile' | 'prop'>('room');
+	let buildTool = $state<'room' | 'wall' | 'door' | 'eraser' | 'tile' | 'prop'>('room');
+	let doorPassword = $state('');
 	let tileType = $state<'grass' | 'stone' | 'sand' | 'water'>('stone');
 	const propPalette = ['transparent', '#20252b', '#f4f2ea', '#d6ff66', '#ee796b', '#ffcf72', '#69c7df', '#9d75d6', '#6f9f55'];
 	let propPixels = $state<string[]>(Array(64).fill('0'));
@@ -33,6 +35,7 @@
 	let roomEditRequestId: string | null = null;
 	let propRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
+	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
 	let copyingProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedRoom = $state<(typeof data.rooms)[number] | null>(null);
 	let roomDeletionOpen = $state(false);
@@ -150,6 +153,7 @@
 		activeGuildId = guildId;
 		rooms = [...data.rooms];
 		walls = [...data.walls];
+		doors = [...data.doors];
 		tiles = [...data.tiles];
 		worldProps = [...data.props];
 		settings = data.settings;
@@ -215,6 +219,8 @@
 				if (message.type === 'basecamp-state') {
 					rooms = message.rooms as typeof rooms;
 					walls = message.walls as typeof walls;
+					doors = message.doors as typeof doors;
+					if (selectedDoor) selectedDoor = doors.find((door) => door.id === selectedDoor?.id) || null;
 					tiles = message.tiles as typeof tiles;
 					worldProps = message.props as typeof worldProps;
 					settings = message.settings as typeof settings;
@@ -431,6 +437,19 @@
 		propRequestId = send({ type: 'basecamp-delete-prop', id: selectedProp.id });
 	}
 
+	function openDoor(event: SubmitEvent) {
+		event.preventDefault();
+		if (!selectedDoor) return;
+		const form = new FormData(event.currentTarget as HTMLFormElement);
+		send({ type: 'basecamp-open-door', id: selectedDoor.id, password: form.get('password') });
+	}
+
+	function deleteDoor() {
+		if (!selectedDoor) return;
+		send({ type: 'basecamp-delete-door', id: selectedDoor.id });
+		selectedDoor = null;
+	}
+
 	function createRoom(event: SubmitEvent) {
 		event.preventDefault();
 		if (!draft) return;
@@ -492,7 +511,7 @@
 			return;
 		}
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-		start = buildTool === 'wall' ? wallPoint(event) : cell(event);
+		start = buildTool === 'wall' || buildTool === 'door' ? wallPoint(event) : cell(event);
 		end = start;
 	}
 
@@ -530,7 +549,7 @@
 		}
 		if (!building || !start || !(event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			return;
-		end = buildTool === 'wall' ? wallPoint(event) : cell(event);
+		end = buildTool === 'wall' || buildTool === 'door' ? wallPoint(event) : cell(event);
 	}
 
 	function finishRoom(event: PointerEvent) {
@@ -539,6 +558,11 @@
 		editSession = null;
 		if (building && buildTool === 'wall' && draft) {
 			send({ type: 'basecamp-create-wall', ...draft });
+			cancelDraft();
+		} else if (building && buildTool === 'door' && draft) {
+			const length = draft.orientation === 'horizontal' ? draft.width : draft.height;
+			if (length === 1 || length === 2) send({ type: 'basecamp-create-door', x: draft.x, y: draft.y, orientation: draft.orientation, length, password: doorPassword });
+			else notice = { success: false, message: '문은 격자선 1칸 또는 2칸 길이로 그려 주세요.' };
 			cancelDraft();
 		} else if (building && buildTool === 'tile' && draft) {
 			const cells = [];
@@ -569,7 +593,7 @@
 		if (!start || !end) return null;
 		const deltaX = Math.abs(start.x - end.x);
 		const deltaY = Math.abs(start.y - end.y);
-		if (buildTool === 'wall') {
+		if (buildTool === 'wall' || buildTool === 'door') {
 			if (deltaX === 0 && deltaY === 0) return null;
 			return deltaX >= deltaY
 				? { x: Math.min(start.x, end.x), y: start.y, width: deltaX, height: 1, orientation: 'horizontal' as const }
@@ -585,7 +609,14 @@
 
 	function wallBlocksMovement(fromX: number, fromY: number, toX: number, toY: number) {
 		const radius = 0.32;
-		return walls.some((wall) => {
+		const blockers = [...walls, ...doors.filter((door) => !door.isOpen).map((door) => ({
+			x: door.x,
+			y: door.y,
+			width: door.orientation === 'horizontal' ? door.length : 0,
+			height: door.orientation === 'vertical' ? door.length : 0,
+			orientation: door.orientation
+		}))];
+		return blockers.some((wall) => {
 			const wallEndX = wall.orientation === 'horizontal' ? wall.x + wall.width : wall.x;
 			const wallEndY = wall.orientation === 'vertical' ? wall.y + wall.height : wall.y;
 			const startDistance = pointSegmentDistanceSquared(fromX, fromY, wall.x, wall.y, wallEndX, wallEndY);
@@ -637,12 +668,30 @@
 			: `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${thickness}px;height:${wall.height * cameraLayout.cellSize}px`;
 	}
 
-	function setBuildTool(tool: 'room' | 'wall' | 'eraser' | 'tile' | 'prop') {
+	function doorStyle(door: { x: number; y: number; length: number; orientation: 'horizontal' | 'vertical' }) {
+		return wallStyle({
+			x: door.x,
+			y: door.y,
+			width: door.orientation === 'horizontal' ? door.length : 1,
+			height: door.orientation === 'vertical' ? door.length : 1,
+			orientation: door.orientation
+		});
+	}
+
+	function setBuildTool(tool: 'room' | 'wall' | 'door' | 'eraser' | 'tile' | 'prop') {
 		if (building && buildTool === tool) building = false;
 		else { building = true; buildTool = tool; }
 		cancelEditing();
 		selectedProp = null;
 		copyingProp = null;
+		selectedDoor = null;
+	}
+
+	function selectDoor(event: PointerEvent, door: (typeof data.doors)[number]) {
+		if (building || event.button !== 0) return;
+		event.stopPropagation();
+		selectedDoor = door;
+		selectedProp = null;
 	}
 
 	function selectProp(event: PointerEvent, prop: (typeof data.props)[number]) {
@@ -862,6 +911,7 @@
 					<button disabled={!connected || processing} onclick={setSpawn}>현재 위치를 시작점으로</button>
 					<button class:active={building && buildTool === 'room'} onclick={() => setBuildTool('room')}>방 만들기</button>
 					<button class:active={building && buildTool === 'wall'} onclick={() => setBuildTool('wall')}>벽 만들기</button>
+					<button class:active={building && buildTool === 'door'} onclick={() => setBuildTool('door')}>문 만들기</button>
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
 					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option><option value="stone">석재</option><option value="sand">모래</option><option value="water">물결</option></select></label>
 					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
@@ -906,6 +956,9 @@
 					{#each walls as wall}
 						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)} role="button" tabindex={building && buildTool === 'eraser' ? 0 : -1} aria-label="벽 삭제" onpointerdown={(event) => deleteWall(event, wall)}></div>
 					{/each}
+					{#each doors as door}
+						<button class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} class:open={door.isOpen} class="door" style={doorStyle(door)} aria-label={`${door.isOpen ? '열린' : '닫힌'} 문${door.hasPassword ? ', 비밀번호 필요' : ''}`} onpointerdown={(event) => selectDoor(event, door)}>{door.isOpen ? '↗' : '▥'}</button>
+					{/each}
 					{#each rooms as room}
 						<div
 							class:failed={room.status === 'failed'}
@@ -922,7 +975,7 @@
 							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
 						</div>
 					{/each}
-					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
+					{#if draft && buildTool === 'wall'}<div class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}>문</div>{:else if draft && buildTool === 'tile'}<div class={`painted-tile tile-draft ${tileType}`} style={roomStyle(draft)}></div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
@@ -934,11 +987,15 @@
 					{/each}
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '없앨 벽을 누르세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '소품 크기만큼 드래그하거나 기존 소품을 선택하세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
-				{#if copyingProp}
+				{#if selectedDoor}
+					<form onsubmit={openDoor}><small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small><h2>문</h2><p>{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.</p>{#if !selectedDoor.isOpen && selectedDoor.hasPassword}<label>비밀번호<input name="password" type="password" maxlength="40" required /></label>{/if}{#if !selectedDoor.isOpen}<button disabled={processing || !connected}>문 열기</button>{/if}{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button></form>
+				{:else if building && buildTool === 'door'}
+					<div class="guide"><small>새 문 설정</small><h2>문 만들기</h2><label>비밀번호 (선택)<input bind:value={doorPassword} type="password" maxlength="40" placeholder="비워 두면 누구나 열 수 있음" /></label><p>설정한 뒤 월드의 격자선을 1칸 또는 2칸 드래그하세요.</p></div>
+				{:else if copyingProp}
 					<div class="guide"><small>소품 복사</small><h2>{copyingProp.name}</h2><p>월드에서 복사본을 놓을 칸을 선택하세요. 크기 {copyingProp.width} × {copyingProp.height}가 유지됩니다.</p><button class="secondary" onclick={cancelCopyProp}>복사 취소</button></div>
 				{:else if selectedProp}
 					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y} · 크기 {selectedProp.width} × {selectedProp.height}</p><button disabled={processing || !connected} onclick={beginCopyProp}>복사해서 놓기</button>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
@@ -995,6 +1052,7 @@
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 	.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
+	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
 	.build-actions{display:flex;gap:8px}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6;pointer-events:auto;cursor:pointer}.wall.editable::after{position:absolute;content:""}.wall.horizontal.editable::after{inset:-8px 0}.wall.vertical.editable::after{inset:0 -8px}.wall.editable:hover{background:#ff7777}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}
 	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;pointer-events:none}.painted-tile.stone,.painted-tile.tile-draft.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand,.painted-tile.tile-draft.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water,.painted-tile.tile-draft.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}
 </style>

@@ -179,6 +179,22 @@ CREATE TABLE IF NOT EXISTS world_walls (
     CHECK (width >= 1 AND height >= 1)
 );
 
+CREATE TABLE IF NOT EXISTS world_doors (
+    id CHAR(36) PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    x INT NOT NULL,
+    y INT NOT NULL,
+    orientation VARCHAR(10) NOT NULL,
+    length INT NOT NULL DEFAULT 1,
+    password_hash VARCHAR(255),
+    is_open BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX world_doors_guild_idx (guild_id),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
+    CHECK (length BETWEEN 1 AND 2)
+);
+
 CREATE TABLE IF NOT EXISTS world_tiles (
     guild_id VARCHAR(255) NOT NULL,
     x INT NOT NULL,
