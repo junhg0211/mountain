@@ -290,7 +290,7 @@ async function attachBasecampSocket(
 	};
 	if (initialState.settings.accessRoleId)
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
-	websocket.on('close', () => {
+	websocket.on('close', (code) => {
 		const closingState = basecampWorldStates.get(guildId) || initialState;
 		void setWorldPosition(guildId, userId, presence.x, presence.y).catch((error) =>
 			console.error(`Basecamp position save failed for ${guildId}/${userId}:`, error)
@@ -315,7 +315,13 @@ async function attachBasecampSocket(
 		clearBasecampVoiceMoveRetry(websocket);
 		basecampDoorSides.delete(websocket);
 		if (!clients.size) basecampWorldStates.delete(guildId);
-		if (roleId) scheduleBasecampRoleRemoval(guildId, userId, roleId);
+		if (roleId) {
+			if (code === 1000) {
+				cancelBasecampRoleRemoval(guildId, userId, roleId);
+				void removeBasecampRoleIfDisconnected(guildId, userId, roleId);
+			}
+			else scheduleBasecampRoleRemoval(guildId, userId, roleId);
+		}
 		scheduleBasecampLobbyReturn(
 			guildId,
 			userId,
@@ -776,10 +782,7 @@ async function returnBasecampMemberToLobby(
 }
 
 async function grantBasecampRole(guildId: string, userId: string, roleId: string) {
-	const key = basecampRoleKey(guildId, userId, roleId);
-	const timer = basecampRoleRemovalTimers.get(key);
-	if (timer) clearTimeout(timer);
-	basecampRoleRemovalTimers.delete(key);
+	cancelBasecampRoleRemoval(guildId, userId, roleId);
 	try {
 		await addGuildMemberRole(guildId, userId, roleId);
 	} catch (error) {
@@ -789,22 +792,34 @@ async function grantBasecampRole(guildId: string, userId: string, roleId: string
 
 function scheduleBasecampRoleRemoval(guildId: string, userId: string, roleId: string) {
 	const key = basecampRoleKey(guildId, userId, roleId);
-	const previous = basecampRoleRemovalTimers.get(key);
-	if (previous) clearTimeout(previous);
+	cancelBasecampRoleRemoval(guildId, userId, roleId);
 	basecampRoleRemovalTimers.set(
 		key,
 		setTimeout(() => {
 			basecampRoleRemovalTimers.delete(key);
-			const stillConnected = [...(basecampPresences.get(guildId)?.entries() || [])].some(
-				([socket, connected]) =>
-					connected.userId === userId && basecampSocketRoles.get(socket) === roleId
-			);
-			if (!stillConnected)
-				void removeGuildMemberRole(guildId, userId, roleId).catch((error) =>
-					console.error(`Basecamp role removal failed for ${guildId}/${userId}:`, error)
-				);
+			void removeBasecampRoleIfDisconnected(guildId, userId, roleId);
 		}, 10_000)
 	);
+}
+
+function cancelBasecampRoleRemoval(guildId: string, userId: string, roleId: string) {
+	const key = basecampRoleKey(guildId, userId, roleId);
+	const timer = basecampRoleRemovalTimers.get(key);
+	if (timer) clearTimeout(timer);
+	basecampRoleRemovalTimers.delete(key);
+}
+
+async function removeBasecampRoleIfDisconnected(guildId: string, userId: string, roleId: string) {
+	const stillConnected = [...(basecampPresences.get(guildId)?.entries() || [])].some(
+		([socket, connected]) =>
+			connected.userId === userId && basecampSocketRoles.get(socket) === roleId
+	);
+	if (stillConnected) return;
+	try {
+		await removeGuildMemberRole(guildId, userId, roleId);
+	} catch (error) {
+		console.error(`Basecamp role removal failed for ${guildId}/${userId}:`, error);
+	}
 }
 
 async function syncBasecampRoles(guildId: string, roleId: string | null) {

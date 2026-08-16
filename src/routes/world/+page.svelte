@@ -428,7 +428,7 @@
 				if (!stopped && version === connectionVersion)
 					reconnectTimer = setTimeout(() => void connect(version), 1500);
 			};
-			next.onerror = () => next.close();
+			next.onerror = () => next.close(4001, 'Basecamp connection error');
 		} catch (error) {
 			connected = false;
 			showNotice(false, error instanceof Error ? error.message : 'Basecamp에 연결하지 못했습니다.');
