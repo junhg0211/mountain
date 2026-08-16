@@ -163,7 +163,7 @@ export async function createBasecampProp(input: {
 	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
 		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
 		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
-	const actionType = input.actionType === 'teleport' || input.actionType === 'sign'
+	const actionType = input.actionType === 'teleport' || input.actionType === 'sign' || input.actionType === 'seat'
 		? input.actionType
 		: null;
 	if (actionType === 'teleport' && (!Number.isFinite(input.teleportX) || !Number.isFinite(input.teleportY)))
@@ -262,7 +262,7 @@ export async function updateBasecampProp(input: {
 	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
 		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
 		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
-	const actionType = input.actionType === 'teleport' || input.actionType === 'sign'
+	const actionType = input.actionType === 'teleport' || input.actionType === 'sign' || input.actionType === 'seat'
 		? input.actionType
 		: null;
 	if (actionType === 'teleport' && (!Number.isFinite(input.teleportX) || !Number.isFinite(input.teleportY)))

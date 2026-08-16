@@ -52,7 +52,7 @@ export interface WorldProp {
 	y: number;
 	width: number;
 	height: number;
-	actionType: 'teleport' | 'sign' | null;
+	actionType: 'teleport' | 'sign' | 'seat' | null;
 	teleportX: number | null;
 	teleportY: number | null;
 	signText: string | null;
@@ -156,7 +156,7 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 		y: Number(row.y),
 		width: Number(row.width),
 		height: Number(row.height),
-		actionType: row.action_type === 'teleport' || row.action_type === 'sign' ? row.action_type : null,
+		actionType: row.action_type === 'teleport' || row.action_type === 'sign' || row.action_type === 'seat' ? row.action_type : null,
 		teleportX: row.teleport_x === null ? null : Number(row.teleport_x),
 		teleportY: row.teleport_y === null ? null : Number(row.teleport_y),
 		signText: row.sign_text === null ? null : String(row.sign_text),
@@ -188,7 +188,7 @@ export async function getWorldProp(guildId: string, id: string): Promise<WorldPr
 		y: Number(rows[0].y),
 		width: Number(rows[0].width),
 		height: Number(rows[0].height),
-		actionType: rows[0].action_type === 'teleport' || rows[0].action_type === 'sign' ? rows[0].action_type : null,
+		actionType: rows[0].action_type === 'teleport' || rows[0].action_type === 'sign' || rows[0].action_type === 'seat' ? rows[0].action_type : null,
 		teleportX: rows[0].teleport_x === null ? null : Number(rows[0].teleport_x),
 		teleportY: rows[0].teleport_y === null ? null : Number(rows[0].teleport_y),
 		signText: rows[0].sign_text === null ? null : String(rows[0].sign_text),

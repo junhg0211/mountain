@@ -78,6 +78,7 @@ interface BasecampPresence {
 	avatarUrl: string | null;
 	x: number;
 	y: number;
+	seatedPropId: string | null;
 }
 const basecampPresences = new Map<string, Map<WebSocket, BasecampPresence>>();
 const basecampSocketRoles = new Map<WebSocket, string | null>();
@@ -212,7 +213,8 @@ async function attachBasecampSocket(
 			? `https://cdn.discordapp.com/avatars/${member.user.id}/${member.user.avatar}.webp?size=80`
 			: null,
 		x: initialState.settings.spawnX,
-		y: initialState.settings.spawnY
+		y: initialState.settings.spawnY,
+		seatedPropId: null
 	};
 	basecampWorldStates.set(guildId, initialState);
 	const clients = basecampSockets.get(guildId) || new Set<WebSocket>();
@@ -243,6 +245,8 @@ async function attachBasecampSocket(
 	let pendingMove: { x: number; y: number; sequence: number } | null = null;
 	let pendingMoveTimer: ReturnType<typeof setTimeout> | null = null;
 	const applyBasecampMovement = (x: number, y: number) => {
+		if (presence.seatedPropId && (Math.abs(x - presence.x) > 0.001 || Math.abs(y - presence.y) > 0.001))
+			presence.seatedPropId = null;
 		const state = basecampWorldStates.get(guildId);
 		if (
 			state && (
@@ -393,12 +397,33 @@ async function attachBasecampSocket(
 			}
 			if (type === 'basecamp-use-prop') {
 				const prop = await getWorldProp(guildId, String(message.id || ''));
-				if (!prop || prop.actionType !== 'teleport' || prop.teleportX === null || prop.teleportY === null)
-					throw new BasecampError('사용할 수 있는 텔레포트 소품이 아닙니다.');
+				if (!prop || (prop.actionType !== 'teleport' && prop.actionType !== 'seat'))
+					throw new BasecampError('상호작용할 수 있는 소품이 아닙니다.');
 				const nearestX = Math.max(prop.x, Math.min(presence.x, prop.x + prop.width));
 				const nearestY = Math.max(prop.y, Math.min(presence.y, prop.y + prop.height));
 				if ((presence.x - nearestX) ** 2 + (presence.y - nearestY) ** 2 > 1.75 ** 2)
-					throw new BasecampError('텔레포트 소품 가까이에서 다시 시도해 주세요.');
+					throw new BasecampError('소품 가까이에서 다시 시도해 주세요.');
+				if (prop.actionType === 'seat') {
+					if (presence.seatedPropId === prop.id) {
+						presence.seatedPropId = null;
+						broadcastBasecampPresences(guildId);
+						websocket.send(JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: '자리에서 일어났습니다.' }));
+						return;
+					}
+					const occupied = [...(basecampPresences.get(guildId)?.values() || [])]
+						.some((other) => other.id !== presence.id && other.seatedPropId === prop.id);
+					if (occupied) throw new BasecampError('이미 다른 사람이 앉아 있는 자리입니다.');
+					presence.x = prop.x + prop.width / 2;
+					presence.y = prop.y + prop.height / 2;
+					presence.seatedPropId = prop.id;
+					broadcastBasecampPresences(guildId);
+					websocket.send(JSON.stringify({ type: 'basecamp-teleport', x: presence.x, y: presence.y }));
+					websocket.send(JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: '자리에 앉았습니다. 이동하면 자동으로 일어납니다.' }));
+					return;
+				}
+				if (prop.teleportX === null || prop.teleportY === null)
+					throw new BasecampError('텔레포트 목적지가 설정되지 않았습니다.');
+				presence.seatedPropId = null;
 				presence.x = prop.teleportX;
 				presence.y = prop.teleportY;
 				broadcastBasecampPresences(guildId);
@@ -767,6 +792,16 @@ function broadcastBasecampState(
 	state: Awaited<ReturnType<typeof getBasecampState>>
 ) {
 	basecampWorldStates.set(guildId, state);
+	const seats = new Map(state.props.filter((prop) => prop.actionType === 'seat')
+		.map((prop) => [prop.id, { x: prop.x + prop.width / 2, y: prop.y + prop.height / 2 }]));
+	let seatingChanged = false;
+	for (const presence of basecampPresences.get(guildId)?.values() || []) {
+		const seat = presence.seatedPropId ? seats.get(presence.seatedPropId) : null;
+		if (presence.seatedPropId && (!seat || seat.x !== presence.x || seat.y !== presence.y)) {
+			presence.seatedPropId = null;
+			seatingChanged = true;
+		}
+	}
 	const message = JSON.stringify({ type: 'basecamp-state', ...state });
 	for (const socket of basecampSockets.get(guildId) || []) {
 		if (socket.readyState !== WebSocket.OPEN) continue;
@@ -774,6 +809,7 @@ function broadcastBasecampState(
 		const presence = basecampPresences.get(guildId)?.get(socket);
 		if (presence) updateBasecampVoiceTarget(socket, guildId, presence, state);
 	}
+	if (seatingChanged) broadcastBasecampPresences(guildId);
 }
 
 function basecampDoorTimerKey(guildId: string, id: string) {
