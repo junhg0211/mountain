@@ -231,7 +231,13 @@ async function attachBasecampSocket(
 				basecampDoorBlocksMovement(presence.x, presence.y, x, presence.y, state.doors) ||
 				basecampDoorBlocksMovement(x, presence.y, x, y, state.doors)
 			)
-		) return false;
+		) {
+			presence.x = x;
+			presence.y = y;
+			broadcastBasecampPresences(guildId);
+			updateBasecampVoiceTarget(websocket, guildId, presence, state);
+			return false;
+		}
 		if (state) trackBasecampDoorPassages(websocket, guildId, presence.x, presence.y, x, y, state.doors);
 		presence.x = x;
 		presence.y = y;
