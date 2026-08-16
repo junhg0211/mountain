@@ -525,11 +525,18 @@
 				const target = automaticPath[0];
 				const beforeX = target.x - me.x;
 				const beforeY = target.y - me.y;
-				const afterX = target.x - rawX;
-				const afterY = target.y - rawY;
-				if (beforeX * afterX + beforeY * afterY <= 0) {
+				const distance = Math.hypot(beforeX, beforeY);
+				if (distance === 0) {
 					x = target.x;
 					y = target.y;
+				} else {
+					const directionX = beforeX / distance;
+					const directionY = beforeY / distance;
+					const overshoot = (rawX - target.x) * directionX + (rawY - target.y) * directionY;
+					if (overshoot > 0) {
+						x = rawX - directionX * overshoot;
+						y = rawY - directionY * overshoot;
+					}
 				}
 			}
 			if (wallBlocksMovement(me.x, me.y, x, me.y)) {
