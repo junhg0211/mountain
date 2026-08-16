@@ -91,6 +91,7 @@
 	let cameraY = $state(0);
 	let targetZoom = $state(1);
 	let renderedZoom = $state(1);
+	let movementZoom = $state(1);
 	let zooming = $state(false);
 	let cameraInitialized = false;
 	let lastMovementSentAt = 0;
@@ -423,6 +424,7 @@
 		if (!presenceId) {
 			velocityX = 0;
 			velocityY = 0;
+			movementZoom = 1;
 			lastMovementFrameAt = null;
 			return;
 		}
@@ -450,6 +452,9 @@
 			velocityX = velocityX / speed * absoluteMaximumSpeed;
 			velocityY = velocityY / speed * absoluteMaximumSpeed;
 		}
+		const movementZoomTarget = 1 - Math.min(speed / absoluteMaximumSpeed, 1) * 0.06;
+		movementZoom += (movementZoomTarget - movementZoom) * (1 - Math.exp(-8 * deltaSeconds));
+		if (Math.abs(movementZoomTarget - movementZoom) < 0.0001) movementZoom = movementZoomTarget;
 		if (velocityX || velocityY) {
 			const rawX = me.x + velocityX * deltaSeconds;
 			const rawY = me.y + velocityY * deltaSeconds;
@@ -469,7 +474,7 @@
 				sendPosition(x, y, false);
 			}
 		}
-		if (horizontal || vertical || velocityX || velocityY)
+		if (horizontal || vertical || velocityX || velocityY || Math.abs(movementZoom - 1) > 0.0001)
 			movementFrame = requestAnimationFrame(moveAvatar);
 		else {
 			lastMovementFrameAt = null;
@@ -1142,7 +1147,7 @@
 				: null
 	);
 	const cameraLayout = $derived.by(() => {
-		const cellSize = Math.max(28, viewportWidth / referenceColumns, viewportHeight / referenceRows) * 1.35 * renderedZoom;
+		const cellSize = Math.max(28, viewportWidth / referenceColumns, viewportHeight / referenceRows) * 1.35 * renderedZoom * movementZoom;
 		const me = presences.find((presence) => presence.id === presenceId);
 		const focusX = (me?.x ?? settings?.spawnX ?? 20) * cellSize;
 		const focusY = (me?.y ?? settings?.spawnY ?? 15) * cellSize;
@@ -1413,7 +1418,7 @@
 					{#if copiedRegion}<div class:pasting={pastingRegion} class="region-selection selected" style={roomStyle(copiedRegion)}><small>{pastingRegion ? '붙여넣을 기준 칸을 선택하세요' : `${copiedRegion.width} × ${copiedRegion.height}`}</small></div>{/if}
 					{#if teleportTarget && draft && buildTool === 'prop'}<div class="teleport-target-marker" style={`left:${teleportTarget.x * cameraLayout.cellSize}px;top:${teleportTarget.y * cameraLayout.cellSize}px`}><span>목적지</span></div>{/if}
 					{#each presences as presence (presence.id)}
-						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom}px;--avatar-border:${3 * renderedZoom}px`} title={presence.username}>
+						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom * movementZoom}px;--avatar-border:${3 * renderedZoom * movementZoom}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
 							<small>{presence.username}</small>
 						</div>
