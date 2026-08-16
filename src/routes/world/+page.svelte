@@ -459,7 +459,7 @@
 		let vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
 		while (automaticPath.length > 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.22)
 			automaticPath.shift();
-		if (automaticPath.length === 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.01 && Math.hypot(velocityX, velocityY) < 0.05) {
+		if (automaticPath.length === 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.01 && velocityX === 0 && velocityY === 0) {
 			automaticPath = [];
 		}
 		if (!horizontal && !vertical && automaticPath.length) {
@@ -479,16 +479,20 @@
 		const targetVelocityY = vertical / inputLength * currentMaximumSpeed;
 		if (!pressedKeys.size && automaticPath.length === 1) {
 			const target = automaticPath[0];
-			const angularFrequency = 7;
-			let accelerationX = angularFrequency ** 2 * (target.x - me.x) - 2 * angularFrequency * velocityX;
-			let accelerationY = angularFrequency ** 2 * (target.y - me.y) - 2 * angularFrequency * velocityY;
-			const accelerationLength = Math.hypot(accelerationX, accelerationY);
-			if (accelerationLength > currentAcceleration) {
-				accelerationX = accelerationX / accelerationLength * currentAcceleration;
-				accelerationY = accelerationY / accelerationLength * currentAcceleration;
+			const distance = Math.hypot(target.x - me.x, target.y - me.y);
+			const brakingSpeed = Math.min(currentMaximumSpeed, Math.sqrt(2 * currentAcceleration * distance));
+			const desiredVelocityX = distance > 0 ? (target.x - me.x) / distance * brakingSpeed : 0;
+			const desiredVelocityY = distance > 0 ? (target.y - me.y) / distance * brakingSpeed : 0;
+			let velocityChangeX = desiredVelocityX - velocityX;
+			let velocityChangeY = desiredVelocityY - velocityY;
+			const velocityChangeLength = Math.hypot(velocityChangeX, velocityChangeY);
+			const maximumVelocityChange = currentAcceleration * deltaSeconds;
+			if (velocityChangeLength > maximumVelocityChange) {
+				velocityChangeX = velocityChangeX / velocityChangeLength * maximumVelocityChange;
+				velocityChangeY = velocityChangeY / velocityChangeLength * maximumVelocityChange;
 			}
-			velocityX += accelerationX * deltaSeconds;
-			velocityY += accelerationY * deltaSeconds;
+			velocityX += velocityChangeX;
+			velocityY += velocityChangeY;
 		} else {
 			velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? currentAcceleration : movementFriction) * deltaSeconds);
 			velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? currentAcceleration : movementFriction) * deltaSeconds);
@@ -517,6 +521,17 @@
 			const rawY = me.y + velocityY * deltaSeconds;
 			let x = rawX;
 			let y = rawY;
+			if (!pressedKeys.size && automaticPath.length === 1) {
+				const target = automaticPath[0];
+				const beforeX = target.x - me.x;
+				const beforeY = target.y - me.y;
+				const afterX = target.x - rawX;
+				const afterY = target.y - rawY;
+				if (beforeX * afterX + beforeY * afterY <= 0) {
+					x = target.x;
+					y = target.y;
+				}
+			}
 			if (wallBlocksMovement(me.x, me.y, x, me.y)) {
 				x = me.x;
 				velocityX = 0;
