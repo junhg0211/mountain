@@ -311,12 +311,14 @@ async function attachBasecampSocket(
 	websocket.on('message', async (raw) => {
 		refreshHeartbeatTimeout();
 		let requestId = '';
+		let requestType = '';
 		try {
 			const message = JSON.parse(String(raw)) as Record<string, unknown>;
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
+			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -353,6 +355,20 @@ async function attachBasecampSocket(
 					sequence,
 					final: message.final === true
 				}));
+				return;
+			}
+			if (type === 'basecamp-move-voice') {
+				const state = basecampWorldStates.get(guildId);
+				const channelId = state ? getBasecampVoiceTarget(state, presence) : null;
+				if (!channelId) throw new BasecampError('현재 공간에 연결된 음성 채널이 없습니다.');
+				await moveBasecampMemberToVoiceChannel(guildId, userId, channelId);
+				if (websocket.readyState === WebSocket.OPEN)
+					websocket.send(JSON.stringify({
+						type: 'basecamp-voice-result',
+						requestId,
+						ok: true,
+						message: '현재 공간의 음성 채널로 이동했습니다.'
+					}));
 				return;
 			}
 			if (type === 'basecamp-auto-move') {
@@ -564,7 +580,9 @@ async function attachBasecampSocket(
 			if (websocket.readyState === WebSocket.OPEN)
 				websocket.send(
 					JSON.stringify({
-						type: 'basecamp-result',
+						type: requestType === 'basecamp-move-voice'
+							? 'basecamp-voice-result'
+							: 'basecamp-result',
 						requestId,
 						ok: false,
 						error:
@@ -979,6 +997,27 @@ function queueBasecampVoiceMove(
 			scheduleBasecampVoiceMoveRetry(websocket, guildId, userId, channelId);
 		});
 	basecampVoiceMoveQueues.set(websocket, next);
+}
+
+async function moveBasecampMemberToVoiceChannel(
+	guildId: string,
+	userId: string,
+	channelId: string
+) {
+	const client = getClient();
+	if (!client?.isReady()) throw new BasecampError('Discord 봇이 아직 준비되지 않았습니다.');
+	const guild = await client.guilds.fetch(guildId);
+	const member = await guild.members.fetch(userId);
+	if (!member.voice.channelId)
+		throw new BasecampError('먼저 월드 광장 음성 채널에 참가해 주세요.');
+	if (member.voice.channelId !== channelId) {
+		try {
+			await member.voice.setChannel(channelId, 'Manual Basecamp room transition');
+		} catch (error) {
+			console.error(`Manual Basecamp voice move failed for ${guildId}/${userId}:`, error);
+			throw new BasecampError('음성 채널을 이동하지 못했습니다. 봇의 멤버 이동 권한을 확인해 주세요.');
+		}
+	}
 }
 
 async function runDashboardAction(context: {

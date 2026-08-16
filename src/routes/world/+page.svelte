@@ -44,6 +44,7 @@
 	let propRequestId: string | null = null;
 	let tileTypeRequestId: string | null = null;
 	let propMoveRequestId: string | null = null;
+	let voiceMoveRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
 	let unlockingDoor = $state<(typeof data.doors)[number] | null>(null);
@@ -242,6 +243,16 @@
 					notice = { success: message.ok === true, message: String(message.message || '') };
 					return;
 				}
+				if (message.type === 'basecamp-voice-result') {
+					if (message.requestId !== voiceMoveRequestId) return;
+					voiceMoveRequestId = null;
+					movingToVoiceChannel = false;
+					notice = {
+						success: message.ok === true,
+						message: String(message.ok === true ? message.message || '' : message.error || '')
+					};
+					return;
+				}
 				if (message.type === 'basecamp-presences') {
 					const incoming = message.presences as Presence[];
 					const me = presences.find((presence) => presence.id === presenceId);
@@ -356,6 +367,8 @@
 				propRequestId = null;
 				tileTypeRequestId = null;
 				propMoveRequestId = null;
+				voiceMoveRequestId = null;
+				movingToVoiceChannel = false;
 				presenceId = null;
 				presences = [];
 				if (!stopped && version === connectionVersion)
@@ -1077,36 +1090,16 @@
 		else zooming = false;
 	}
 
-	async function moveToVoiceChannel() {
-		if (!voiceTarget || !data.guildId || movingToVoiceChannel) return;
-		movingToVoiceChannel = true;
-		const releaseButton = window.setTimeout(() => {
-			movingToVoiceChannel = false;
-		}, 1_000);
-		const target = voiceTarget;
-		const url = `https://discord.com/channels/${data.guildId}/${target.channelId}`;
-		try {
-			const query = new URLSearchParams(window.location.search);
-			const inActivity = query.has('frame_id') && query.has('instance_id');
-			if (inActivity && data.discordClientId) {
-				const { DiscordSDK } = await import('@discord/embedded-app-sdk');
-				const discord = new DiscordSDK(data.discordClientId);
-				await discord.ready();
-				const result = await discord.commands.openExternalLink({ url });
-				if (!result.opened) throw new Error(`Discord가 ${target.name} 채널로 이동하지 못했습니다.`);
-			} else {
-				window.location.assign(url);
-			}
-			notice = { success: true, message: `${target.name} 채널로 이동했습니다.` };
-		} catch (error) {
-			notice = {
-				success: false,
-				message: error instanceof Error ? error.message : `${target.name} 채널로 이동하지 못했습니다.`
-			};
-		} finally {
-			window.clearTimeout(releaseButton);
-			movingToVoiceChannel = false;
+	function moveToVoiceChannel() {
+		if (!voiceTarget || movingToVoiceChannel) return;
+		if (!socket || socket.readyState !== WebSocket.OPEN) {
+			notice = { success: false, message: 'Basecamp에 다시 연결한 뒤 시도해 주세요.' };
+			return;
 		}
+		movingToVoiceChannel = true;
+		notice = null;
+		voiceMoveRequestId = crypto.randomUUID();
+		socket.send(JSON.stringify({ type: 'basecamp-move-voice', requestId: voiceMoveRequestId }));
 	}
 
 	function setAutoVoiceChannel(event: Event) {
