@@ -4,6 +4,7 @@ import { getClient, startBot } from './src/lib/server/bot/index.ts';
 import { consumeRealtimeTicket, publishBettingUpdate, registerRealtimePublisher } from './src/lib/server/realtime.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDB } from './src/lib/server/db.ts';
+import { getWorldProp } from './src/lib/server/db/world.ts';
 import {
 	archiveBettingPool,
 	BettingOptionError,
@@ -298,7 +299,7 @@ async function attachBasecampSocket(
 			requestId = String(message.requestId || '');
 			const type = String(message.type || '');
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -351,6 +352,23 @@ async function attachBasecampSocket(
 					if (target) queueBasecampVoiceMove(websocket, guildId, userId, target);
 				}
 				websocket.send(JSON.stringify({ type: 'basecamp-auto-move-result', enabled }));
+				return;
+			}
+			if (type === 'basecamp-use-prop') {
+				const prop = await getWorldProp(guildId, String(message.id || ''));
+				if (!prop || prop.actionType !== 'teleport' || prop.teleportX === null || prop.teleportY === null)
+					throw new BasecampError('사용할 수 있는 텔레포트 소품이 아닙니다.');
+				const nearestX = Math.max(prop.x, Math.min(presence.x, prop.x + prop.width));
+				const nearestY = Math.max(prop.y, Math.min(presence.y, prop.y + prop.height));
+				if ((presence.x - nearestX) ** 2 + (presence.y - nearestY) ** 2 > 1.75 ** 2)
+					throw new BasecampError('텔레포트 소품 가까이에서 다시 시도해 주세요.');
+				presence.x = prop.teleportX;
+				presence.y = prop.teleportY;
+				broadcastBasecampPresences(guildId);
+				const worldState = basecampWorldStates.get(guildId);
+				if (worldState) updateBasecampVoiceTarget(websocket, guildId, presence, worldState);
+				websocket.send(JSON.stringify({ type: 'basecamp-teleport', x: presence.x, y: presence.y }));
+				websocket.send(JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: '텔레포트했습니다.' }));
 				return;
 			}
 			if (processing) throw new BasecampError('다른 공간 작업을 처리하고 있습니다.');
@@ -406,7 +424,10 @@ async function attachBasecampSocket(
 					x: Number(message.x),
 					y: Number(message.y),
 					width: Number(message.width),
-					height: Number(message.height)
+					height: Number(message.height),
+					actionType: String(message.actionType || ''),
+					teleportX: message.teleportX === null || message.teleportX === '' ? null : Number(message.teleportX),
+					teleportY: message.teleportY === null || message.teleportY === '' ? null : Number(message.teleportY)
 				});
 				messageText = '소품을 월드에 놓았습니다.';
 			} else if (type === 'basecamp-copy-prop') {

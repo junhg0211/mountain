@@ -134,6 +134,9 @@ export async function createBasecampProp(input: {
 	y: number;
 	width: number;
 	height: number;
+	actionType: string;
+	teleportX: number | null;
+	teleportY: number | null;
 }) {
 	if (!(await getGuildMember(input.guildId, input.userId)))
 		throw new BasecampError('현재 Discord 서버 구성원만 소품을 놓을 수 있습니다.');
@@ -147,6 +150,9 @@ export async function createBasecampProp(input: {
 	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
 		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
 		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
+	const actionType = input.actionType === 'teleport' ? 'teleport' : null;
+	if (actionType && (!Number.isFinite(input.teleportX) || !Number.isFinite(input.teleportY)))
+		throw new BasecampError('텔레포트 목적지 좌표를 입력해 주세요.');
 	await createWorldProp({
 		id: crypto.randomUUID(),
 		guildId: input.guildId,
@@ -157,6 +163,9 @@ export async function createBasecampProp(input: {
 		y: input.y,
 		width: input.width,
 		height: input.height,
+		actionType,
+		teleportX: actionType ? input.teleportX : null,
+		teleportY: actionType ? input.teleportY : null,
 		createdBy: input.userId
 	});
 	return getBasecampState(input.guildId);
