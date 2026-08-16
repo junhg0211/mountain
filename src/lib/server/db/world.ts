@@ -59,6 +59,63 @@ export interface WorldProp {
 	createdBy: string;
 }
 
+export interface WorldEditSnapshot {
+	tileTypes: Array<{ id: string; name: string; imageData: string; createdBy: string }>;
+	tiles: Array<{ x: number; y: number; tileType: string; updatedBy: string }>;
+	props: Array<WorldProp>;
+	walls: Array<WorldWall & { createdBy: string }>;
+	doors: Array<{
+		id: string;
+		x: number;
+		y: number;
+		orientation: WorldDoor['orientation'];
+		length: number;
+		passwordHash: string | null;
+		isOpen: boolean;
+		createdBy: string;
+	}>;
+}
+
+export async function captureWorldEditSnapshot(guildId: string): Promise<WorldEditSnapshot> {
+	const db = await getDB();
+	const [tileTypes, tiles, props, walls, doors] = await Promise.all([
+		db`SELECT id, name, image_data, created_by FROM world_tile_types WHERE guild_id=${guildId}`,
+		db`SELECT x, y, tile_type, updated_by FROM world_tiles WHERE guild_id=${guildId}`,
+		db`SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props WHERE guild_id=${guildId}`,
+		db`SELECT id, x, y, width, height, orientation, created_by FROM world_walls WHERE guild_id=${guildId}`,
+		db`SELECT id, x, y, orientation, length, password_hash, is_open, created_by FROM world_doors WHERE guild_id=${guildId}`
+	]);
+	return {
+		tileTypes: tileTypes.map((row: Record<string, unknown>) => ({ id: String(row.id), name: String(row.name), imageData: String(row.image_data), createdBy: String(row.created_by) })),
+		tiles: tiles.map((row: Record<string, unknown>) => ({ x: Number(row.x), y: Number(row.y), tileType: String(row.tile_type), updatedBy: String(row.updated_by) })),
+		props: props.map((row: Record<string, unknown>) => ({
+			id: String(row.id), name: String(row.name), emoji: String(row.emoji), imageData: row.image_data === null ? null : String(row.image_data),
+			x: Number(row.x), y: Number(row.y), width: Number(row.width), height: Number(row.height),
+			actionType: row.action_type === 'teleport' || row.action_type === 'sign' || row.action_type === 'seat' ? row.action_type : null,
+			teleportX: row.teleport_x === null ? null : Number(row.teleport_x), teleportY: row.teleport_y === null ? null : Number(row.teleport_y),
+			signText: row.sign_text === null ? null : String(row.sign_text), createdBy: String(row.created_by)
+		})),
+		walls: walls.map((row: Record<string, unknown>) => ({ id: String(row.id), x: Number(row.x), y: Number(row.y), width: Number(row.width), height: Number(row.height), orientation: String(row.orientation) as WorldWall['orientation'], createdBy: String(row.created_by) })),
+		doors: doors.map((row: Record<string, unknown>) => ({ id: String(row.id), x: Number(row.x), y: Number(row.y), orientation: String(row.orientation) as WorldDoor['orientation'], length: Number(row.length), passwordHash: row.password_hash === null ? null : String(row.password_hash), isOpen: Boolean(row.is_open), createdBy: String(row.created_by) }))
+	};
+}
+
+export async function restoreWorldEditSnapshot(guildId: string, snapshot: WorldEditSnapshot) {
+	const db = await getDB();
+	await db.begin(async (tx) => {
+		await tx`DELETE FROM world_tiles WHERE guild_id=${guildId}`;
+		await tx`DELETE FROM world_tile_types WHERE guild_id=${guildId}`;
+		await tx`DELETE FROM world_props WHERE guild_id=${guildId}`;
+		await tx`DELETE FROM world_walls WHERE guild_id=${guildId}`;
+		await tx`DELETE FROM world_doors WHERE guild_id=${guildId}`;
+		for (const item of snapshot.tileTypes) await tx`INSERT INTO world_tile_types (id, guild_id, name, image_data, created_by) VALUES (${item.id}, ${guildId}, ${item.name}, ${item.imageData}, ${item.createdBy})`;
+		for (const item of snapshot.tiles) await tx`INSERT INTO world_tiles (guild_id, x, y, tile_type, updated_by) VALUES (${guildId}, ${item.x}, ${item.y}, ${item.tileType}, ${item.updatedBy})`;
+		for (const item of snapshot.props) await tx`INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by) VALUES (${item.id}, ${guildId}, ${item.name}, ${item.emoji}, ${item.imageData}, ${item.x}, ${item.y}, ${item.width}, ${item.height}, ${item.actionType}, ${item.teleportX}, ${item.teleportY}, ${item.signText}, ${item.createdBy})`;
+		for (const item of snapshot.walls) await tx`INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by) VALUES (${item.id}, ${guildId}, ${item.x}, ${item.y}, ${item.width}, ${item.height}, ${item.orientation}, ${item.createdBy})`;
+		for (const item of snapshot.doors) await tx`INSERT INTO world_doors (id, guild_id, x, y, orientation, length, password_hash, is_open, created_by) VALUES (${item.id}, ${guildId}, ${item.x}, ${item.y}, ${item.orientation}, ${item.length}, ${item.passwordHash}, ${item.isOpen}, ${item.createdBy})`;
+	});
+}
+
 export async function listWorldTiles(guildId: string): Promise<WorldTile[]> {
 	const db = await getDB();
 	const rows = await db`

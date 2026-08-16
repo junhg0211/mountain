@@ -142,6 +142,11 @@
 			}
 			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement)
 				return;
+			if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.code === 'KeyZ') {
+				event.preventDefault();
+				undoLastEdit();
+				return;
+			}
 			if (event.code === 'Space') {
 				event.preventDefault();
 				if (!event.repeat) interactWithNearestDoor();
@@ -545,6 +550,11 @@
 		const requestId = crypto.randomUUID();
 		socket.send(JSON.stringify({ ...message, requestId }));
 		return requestId;
+	}
+
+	function undoLastEdit() {
+		if (!connected || processing) return;
+		send({ type: 'basecamp-undo' });
 	}
 
 	function configure(event: SubmitEvent) {
@@ -1388,6 +1398,7 @@
 		<section class="intro">
 		<div><small>SERVER WORLD</small><h1 hidden>Basecamp</h1></div>
 			<div class="build-actions">
+				<button disabled={!connected || processing} onclick={undoLastEdit} title="실행 취소 (Ctrl/Cmd+Z)">실행 취소</button>
 				{#if data.canManage}
 					<button disabled={!connected || processing} onclick={setSpawn}>현재 위치를 시작점으로</button>
 					<button class:active={building && buildTool === 'room'} onclick={() => setBuildTool('room')}>방 만들기</button>
