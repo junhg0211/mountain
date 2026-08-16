@@ -82,6 +82,7 @@ const basecampVoiceMoveTimers = new Map<WebSocket, ReturnType<typeof setTimeout>
 const basecampVoiceMoveAttempts = new Map<WebSocket, number>();
 const basecampVoiceMoveQueues = new Map<WebSocket, Promise<void>>();
 const basecampDoorCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const basecampDoorSides = new Map<WebSocket, Map<string, number>>();
 
 void startBot().catch((error) => console.error('Discord bot startup failed:', error));
 
@@ -213,6 +214,7 @@ async function attachBasecampSocket(
 	basecampSocketRoles.set(websocket, initialState.settings.accessRoleId);
 	basecampAutoMoves.set(websocket, false);
 	basecampVoiceTargets.set(websocket, getBasecampVoiceTarget(initialState, presence));
+	basecampDoorSides.set(websocket, new Map());
 	if (initialState.settings.accessRoleId)
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
@@ -227,6 +229,7 @@ async function attachBasecampSocket(
 		clearBasecampVoiceMoveTimer(websocket);
 		basecampVoiceMoveAttempts.delete(websocket);
 		basecampVoiceMoveQueues.delete(websocket);
+		basecampDoorSides.delete(websocket);
 		if (!clients.size) basecampWorldStates.delete(guildId);
 		if (roleId) scheduleBasecampRoleRemoval(guildId, userId, roleId);
 		broadcastBasecampPresences(guildId);
@@ -275,12 +278,7 @@ async function attachBasecampSocket(
 						basecampDoorBlocksMovement(nextX, presence.y, nextX, nextY, state.doors)
 					)
 				) return;
-				if (state) {
-					for (const door of state.doors) {
-						if (door.isOpen && basecampCrossesDoor(presence.x, presence.y, nextX, nextY, door))
-							scheduleBasecampDoorClose(guildId, door.id, 5_000);
-					}
-				}
+				if (state) trackBasecampDoorPassages(websocket, guildId, presence.x, presence.y, nextX, nextY, state.doors);
 				presence.x = nextX;
 				presence.y = nextY;
 				broadcastBasecampPresences(guildId);
@@ -591,13 +589,6 @@ function basecampWallBlocksMovement(
 	});
 }
 
-function basecampDoorSegment(door: { x: number; y: number; orientation: string; length: number }) {
-	return {
-		x: door.orientation === 'horizontal' ? door.x + door.length : door.x,
-		y: door.orientation === 'vertical' ? door.y + door.length : door.y
-	};
-}
-
 function basecampDoorBlocksMovement(
 	fromX: number,
 	fromY: number,
@@ -620,15 +611,28 @@ function basecampDoorBlocksMovement(
 	);
 }
 
-function basecampCrossesDoor(
+function trackBasecampDoorPassages(
+	websocket: WebSocket,
+	guildId: string,
 	fromX: number,
 	fromY: number,
 	toX: number,
 	toY: number,
-	door: { x: number; y: number; orientation: string; length: number }
+	doors: Array<{ id: string; x: number; y: number; orientation: string; length: number; isOpen: boolean }>
 ) {
-	const end = basecampDoorSegment(door);
-	return basecampSegmentsIntersect(fromX, fromY, toX, toY, door.x, door.y, end.x, end.y);
+	const sides = basecampDoorSides.get(websocket) || new Map<string, number>();
+	basecampDoorSides.set(websocket, sides);
+	for (const door of doors) {
+		if (!door.isOpen) continue;
+		const fromSide = door.orientation === 'horizontal' ? fromY - door.y : fromX - door.x;
+		const toSide = door.orientation === 'horizontal' ? toY - door.y : toX - door.x;
+		const previousSide = sides.get(door.id) ?? fromSide;
+		const along = door.orientation === 'horizontal' ? toX : toY;
+		const start = door.orientation === 'horizontal' ? door.x : door.y;
+		if (previousSide * toSide < 0 && along >= start - 0.32 && along <= start + door.length + 0.32)
+			scheduleBasecampDoorClose(guildId, door.id, 5_000);
+		if (Math.abs(toSide) > 1e-6) sides.set(door.id, toSide);
+	}
 }
 
 function basecampPointSegmentDistanceSquared(px: number, py: number, ax: number, ay: number, bx: number, by: number) {

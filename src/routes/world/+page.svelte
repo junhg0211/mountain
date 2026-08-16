@@ -437,13 +437,6 @@
 		propRequestId = send({ type: 'basecamp-delete-prop', id: selectedProp.id });
 	}
 
-	function openDoor(event: SubmitEvent) {
-		event.preventDefault();
-		if (!selectedDoor) return;
-		const form = new FormData(event.currentTarget as HTMLFormElement);
-		send({ type: 'basecamp-open-door', id: selectedDoor.id, password: form.get('password') });
-	}
-
 	function deleteDoor() {
 		if (!selectedDoor) return;
 		send({ type: 'basecamp-delete-door', id: selectedDoor.id });
@@ -692,6 +685,10 @@
 		event.stopPropagation();
 		selectedDoor = door;
 		selectedProp = null;
+		if (door.isOpen) return;
+		const password = door.hasPassword ? window.prompt('문 비밀번호를 입력해 주세요.') : '';
+		if (password === null) return;
+		send({ type: 'basecamp-open-door', id: door.id, password });
 	}
 
 	function selectProp(event: PointerEvent, prop: (typeof data.props)[number]) {
@@ -992,7 +989,7 @@
 
 			<aside>
 				{#if selectedDoor}
-					<form onsubmit={openDoor}><small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small><h2>문</h2><p>{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.</p>{#if !selectedDoor.isOpen && selectedDoor.hasPassword}<label>비밀번호<input name="password" type="password" maxlength="40" required /></label>{/if}{#if !selectedDoor.isOpen}<button disabled={processing || !connected}>문 열기</button>{/if}{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button></form>
+					<div class="guide"><small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small><h2>문</h2><p>{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.</p>{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button></div>
 				{:else if building && buildTool === 'door'}
 					<div class="guide"><small>새 문 설정</small><h2>문 만들기</h2><label>비밀번호 (선택)<input bind:value={doorPassword} type="password" maxlength="40" placeholder="비워 두면 누구나 열 수 있음" /></label><p>설정한 뒤 월드의 격자선을 1칸 또는 2칸 드래그하세요.</p></div>
 				{:else if copyingProp}
