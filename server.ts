@@ -222,6 +222,19 @@ async function attachBasecampSocket(
 	basecampAutoMoves.set(websocket, false);
 	basecampVoiceTargets.set(websocket, getBasecampVoiceTarget(initialState, presence));
 	basecampDoorSides.set(websocket, new Map());
+	let heartbeatTimeout: ReturnType<typeof setTimeout> | null = null;
+	const refreshHeartbeatTimeout = () => {
+		if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+		heartbeatTimeout = setTimeout(() => {
+			heartbeatTimeout = null;
+			if (websocket.readyState === WebSocket.OPEN) websocket.terminate();
+		}, 10_000);
+	};
+	const heartbeatInterval = setInterval(() => {
+		if (websocket.readyState === WebSocket.OPEN) websocket.ping();
+	}, 5_000);
+	websocket.on('pong', refreshHeartbeatTimeout);
+	refreshHeartbeatTimeout();
 	let lastMoveAt = 0;
 	let pendingMove: { x: number; y: number; sequence: number } | null = null;
 	let pendingMoveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -261,6 +274,9 @@ async function attachBasecampSocket(
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
 		const closingState = basecampWorldStates.get(guildId) || initialState;
+		clearInterval(heartbeatInterval);
+		if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+		heartbeatTimeout = null;
 		if (pendingMoveTimer) clearTimeout(pendingMoveTimer);
 		pendingMoveTimer = null;
 		pendingMove = null;
@@ -293,6 +309,7 @@ async function attachBasecampSocket(
 
 	let processing = false;
 	websocket.on('message', async (raw) => {
+		refreshHeartbeatTimeout();
 		let requestId = '';
 		try {
 			const message = JSON.parse(String(raw)) as Record<string, unknown>;
