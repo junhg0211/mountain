@@ -851,7 +851,7 @@
 	function zoomWorld(event: WheelEvent) {
 		event.preventDefault();
 		const factor = Math.exp(-event.deltaY * 0.0012);
-		targetZoom = Math.max(0.4, Math.min(2.5, targetZoom * factor));
+		targetZoom = Math.max(0.25, Math.min(2, targetZoom * factor));
 		if (zoomFrame === null) zoomFrame = requestAnimationFrame(animateZoom);
 	}
 
