@@ -177,6 +177,19 @@ export async function createWorldTileType(input: {
 	`;
 }
 
+export async function updateWorldTileType(input: {
+	guildId: string;
+	id: string;
+	name: string;
+	imageData: string;
+}) {
+	const db = await getDB();
+	await db`
+		UPDATE world_tile_types SET name=${input.name}, image_data=${input.imageData}
+		WHERE guild_id=${input.guildId} AND id=${input.id}
+	`;
+}
+
 export async function getWorldTileType(guildId: string, id: string) {
 	const db = await getDB();
 	const rows = await db`

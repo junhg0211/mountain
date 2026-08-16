@@ -29,6 +29,7 @@
 	let tilePixels = $state<string[]>(Array(64).fill('0'));
 	let tileColor = $state('1');
 	let designingTile = $state(false);
+	let editingTileType = $state<(typeof data.tileTypes)[number] | null>(null);
 	const propPalette = ['transparent', '#20252b', '#f4f2ea', '#d6ff66', '#ee796b', '#ffcf72', '#69c7df', '#9d75d6', '#6f9f55'];
 	let propPixels = $state<string[]>(Array(64).fill('0'));
 	let propColor = $state('1');
@@ -395,9 +396,10 @@
 					if (isTileTypeRequest) {
 						tileTypeRequestId = null;
 						if (success) {
-							tileType = tileTypes.at(-1)?.id || 'grass';
+							tileType = String(message.tileTypeId || editingTileType?.id || 'grass');
 							tilePixels = Array(64).fill('0');
 							designingTile = false;
+							editingTileType = null;
 							building = true;
 							buildTool = 'tile';
 						}
@@ -734,7 +736,8 @@
 		event.preventDefault();
 		const form = new FormData(event.currentTarget as HTMLFormElement);
 		tileTypeRequestId = send({
-			type: 'basecamp-create-tile-type',
+			type: editingTileType ? 'basecamp-update-tile-type' : 'basecamp-create-tile-type',
+			id: editingTileType?.id,
 			name: form.get('name'),
 			imageData: tilePixels.join('')
 		});
@@ -758,6 +761,21 @@
 	}
 
 	function beginTileDesign() {
+		editingTileType = null;
+		tilePixels = Array(64).fill('0');
+		designingTile = true;
+		building = false;
+		cancelEditing();
+		selectedProp = null;
+		copyingProp = null;
+		selectedDoor = null;
+	}
+
+	function beginTileEdit() {
+		const selected = tileTypes.find((type) => type.id === tileType);
+		if (!selected) return;
+		editingTileType = selected;
+		tilePixels = Array.from(selected.imageData);
 		designingTile = true;
 		building = false;
 		cancelEditing();
@@ -768,6 +786,7 @@
 
 	function cancelTileDesign() {
 		designingTile = false;
+		editingTileType = null;
 		tilePixels = Array(64).fill('0');
 	}
 
@@ -1215,6 +1234,7 @@
 
 	function setBuildTool(tool: 'room' | 'wall' | 'door' | 'eraser' | 'tile' | 'prop' | 'selection') {
 		designingTile = false;
+		editingTileType = null;
 		selectingTeleportTarget = false;
 		if (building && buildTool === tool) building = false;
 		else { building = true; buildTool = tool; }
@@ -1411,6 +1431,7 @@
 		}
 		return [...unique.values()];
 	});
+	const sortedTileTypes = $derived([...tileTypes].sort((a, b) => a.name.localeCompare(b.name, 'ko')));
 	const rightPanelPinned = $derived(Boolean(
 		designingTile || selectedDoor || copyingProp || copiedRegion || editingProp || selectedProp || selectedRoom ||
 		(building && (buildTool === 'door' || buildTool === 'prop')) ||
@@ -1643,8 +1664,8 @@
 					<button class:active={building && buildTool === 'door'} onclick={() => setBuildTool('door')}>문 만들기</button>
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
 					<button class:active={designingTile} onclick={beginTileDesign}>바닥 타일 만들기</button>
-					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option>{#each tileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select></label>
-					{#if tileType !== 'grass'}<button class="danger" disabled={processing || !connected} onclick={askToDeleteTileType}>타일 삭제</button>{/if}
+					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option>{#each sortedTileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select></label>
+					{#if tileType !== 'grass'}<button disabled={processing || !connected} onclick={beginTileEdit}>타일 수정</button><button class="danger" disabled={processing || !connected} onclick={askToDeleteTileType}>타일 삭제</button>{/if}
 					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
 					<button class:active={building && buildTool === 'selection'} onclick={() => setBuildTool('selection')}>영역 선택</button>
 				{/if}
@@ -1767,7 +1788,7 @@
 
 			<aside>
 				{#if designingTile && data.canManage}
-					<form onsubmit={createTileType}><small>새 바닥 무늬</small><h2>바닥 타일 직접 그리기</h2><div class="pixel-palette" aria-label="바닥 타일 색상">{#each tilePalette as color, index}<button type="button" class:active={tileColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (tileColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor tile-pixel-editor" aria-label="8×8 바닥 타일 편집기">{#each tilePixels as pixel, index}<button type="button" style={`--pixel-color:${tilePalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintTilePixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintTilePixel(index, event); }}></button>{/each}</div><label>타일 이름<input name="name" maxlength="40" placeholder="예: 어두운 돌길" required /></label><p>월드보다 튀지 않도록 차분하고 어두운 색으로 구성된 팔레트입니다.</p><button disabled={processing || !connected || !tilePixels.some((pixel) => pixel !== '0')}>타일 저장하고 칠하기</button><button class="secondary" type="button" onclick={cancelTileDesign}>취소</button></form>
+					<form onsubmit={createTileType}><small>{editingTileType ? '바닥 무늬 수정' : '새 바닥 무늬'}</small><h2>바닥 타일 직접 그리기</h2><div class="pixel-palette" aria-label="바닥 타일 색상">{#each tilePalette as color, index}<button type="button" class:active={tileColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (tileColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor tile-pixel-editor" aria-label="8×8 바닥 타일 편집기">{#each tilePixels as pixel, index}<button type="button" style={`--pixel-color:${tilePalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintTilePixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintTilePixel(index, event); }}></button>{/each}</div><label>타일 이름<input name="name" value={editingTileType?.name || ''} maxlength="40" placeholder="예: 어두운 돌길" required /></label><p>수정하면 이 타일로 칠한 모든 칸에 새 무늬가 반영됩니다.</p><button disabled={processing || !connected || !tilePixels.some((pixel) => pixel !== '0')}>{editingTileType ? '타일 수정 저장' : '타일 저장하고 칠하기'}</button><button class="secondary" type="button" onclick={cancelTileDesign}>취소</button></form>
 				{:else if selectedDoor}
 					<div class="guide"><small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small><h2>문</h2><p>{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.</p>{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button></div>
 				{:else if building && buildTool === 'door'}

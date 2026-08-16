@@ -45,6 +45,7 @@ import {
 	copyBasecampRegion,
 	deleteBasecampRegion,
 	deleteBasecampTileType,
+	updateBasecampTileType,
 	copyBasecampProp,
 	createBasecampDoor,
 	createBasecampProp,
@@ -97,7 +98,7 @@ const basecampDoorSides = new Map<WebSocket, Map<string, number>>();
 const basecampUndoHistory = new Map<string, Array<{ userId: string; label: string; snapshot: WorldEditSnapshot }>>();
 const basecampUndoableActions = new Map([
 	['basecamp-copy-region', '영역 붙여넣기'], ['basecamp-delete-region', '영역 삭제'],
-	['basecamp-create-tile-type', '바닥 타일 만들기'], ['basecamp-delete-tile-type', '바닥 타일 삭제'], ['basecamp-paint-tiles', '바닥 칠하기'],
+	['basecamp-create-tile-type', '바닥 타일 만들기'], ['basecamp-update-tile-type', '바닥 타일 수정'], ['basecamp-delete-tile-type', '바닥 타일 삭제'], ['basecamp-paint-tiles', '바닥 칠하기'],
 	['basecamp-create-prop', '소품 놓기'], ['basecamp-copy-prop', '소품 복사'], ['basecamp-update-prop', '소품 편집'], ['basecamp-delete-prop', '소품 삭제'], ['basecamp-move-prop', '소품 이동'],
 	['basecamp-create-wall', '벽 만들기'], ['basecamp-delete-wall', '벽 지우기'], ['basecamp-create-door', '문 만들기'], ['basecamp-delete-door', '문 삭제']
 ]);
@@ -345,7 +346,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-update-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -479,6 +480,7 @@ async function attachBasecampSocket(
 			processing = true;
 			let state: Awaited<ReturnType<typeof getBasecampState>>;
 			let messageText: string;
+			let responseData: Record<string, unknown> = {};
 			const undoLabel = basecampUndoableActions.get(type);
 			const undoSnapshot = undoLabel ? await captureWorldEditSnapshot(guildId) : null;
 			if (type === 'basecamp-undo') {
@@ -531,13 +533,25 @@ async function attachBasecampSocket(
 				});
 				messageText = '현재 위치를 새로운 시작 위치로 설정했습니다.';
 			} else if (type === 'basecamp-create-tile-type') {
-				state = await createBasecampTileType({
+				const result = await createBasecampTileType({
 					guildId,
 					userId,
 					name: String(message.name || ''),
 					imageData: String(message.imageData || '')
 				});
+				state = result.state;
+				responseData = { tileTypeId: result.id };
 				messageText = '새 바닥 타일을 저장했습니다.';
+			} else if (type === 'basecamp-update-tile-type') {
+				state = await updateBasecampTileType({
+					guildId,
+					userId,
+					id: String(message.id || ''),
+					name: String(message.name || ''),
+					imageData: String(message.imageData || '')
+				});
+				responseData = { tileTypeId: String(message.id || '') };
+				messageText = '바닥 타일을 수정했습니다.';
 			} else if (type === 'basecamp-delete-tile-type') {
 				state = await deleteBasecampTileType({ guildId, userId, id: String(message.id || '') });
 				messageText = '바닥 타일을 삭제하고 칠해진 칸을 잔디로 되돌렸습니다.';
@@ -703,7 +717,7 @@ async function attachBasecampSocket(
 				basecampUndoHistory.set(guildId, history);
 			}
 			websocket.send(
-				JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: messageText })
+				JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: messageText, ...responseData })
 			);
 			broadcastBasecampState(guildId, state);
 		} catch (error) {

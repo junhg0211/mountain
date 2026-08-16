@@ -31,7 +31,8 @@ import {
 	setWorldSpawn,
 	setWorldSettings,
 	updateWorldProp,
-	updateWorldRoom
+	updateWorldRoom,
+	updateWorldTileType
 } from '$lib/server/db/world';
 import {
 	createGuildVoiceChannel,
@@ -97,13 +98,33 @@ export async function createBasecampTileType(input: {
 	if (!name || name.length > 40) throw new BasecampError('바닥 타일 이름은 1~40자로 입력해 주세요.');
 	if (!/^[0-8]{64}$/.test(imageData) || !/[1-8]/.test(imageData))
 		throw new BasecampError('8×8 편집기에 바닥 무늬를 그려 주세요.');
+	const id = crypto.randomUUID();
 	await createWorldTileType({
-		id: crypto.randomUUID(),
+		id,
 		guildId: input.guildId,
 		name,
 		imageData,
 		createdBy: input.userId
 	});
+	return { id, state: await getBasecampState(input.guildId) };
+}
+
+export async function updateBasecampTileType(input: {
+	guildId: string;
+	userId: string;
+	id: string;
+	name: string;
+	imageData: string;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	const name = input.name.trim();
+	const imageData = input.imageData.trim();
+	if (!name || name.length > 40) throw new BasecampError('바닥 타일 이름은 1~40자로 입력해 주세요.');
+	if (!/^[0-8]{64}$/.test(imageData) || !/[1-8]/.test(imageData))
+		throw new BasecampError('8×8 편집기에 바닥 무늬를 그려 주세요.');
+	if (!(await getWorldTileType(input.guildId, input.id)))
+		throw new BasecampError('수정할 바닥 타일을 찾을 수 없습니다.');
+	await updateWorldTileType({ guildId: input.guildId, id: input.id, name, imageData });
 	return getBasecampState(input.guildId);
 }
 
