@@ -198,6 +198,26 @@ export async function moveWorldProp(guildId: string, id: string, x: number, y: n
 	if (Number(result.affectedRows) !== 1) throw new Error('PROP_NOT_FOUND');
 }
 
+export async function updateWorldProp(input: {
+	guildId: string;
+	id: string;
+	name: string;
+	imageData: string;
+	width: number;
+	height: number;
+	actionType: WorldProp['actionType'];
+	teleportX: number | null;
+	teleportY: number | null;
+}) {
+	const db = await getDB();
+	await db`
+		UPDATE world_props SET name=${input.name}, image_data=${input.imageData},
+			width=${input.width}, height=${input.height}, action_type=${input.actionType},
+			teleport_x=${input.teleportX}, teleport_y=${input.teleportY}
+		WHERE guild_id=${input.guildId} AND id=${input.id}
+	`;
+}
+
 export async function listWorldWalls(guildId: string): Promise<WorldWall[]> {
 	const db = await getDB();
 	const rows = await db`

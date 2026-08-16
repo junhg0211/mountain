@@ -27,6 +27,7 @@ import {
 	restoreWorldRoom,
 	setWorldSpawn,
 	setWorldSettings,
+	updateWorldProp,
 	updateWorldRoom
 } from '$lib/server/db/world';
 import {
@@ -216,6 +217,46 @@ export async function moveBasecampProp(input: {
 	if (!prop) throw new BasecampError('이동할 소품을 찾을 수 없습니다.');
 	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
 	await moveWorldProp(input.guildId, input.id, input.x, input.y);
+	return getBasecampState(input.guildId);
+}
+
+export async function updateBasecampProp(input: {
+	guildId: string;
+	userId: string;
+	id: string;
+	name: string;
+	imageData: string;
+	width: number;
+	height: number;
+	actionType: string;
+	teleportX: number | null;
+	teleportY: number | null;
+}) {
+	const prop = await getWorldProp(input.guildId, input.id);
+	if (!prop) throw new BasecampError('편집할 소품을 찾을 수 없습니다.');
+	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
+	const name = input.name.trim();
+	const imageData = input.imageData.trim();
+	if (!name || name.length > 40) throw new BasecampError('소품 이름은 1~40자로 입력해 주세요.');
+	if (!/^[0-8]{64}$/.test(imageData) || !/[1-8]/.test(imageData))
+		throw new BasecampError('8×8 편집기에 소품 이미지를 그려 주세요.');
+	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
+		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
+		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
+	const actionType = input.actionType === 'teleport' ? 'teleport' : null;
+	if (actionType && (!Number.isFinite(input.teleportX) || !Number.isFinite(input.teleportY)))
+		throw new BasecampError('텔레포트 목적지를 선택해 주세요.');
+	await updateWorldProp({
+		guildId: input.guildId,
+		id: input.id,
+		name,
+		imageData,
+		width: input.width,
+		height: input.height,
+		actionType,
+		teleportX: actionType ? input.teleportX : null,
+		teleportY: actionType ? input.teleportY : null
+	});
 	return getBasecampState(input.guildId);
 }
 

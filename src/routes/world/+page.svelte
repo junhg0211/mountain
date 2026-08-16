@@ -44,8 +44,10 @@
 	let propRequestId: string | null = null;
 	let tileTypeRequestId: string | null = null;
 	let propMoveRequestId: string | null = null;
+	let propEditRequestId: string | null = null;
 	let voiceMoveRequestId: string | null = null;
 	let selectedProp = $state<(typeof data.props)[number] | null>(null);
+	let editingProp = $state<(typeof data.props)[number] | null>(null);
 	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
 	let unlockingDoor = $state<(typeof data.doors)[number] | null>(null);
 	let unlockPassword = $state('');
@@ -307,6 +309,7 @@
 					const isRoomCreation = message.requestId === roomCreationRequestId;
 					const isRoomEdit = message.requestId === roomEditRequestId;
 					const isPropRequest = message.requestId === propRequestId;
+					const isPropEdit = message.requestId === propEditRequestId;
 					const isTileTypeRequest = message.requestId === tileTypeRequestId;
 					const isPropMove = message.requestId === propMoveRequestId;
 					const isDoorUnlock = message.requestId === unlockRequestId;
@@ -342,6 +345,18 @@
 						}
 					}
 					if (isPropMove) propMoveRequestId = null;
+					if (isPropEdit) {
+						propEditRequestId = null;
+						if (success) {
+							editingProp = null;
+							selectedProp = null;
+							building = false;
+							propPixels = Array(64).fill('0');
+							propAction = 'none';
+							teleportTarget = null;
+							selectingTeleportTarget = false;
+						}
+					}
 					if (isTileTypeRequest) {
 						tileTypeRequestId = null;
 						if (success) {
@@ -367,6 +382,7 @@
 				propRequestId = null;
 				tileTypeRequestId = null;
 				propMoveRequestId = null;
+				propEditRequestId = null;
 				voiceMoveRequestId = null;
 				movingToVoiceChannel = false;
 				presenceId = null;
@@ -529,6 +545,43 @@
 		copyingProp = selectedProp;
 		selectedProp = null;
 		cancelDraft();
+	}
+
+	function beginEditProp() {
+		if (!selectedProp || (selectedProp.createdBy !== data.user.id && !data.canManage)) return;
+		editingProp = { ...selectedProp };
+		const imageData = selectedProp.imageData || '';
+		propPixels = /^[0-8]{64}$/.test(imageData) ? Array.from(imageData) : Array(64).fill('0');
+		propAction = selectedProp.actionType === 'teleport' ? 'teleport' : 'none';
+		teleportTarget = selectedProp.teleportX !== null && selectedProp.teleportY !== null
+			? { x: selectedProp.teleportX, y: selectedProp.teleportY }
+			: null;
+		selectingTeleportTarget = false;
+	}
+
+	function updateProp(event: SubmitEvent) {
+		event.preventDefault();
+		if (!editingProp) return;
+		const form = new FormData(event.currentTarget as HTMLFormElement);
+		propEditRequestId = send({
+			type: 'basecamp-update-prop',
+			id: editingProp.id,
+			name: form.get('name'),
+			imageData: propPixels.join(''),
+			width: Number(form.get('width')),
+			height: Number(form.get('height')),
+			actionType: propAction,
+			teleportX: propAction === 'teleport' ? teleportTarget?.x ?? null : null,
+			teleportY: propAction === 'teleport' ? teleportTarget?.y ?? null : null
+		});
+	}
+
+	function cancelPropEdit() {
+		editingProp = null;
+		propPixels = Array(64).fill('0');
+		propAction = 'none';
+		teleportTarget = null;
+		selectingTeleportTarget = false;
 	}
 
 	function beginTeleportTargetSelection() {
@@ -782,6 +835,13 @@
 		selectedRoom = null;
 		editSession = null;
 		propMoveSession = null;
+		if (editingProp) {
+			propPixels = Array(64).fill('0');
+			propAction = 'none';
+			teleportTarget = null;
+			selectingTeleportTarget = false;
+		}
+		editingProp = null;
 	}
 
 	const draft = $derived.by(() => {
@@ -921,7 +981,9 @@
 
 	function selectProp(event: PointerEvent, prop: (typeof data.props)[number]) {
 		if (!building || buildTool !== 'prop' || event.button !== 0) return;
+		if (selectingTeleportTarget) return;
 		event.stopPropagation();
+		editingProp = null;
 		selectedProp = prop;
 		cancelDraft();
 		if (prop.createdBy !== data.user.id && !data.canManage) return;
@@ -1292,8 +1354,10 @@
 					<div class="guide"><small>새 문 설정</small><h2>문 만들기</h2><label>비밀번호 (선택)<input bind:value={doorPassword} type="password" maxlength="40" placeholder="비워 두면 누구나 열 수 있음" /></label><p>설정한 뒤 월드의 격자선을 1칸 또는 2칸 드래그하세요.</p></div>
 				{:else if copyingProp}
 					<div class="guide"><small>소품 복사</small><h2>{copyingProp.name}</h2><p>월드에서 복사본을 놓을 칸을 선택하세요. 크기 {copyingProp.width} × {copyingProp.height}가 유지됩니다.</p><button class="secondary" onclick={cancelCopyProp}>복사 취소</button></div>
+				{:else if editingProp}
+					<form onsubmit={updateProp}><small>소품 편집</small><h2>{editingProp.name}</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" value={editingProp.name} required /></label><div class="prop-size-fields"><label>가로 칸<input name="width" type="number" min="1" max="32" value={editingProp.width} required /></label><label>세로 칸<input name="height" type="number" min="1" max="32" value={editingProp.height} required /></label></div><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option></select></label>{#if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>선택한 목적지: {teleportTarget.x}, {teleportTarget.y}</p>{/if}{/if}<button disabled={processing || !connected || !propPixels.some((pixel) => pixel !== '0') || (propAction === 'teleport' && !teleportTarget)}>변경 저장</button><button class="secondary" type="button" onclick={cancelPropEdit}>취소</button></form>
 				{:else if selectedProp}
-					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y} · 크기 {selectedProp.width} × {selectedProp.height}</p>{#if selectedProp.actionType === 'teleport'}<p>텔레포트 목적지: {selectedProp.teleportX}, {selectedProp.teleportY}</p>{/if}<button disabled={processing || !connected} onclick={beginCopyProp}>복사해서 놓기</button>{#if selectedProp.createdBy === data.user.id || data.canManage}<button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
+					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y} · 크기 {selectedProp.width} × {selectedProp.height}</p>{#if selectedProp.actionType === 'teleport'}<p>텔레포트 목적지: {selectedProp.teleportX}, {selectedProp.teleportY}</p>{/if}<button disabled={processing || !connected} onclick={beginCopyProp}>복사해서 놓기</button>{#if selectedProp.createdBy === data.user.id || data.canManage}<button disabled={processing || !connected} onclick={beginEditProp}>소품 편집</button><button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
 				{:else if draft && buildTool === 'prop'}
 					<form onsubmit={createProp}><small>새 소품 · {draft.width} × {draft.height}칸</small><h2>소품 직접 그리기</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" placeholder="예: 순간이동 발판" required /></label><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option></select></label>{#if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>선택한 목적지: {teleportTarget.x}, {teleportTarget.y}</p>{:else}<p>버튼을 누른 뒤 이동할 월드의 칸을 직접 선택하세요.</p>{/if}{:else}<p>최대 32×32칸이며 같은 영역에 다른 소품도 함께 놓을 수 있습니다.</p>{/if}<button disabled={processing || !connected || draft.width > 32 || draft.height > 32 || (propAction === 'teleport' && !teleportTarget)}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button></form>
 				{:else if selectedRoom && data.canManage}
@@ -1347,7 +1411,7 @@
 
 <style>
 	:global(body){margin:0;background:#0a0d12;color:#f4f2ea;font-family:Inter,ui-sans-serif,system-ui,sans-serif}main{min-height:100vh;padding:28px;box-sizing:border-box;background:radial-gradient(circle at 50% 0,#23372d 0,transparent 34%)}header,.intro,.workspace{max-width:1280px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:850;text-decoration:none}.brand span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#d6ff66;color:#17200d}nav{display:flex;gap:8px;overflow:auto}nav a{padding:8px 12px;border-radius:999px;color:#899187;text-decoration:none;font-size:12px;white-space:nowrap}nav a.active{background:#26312a;color:#e5f2dc}.intro{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:70px 0 28px}.intro small,.guide>small,aside form>small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.intro h1{max-width:680px;margin:8px 0 0;font-size:clamp(28px,4vw,52px);line-height:1.04}.intro button,.setup button,aside button{border:0;border-radius:12px;background:#d6ff66;color:#15200c;padding:12px 16px;font:inherit;font-weight:850;cursor:pointer}.intro button.active{background:#ffcf72}.intro button:disabled,.setup button:disabled,aside button:disabled{cursor:not-allowed;opacity:.4}.connection{max-width:1240px;margin:0 auto 10px;color:#848c85;font-size:10px;text-align:right}.connection i{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#9b5c5c}.connection.connected{color:#9eac9c}.connection.connected i{background:#94cf70}.notice{max-width:1240px;margin:0 auto 18px;padding:12px 16px;border:1px solid #663d3d;border-radius:12px;background:#2a1717;color:#ffb6b6;font-size:13px}.notice.success{border-color:#405e38;background:#172619;color:#bfeab6}.setup{max-width:1240px;margin:0 auto 18px;padding:16px 18px;display:grid;grid-template-columns:1fr auto auto auto;align-items:end;gap:14px;border:1px solid #39433a;border-radius:16px;background:#171c18}.setup strong{font-size:14px}.setup p{margin:4px 0 0;color:#8f978e;font-size:11px}.setup label,aside label{display:grid;gap:6px;color:#aeb5ac;font-size:11px}.setup select,aside input,aside select{min-width:180px;border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:10px;font:inherit}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px}.world-wrap{min-width:0}.world{position:relative;aspect-ratio:5/3;overflow:hidden;border:1px solid #354039;border-radius:20px;background:#101612;box-shadow:0 24px 80px #0008;touch-action:none;user-select:none}.world-background{position:absolute;inset:0;background:#1a251d}.world-map{position:absolute;top:0;left:0;transform-origin:top left;will-change:transform}.world-grid{position:absolute;background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:var(--tile-size) var(--tile-size);pointer-events:none}.world.building{cursor:crosshair}.plaza{position:absolute;display:grid;place-content:center;justify-items:center;width:72px;height:72px;gap:4px;border:1px dashed #44594b;border-radius:50%;color:#ffffff30;font-size:11px;font-weight:950;letter-spacing:.15em;transform:translate(-50%,-50%)}.plaza small{color:#9fb09f;font-size:8px;letter-spacing:.08em}.room{position:absolute;display:grid;place-content:center;min-width:0;box-sizing:border-box;border:3px solid transparent;border-radius:8px;background:transparent;color:#fff;text-align:center;pointer-events:none}.world.room-building .room:not(.draft){border-color:#a3c963;background:#4b613fcc;box-shadow:inset 0 0 0 3px #162119}.room span{overflow:hidden;padding:0 5px;font-size:12px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}.room small{color:#d6ff86;font-size:8px;font-weight:900;letter-spacing:.12em}.world.room-building .room.failed{border-color:#a55b5b;background:#572e2ecc}.room.draft{z-index:3;border-color:#a3c963;border-style:dashed;background:#d6ff6633}.room.draft.invalid{border-color:#ff7d7d;background:#ff5d5d22}.avatar{position:absolute;z-index:4;display:grid;place-items:center;width:30px;height:30px;box-sizing:border-box;border:3px solid #88918a;border-radius:50%;background:#566057;color:#fff;font-size:12px;font-weight:900;box-shadow:0 8px 15px #0008;transform:translate(-50%,-50%);transition:left 70ms linear,top 70ms linear}.avatar.mine{border-color:#f8f2da;background:#ee796b;transition:none}.world.zooming .avatar{transition:none}.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}.avatar small{position:absolute;top:32px;max-width:100px;padding:2px 5px;border-radius:4px;background:#0a0d12cc;color:#f4f2ea;font-size:8px;white-space:nowrap}.hint{margin:10px 4px 0;color:#788279;font-size:11px}.voice-status{margin-top:14px;padding:10px;border:1px solid #405e38;border-radius:10px;background:#172619;color:#bfeab6;font-size:11px}.room-status h2{color:#d6ff86}aside{border:1px solid #2e3730;border-radius:18px;background:#141916;padding:20px}aside h2{margin:8px 0 12px;font-size:20px}aside p{color:#8f978f;font-size:12px;line-height:1.65}aside form{display:grid;gap:12px}aside form p{margin:0}aside button.secondary{background:#282f29;color:#b8c0b8}.teleport-target-marker{position:absolute;z-index:8;width:22px;height:22px;border:2px solid #d6ff66;border-radius:50%;background:#9d75d688;box-shadow:0 0 20px #9d75d6;transform:translate(-50%,-50%);pointer-events:none}.teleport-target-marker span{position:absolute;bottom:calc(100% + 5px);left:50%;padding:3px 6px;border-radius:6px;background:#0a0d12dd;color:#fff;font-size:9px;white-space:nowrap;transform:translateX(-50%)}.empty{max-width:720px;margin:120px auto;text-align:center}.empty p{color:#899187}@media(max-width:900px){main{padding:16px}.intro{padding-top:48px;align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.setup{grid-template-columns:1fr 1fr}.setup>div{grid-column:1/-1}}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}.setup{grid-template-columns:1fr}.world-wrap{overflow:hidden}.hint{position:sticky;left:0}.intro h1{font-size:30px}}
-	:global(html),:global(body){height:100%;overflow:hidden}main{display:flex;height:100dvh;min-height:0;overflow:hidden;flex-direction:column;padding:clamp(10px,2.2vh,24px)}header,.intro,.workspace,.setup,.notice,.connection{width:100%;box-sizing:border-box}header{flex:none}.intro{flex:none;padding:clamp(12px,2.5vh,24px) 0 clamp(8px,1.5vh,16px)}.intro h1{font-size:clamp(22px,3.2vw,42px)}.connection{flex:none;margin-bottom:6px}.notice{flex:none;margin-bottom:8px;padding:8px 12px}.setup{flex:none;margin-bottom:8px;padding:10px 12px}.workspace{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) clamp(190px,22vw,280px);gap:clamp(8px,1.5vw,18px)}.world-wrap{display:grid;min-width:0;min-height:0;overflow:hidden;grid-template-rows:minmax(0,1fr) auto}.world{width:100%;height:100%;min-width:0;min-height:0;aspect-ratio:auto}.hint{margin:6px 4px 0}aside{min-width:0;min-height:0;overflow:hidden;padding:clamp(10px,1.7vw,20px)}
+	:global(html),:global(body){height:100%;overflow:hidden}main{display:flex;height:100dvh;min-height:0;overflow:hidden;flex-direction:column;padding:clamp(10px,2.2vh,24px)}header,.intro,.workspace,.setup,.notice,.connection{width:100%;box-sizing:border-box}header{flex:none}.intro{flex:none;padding:clamp(12px,2.5vh,24px) 0 clamp(8px,1.5vh,16px)}.intro h1{font-size:clamp(22px,3.2vw,42px)}.connection{flex:none;margin-bottom:6px}.notice{flex:none;margin-bottom:8px;padding:8px 12px}.setup{flex:none;margin-bottom:8px;padding:10px 12px}.workspace{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) clamp(190px,22vw,280px);gap:clamp(8px,1.5vw,18px)}.world-wrap{display:grid;min-width:0;min-height:0;overflow:hidden;grid-template-rows:minmax(0,1fr) auto}.world{width:100%;height:100%;min-width:0;min-height:0;aspect-ratio:auto}.hint{margin:6px 4px 0}aside{min-width:0;min-height:0;overflow:auto;padding:clamp(10px,1.7vw,20px)}
 	@media(max-height:650px){.intro{padding:8px 0}.intro small{display:none}.intro h1{margin:0;font-size:22px}.connection{margin-bottom:4px}.setup p{display:none}.setup{padding:8px 10px}.brand span{width:28px;height:28px}.hint{margin-top:3px}}
 	@media(max-width:900px){main{padding:10px}.intro{align-items:center;flex-direction:row;padding:10px 0}.workspace{grid-template-columns:minmax(0,1fr) clamp(170px,28vw,230px)}.setup{grid-template-columns:1fr auto auto auto}.setup>div{grid-column:auto}.setup select{min-width:120px}}
 	@media(max-width:600px){header{align-items:center;flex-direction:row}.brand{font-size:12px}nav{max-width:52vw}.intro h1{font-size:18px}.intro small{display:none}.intro button{padding:9px 10px;font-size:11px}.workspace{grid-template-columns:minmax(0,1fr) 150px}.world{min-width:0}.world-wrap{overflow:hidden}aside{padding:9px}aside h2{font-size:15px}.guide p{font-size:10px}.setup{grid-template-columns:1fr 1fr}.setup>div{display:none}.setup button{grid-column:1/-1}.setup select{width:100%;min-width:0;padding:7px}.hint{position:static;font-size:9px}}
@@ -1364,6 +1428,6 @@
 	.door-interaction-prompt{position:absolute;z-index:9;padding:5px 8px;border:1px solid #ffffff22;border-radius:7px;background:#0a0d12e6;color:#f4f2ea;font-size:10px;font-weight:800;white-space:nowrap;transform:translate(-50%,calc(-100% - 28px));box-shadow:0 6px 18px #0008;pointer-events:none}
 	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
 	.build-actions{display:flex;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:8px}.build-actions button{margin-left:0}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}.draft-wall.cut-wall{background:#ff7777;box-shadow:0 0 0 2px #ff777744}
-	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;overflow:hidden;background:#19231c;pointer-events:none}.painted-tile>svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}.painted-tile.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop.teleport{box-shadow:0 0 0 2px #9d75d688,0 0 18px #9d75d655}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}.tile-pixel-editor{background:#19231c}
+	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;overflow:hidden;background:#19231c;pointer-events:none}.painted-tile>svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}.painted-tile.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop.teleport{box-shadow:0 0 0 2px #9d75d688,0 0 18px #9d75d655}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}.tile-pixel-editor{background:#19231c}.prop-size-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.prop-size-fields input{width:100%;min-width:0;box-sizing:border-box}
 	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
 </style>

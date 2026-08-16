@@ -56,6 +56,7 @@ import {
 	moveBasecampProp,
 	openBasecampDoor,
 	paintBasecampTiles,
+	updateBasecampProp,
 	updateBasecampRoom
 } from './src/lib/server/basecamp.ts';
 
@@ -318,7 +319,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-create-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -472,6 +473,20 @@ async function attachBasecampSocket(
 					y: Number(message.y)
 				});
 				messageText = '소품을 복사해 놓았습니다.';
+			} else if (type === 'basecamp-update-prop') {
+				state = await updateBasecampProp({
+					guildId,
+					userId,
+					id: String(message.id || ''),
+					name: String(message.name || ''),
+					imageData: String(message.imageData || ''),
+					width: Number(message.width),
+					height: Number(message.height),
+					actionType: String(message.actionType || ''),
+					teleportX: message.teleportX === null || message.teleportX === '' ? null : Number(message.teleportX),
+					teleportY: message.teleportY === null || message.teleportY === '' ? null : Number(message.teleportY)
+				});
+				messageText = '소품을 편집했습니다.';
 			} else if (type === 'basecamp-delete-prop') {
 				state = await deleteBasecampProp({
 					guildId,
