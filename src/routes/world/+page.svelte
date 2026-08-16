@@ -102,6 +102,7 @@
 	let cameraInitialized = false;
 	let lastMovementSentAt = 0;
 	let movementSequence = 0;
+	let automaticPath: Array<{ x: number; y: number }> = [];
 	const pressedKeys = new Set<string>();
 	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
 	const movementCodes: Record<string, string> = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' };
@@ -162,6 +163,7 @@
 			const key = movementCodes[event.code] || event.key.toLowerCase();
 			if (!movementKeys.has(key)) return;
 			event.preventDefault();
+			automaticPath = [];
 			pressedKeys.add(key);
 			if (movementFrame === null) moveAvatar();
 		};
@@ -453,13 +455,27 @@
 			? 1 / 60
 			: Math.min(0.05, Math.max(0.001, (timestamp - lastMovementFrameAt) / 1_000));
 		lastMovementFrameAt = timestamp;
-		const horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
-		const vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
+		let horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
+		let vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
+		while (automaticPath.length && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < (automaticPath.length === 1 ? 0.04 : 0.22))
+			automaticPath.shift();
+		let automaticSpeed: number | null = null;
+		if (!horizontal && !vertical && automaticPath.length) {
+			const waypoint = automaticPath[0];
+			const dx = waypoint.x - me.x;
+			const dy = waypoint.y - me.y;
+			const distance = Math.hypot(dx, dy);
+			horizontal = dx / distance;
+			vertical = dy / distance;
+			if (automaticPath.length === 1)
+				automaticSpeed = Math.min(maximumMovementSpeed, Math.sqrt(2 * movementFriction * distance));
+		}
 		const inputLength = Math.hypot(horizontal, vertical) || 1;
 		const currentMaximumSpeed = maximumMovementSpeed * (sprinting ? sprintSpeedMultiplier : 1);
 		const currentAcceleration = movementAcceleration * (sprinting ? sprintSpeedMultiplier : 1);
-		const targetVelocityX = horizontal / inputLength * currentMaximumSpeed;
-		const targetVelocityY = vertical / inputLength * currentMaximumSpeed;
+		const desiredSpeed = automaticSpeed ?? currentMaximumSpeed;
+		const targetVelocityX = horizontal / inputLength * desiredSpeed;
+		const targetVelocityY = vertical / inputLength * desiredSpeed;
 		velocityX = approachVelocity(velocityX, targetVelocityX, (horizontal ? currentAcceleration : movementFriction) * deltaSeconds);
 		velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? currentAcceleration : movementFriction) * deltaSeconds);
 		const speed = Math.hypot(velocityX, velocityY);
@@ -500,7 +516,7 @@
 				sendPosition(x, y, false);
 			}
 		}
-		if (horizontal || vertical || velocityX || velocityY || Math.abs(movementZoom - 1) > 0.0001)
+		if (horizontal || vertical || automaticPath.length || velocityX || velocityY || Math.abs(movementZoom - 1) > 0.0001)
 			movementFrame = requestAnimationFrame(moveAvatar);
 		else {
 			lastMovementFrameAt = null;
@@ -980,6 +996,113 @@
 		});
 	}
 
+	function moveToRightClick(event: MouseEvent) {
+		event.preventDefault();
+		if (!presenceId || !worldViewport || unlockingDoor) return;
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (!me) return;
+		const rect = worldViewport.getBoundingClientRect();
+		const target = {
+			x: (event.clientX - rect.left - cameraX) / cameraLayout.cellSize,
+			y: (event.clientY - rect.top - cameraY) / cameraLayout.cellSize
+		};
+		const path = findWorldPath(me, target);
+		if (!path) {
+			automaticPath = [];
+			showNotice(false, '해당 위치로 이동할 수 있는 경로를 찾지 못했습니다.');
+			return;
+		}
+		automaticPath = path;
+		if (movementFrame === null) moveAvatar();
+	}
+
+	function findWorldPath(startPosition: { x: number; y: number }, targetPosition: { x: number; y: number }) {
+		type Node = { x: number; y: number; score: number };
+		const start = { x: Math.floor(startPosition.x), y: Math.floor(startPosition.y) };
+		const goal = { x: Math.floor(targetPosition.x), y: Math.floor(targetPosition.y) };
+		const key = (x: number, y: number) => `${x},${y}`;
+		const heap: Node[] = [];
+		const push = (node: Node) => {
+			heap.push(node);
+			let index = heap.length - 1;
+			while (index > 0) {
+				const parent = Math.floor((index - 1) / 2);
+				if (heap[parent].score <= node.score) break;
+				heap[index] = heap[parent];
+				index = parent;
+			}
+			heap[index] = node;
+		};
+		const pop = () => {
+			const first = heap[0];
+			const last = heap.pop();
+			if (!heap.length || !last) return first;
+			let index = 0;
+			while (true) {
+				const left = index * 2 + 1;
+				const right = left + 1;
+				if (left >= heap.length) break;
+				const child = right < heap.length && heap[right].score < heap[left].score ? right : left;
+				if (heap[child].score >= last.score) break;
+				heap[index] = heap[child];
+				index = child;
+			}
+			heap[index] = last;
+			return first;
+		};
+		const startKey = key(start.x, start.y);
+		const goalKey = key(goal.x, goal.y);
+		const costs = new Map([[startKey, 0]]);
+		const previous = new Map<string, string>();
+		const points = new Map([[startKey, start]]);
+		const closed = new Set<string>();
+		push({ ...start, score: Math.abs(goal.x - start.x) + Math.abs(goal.y - start.y) });
+		let found = startKey === goalKey;
+		while (heap.length && closed.size < 25_000 && !found) {
+			const current = pop();
+			if (!current) break;
+			const currentKey = key(current.x, current.y);
+			if (closed.has(currentKey)) continue;
+			closed.add(currentKey);
+			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+				const next = { x: current.x + dx, y: current.y + dy };
+				const nextKey = key(next.x, next.y);
+				if (closed.has(nextKey) || wallBlocksMovement(current.x + 0.5, current.y + 0.5, next.x + 0.5, next.y + 0.5)) continue;
+				const cost = (costs.get(currentKey) ?? Infinity) + 1;
+				if (cost >= (costs.get(nextKey) ?? Infinity)) continue;
+				costs.set(nextKey, cost);
+				previous.set(nextKey, currentKey);
+				points.set(nextKey, next);
+				push({ ...next, score: cost + Math.abs(goal.x - next.x) + Math.abs(goal.y - next.y) });
+				if (nextKey === goalKey) {
+					found = true;
+					break;
+				}
+			}
+		}
+		if (!found) return null;
+		const cells: Array<{ x: number; y: number }> = [];
+		let cursor = goalKey;
+		while (cursor !== startKey) {
+			const point = points.get(cursor);
+			if (!point) return null;
+			cells.push(point);
+			cursor = previous.get(cursor) || startKey;
+		}
+		cells.reverse();
+		const startCenter = { x: start.x + 0.5, y: start.y + 0.5 };
+		const path = Math.hypot(startCenter.x - startPosition.x, startCenter.y - startPosition.y) >= 0.18
+			? [startCenter]
+			: [];
+		path.push(...cells.map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 })));
+		const finalStart = path.at(-1) || startPosition;
+		if (!wallBlocksMovement(finalStart.x, finalStart.y, targetPosition.x, targetPosition.y))
+			path.push(targetPosition);
+		else if (!path.length)
+			path.push({ x: goal.x + 0.5, y: goal.y + 0.5 });
+		return path;
+	}
+
 	function pointSegmentDistanceSquared(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
 		const dx = bx - ax;
 		const dy = by - ay;
@@ -1306,6 +1429,7 @@
 		event.preventDefault();
 		event.stopPropagation();
 		(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+		automaticPath = [];
 		pressedKeys.add(key);
 		if (movementFrame === null) moveAvatar();
 	}
@@ -1489,6 +1613,7 @@
 					role="application"
 					aria-label="무한 월드 공간"
 					onwheel={zoomWorld}
+					oncontextmenu={moveToRightClick}
 					onpointerdown={beginRoom}
 					onpointermove={resizeRoom}
 					onpointerup={finishRoom}
