@@ -158,6 +158,15 @@ const TABLES = [
 		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
 		CHECK (width >= 2 AND height >= 2)
 	)`,
+	`CREATE TABLE IF NOT EXISTS world_positions (
+		guild_id VARCHAR(255) NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		x DOUBLE NOT NULL,
+		y DOUBLE NOT NULL,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		PRIMARY KEY (guild_id, user_id),
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
 	`CREATE TABLE IF NOT EXISTS world_walls (
 		id CHAR(36) PRIMARY KEY,
 		guild_id VARCHAR(255) NOT NULL,

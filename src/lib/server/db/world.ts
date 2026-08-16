@@ -59,6 +59,24 @@ export interface WorldProp {
 	createdBy: string;
 }
 
+export async function getWorldPosition(guildId: string, userId: string) {
+	const db = await getDB();
+	const rows = await db`
+		SELECT x, y FROM world_positions WHERE guild_id=${guildId} AND user_id=${userId} LIMIT 1
+	`;
+	return rows.length ? { x: Number(rows[0].x), y: Number(rows[0].y) } : null;
+}
+
+export async function setWorldPosition(guildId: string, userId: string, x: number, y: number) {
+	if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error('INVALID_WORLD_POSITION');
+	const db = await getDB();
+	await db`
+		INSERT INTO world_positions (guild_id, user_id, x, y)
+		VALUES (${guildId}, ${userId}, ${x}, ${y})
+		ON DUPLICATE KEY UPDATE x=VALUES(x), y=VALUES(y)
+	`;
+}
+
 export interface WorldEditSnapshot {
 	tileTypes: Array<{ id: string; name: string; imageData: string; createdBy: string }>;
 	tiles: Array<{ x: number; y: number; tileType: string; updatedBy: string }>;

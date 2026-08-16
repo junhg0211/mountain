@@ -556,6 +556,11 @@
 		send({ type: 'basecamp-undo' });
 	}
 
+	function returnToSpawn() {
+		if (!connected || processing) return;
+		send({ type: 'basecamp-return-spawn' });
+	}
+
 	function configure(event: SubmitEvent) {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget as HTMLFormElement);
@@ -1609,7 +1614,7 @@
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
 				{/if}
-				<div class:room-status={currentRoom} class="guide world-context"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div><button disabled={movingToVoiceChannel} onclick={moveToVoiceChannel}>{voiceTarget.name} 채널로 이동</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
+				<div class:room-status={currentRoom} class="guide world-context"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div><button disabled={movingToVoiceChannel} onclick={moveToVoiceChannel}>{voiceTarget.name} 채널로 이동</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}<button class="secondary" disabled={processing || !connected} onclick={returnToSpawn}>월드 시작 지점으로 돌아가기</button>{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
 			</aside>
 		</div>
 	{/if}

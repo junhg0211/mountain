@@ -4,7 +4,7 @@ import { getClient, startBot } from './src/lib/server/bot/index.ts';
 import { consumeRealtimeTicket, publishBettingUpdate, registerRealtimePublisher } from './src/lib/server/realtime.ts';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDB } from './src/lib/server/db.ts';
-import { captureWorldEditSnapshot, getWorldProp, restoreWorldEditSnapshot, type WorldEditSnapshot } from './src/lib/server/db/world.ts';
+import { captureWorldEditSnapshot, getWorldPosition, getWorldProp, restoreWorldEditSnapshot, setWorldPosition, type WorldEditSnapshot } from './src/lib/server/db/world.ts';
 import {
 	archiveBettingPool,
 	BettingOptionError,
@@ -207,7 +207,10 @@ async function attachBasecampSocket(
 		websocket.close(1008, 'Guild membership required');
 		return;
 	}
-	const initialState = await getBasecampState(guildId);
+	const [initialState, savedPosition] = await Promise.all([
+		getBasecampState(guildId),
+		getWorldPosition(guildId, userId)
+	]);
 	for (const door of initialState.doors) {
 		if (door.isOpen && !basecampDoorCloseTimers.has(basecampDoorTimerKey(guildId, door.id)))
 			scheduleBasecampDoorClose(guildId, door.id, 30_000);
@@ -219,8 +222,8 @@ async function attachBasecampSocket(
 		avatarUrl: member.user.avatar
 			? `https://cdn.discordapp.com/avatars/${member.user.id}/${member.user.avatar}.webp?size=80`
 			: null,
-		x: initialState.settings.spawnX,
-		y: initialState.settings.spawnY,
+		x: savedPosition?.x ?? initialState.settings.spawnX,
+		y: savedPosition?.y ?? initialState.settings.spawnY,
 		seatedPropId: null
 	};
 	basecampWorldStates.set(guildId, initialState);
@@ -289,6 +292,9 @@ async function attachBasecampSocket(
 		void grantBasecampRole(guildId, userId, initialState.settings.accessRoleId);
 	websocket.on('close', () => {
 		const closingState = basecampWorldStates.get(guildId) || initialState;
+		void setWorldPosition(guildId, userId, presence.x, presence.y).catch((error) =>
+			console.error(`Basecamp position save failed for ${guildId}/${userId}:`, error)
+		);
 		clearInterval(heartbeatInterval);
 		if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
 		heartbeatTimeout = null;
@@ -333,7 +339,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -363,6 +369,8 @@ async function attachBasecampSocket(
 				pendingMove = null;
 				lastMoveAt = now;
 				applyBasecampMovement(x, y);
+				if (message.final === true)
+					await setWorldPosition(guildId, userId, presence.x, presence.y);
 				websocket.send(JSON.stringify({
 					type: 'basecamp-position',
 					x: presence.x,
@@ -370,6 +378,18 @@ async function attachBasecampSocket(
 					sequence,
 					final: message.final === true
 				}));
+				return;
+			}
+			if (type === 'basecamp-return-spawn') {
+				const state = basecampWorldStates.get(guildId) || initialState;
+				presence.seatedPropId = null;
+				presence.x = state.settings.spawnX;
+				presence.y = state.settings.spawnY;
+				await setWorldPosition(guildId, userId, presence.x, presence.y);
+				broadcastBasecampPresences(guildId);
+				updateBasecampVoiceTarget(websocket, guildId, presence, state);
+				websocket.send(JSON.stringify({ type: 'basecamp-teleport', x: presence.x, y: presence.y }));
+				websocket.send(JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: '월드 시작 지점으로 돌아왔습니다.' }));
 				return;
 			}
 			if (type === 'basecamp-move-voice') {
@@ -423,6 +443,7 @@ async function attachBasecampSocket(
 					presence.x = prop.x + prop.width / 2;
 					presence.y = prop.y + prop.height / 2;
 					presence.seatedPropId = prop.id;
+					await setWorldPosition(guildId, userId, presence.x, presence.y);
 					broadcastBasecampPresences(guildId);
 					websocket.send(JSON.stringify({ type: 'basecamp-teleport', x: presence.x, y: presence.y }));
 					websocket.send(JSON.stringify({ type: 'basecamp-result', requestId, ok: true, message: '자리에 앉았습니다. 이동하면 자동으로 일어납니다.' }));
@@ -433,6 +454,7 @@ async function attachBasecampSocket(
 				presence.seatedPropId = null;
 				presence.x = prop.teleportX;
 				presence.y = prop.teleportY;
+				await setWorldPosition(guildId, userId, presence.x, presence.y);
 				broadcastBasecampPresences(guildId);
 				const worldState = basecampWorldStates.get(guildId);
 				if (worldState) updateBasecampVoiceTarget(websocket, guildId, presence, worldState);
