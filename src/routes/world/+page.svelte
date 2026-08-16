@@ -681,10 +681,15 @@
 	}
 
 	function selectDoor(event: PointerEvent, door: (typeof data.doors)[number]) {
-		if (building || event.button !== 0) return;
+		if (event.button !== 0) return;
 		event.stopPropagation();
-		selectedDoor = door;
-		selectedProp = null;
+		if (building) {
+			if (buildTool !== 'door') return;
+			selectedDoor = door;
+			selectedProp = null;
+			cancelDraft();
+			return;
+		}
 		if (door.isOpen) return;
 		const password = door.hasPassword ? window.prompt('문 비밀번호를 입력해 주세요.') : '';
 		if (password === null) return;
