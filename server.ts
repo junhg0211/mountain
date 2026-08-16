@@ -1069,6 +1069,8 @@ function queueBasecampVoiceMove(
 		.then(async () => {
 			if (!basecampAutoMoves.get(websocket) || basecampVoiceTargets.get(websocket) !== channelId)
 				return;
+			const categoryId = basecampWorldStates.get(guildId)?.settings.categoryId;
+			if (!categoryId) return;
 			const client = getClient();
 			if (!client?.isReady()) throw new Error('Discord 봇이 아직 준비되지 않았습니다.');
 			const guild = await client.guilds.fetch(guildId);
@@ -1085,6 +1087,12 @@ function queueBasecampVoiceMove(
 				return;
 			}
 			if (member.voice.channelId === channelId) {
+				clearBasecampVoiceMoveRetry(websocket);
+				return;
+			}
+			const currentChannel = member.voice.channel ||
+				await guild.channels.fetch(member.voice.channelId).catch(() => null);
+			if (currentChannel?.parentId !== categoryId) {
 				clearBasecampVoiceMoveRetry(websocket);
 				return;
 			}
