@@ -471,6 +471,38 @@ export async function copyWorldRegion(input: {
 	});
 }
 
+export async function deleteWorldRegion(input: {
+	guildId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}) {
+	const db = await getDB();
+	return db.begin(async (tx) => {
+		const xEnd = input.x + input.width;
+		const yEnd = input.y + input.height;
+		await tx`DELETE FROM world_tiles WHERE guild_id=${input.guildId} AND x>=${input.x} AND x<${xEnd} AND y>=${input.y} AND y<${yEnd}`;
+		const props = await tx`DELETE FROM world_props WHERE guild_id=${input.guildId} AND x>=${input.x} AND x+width<=${xEnd} AND y>=${input.y} AND y+height<=${yEnd}`;
+		const doors = await tx`
+			DELETE FROM world_doors WHERE guild_id=${input.guildId} AND (
+				(orientation='horizontal' AND y>=${input.y} AND y<=${yEnd} AND x>=${input.x} AND x+length<=${xEnd}) OR
+				(orientation='vertical' AND x>=${input.x} AND x<=${xEnd} AND y>=${input.y} AND y+length<=${yEnd})
+			)
+		`;
+		const walls = await tx`
+			DELETE FROM world_walls WHERE guild_id=${input.guildId} AND (
+				(orientation='horizontal' AND y>=${input.y} AND y<=${yEnd} AND x>=${input.x} AND x+width<=${xEnd}) OR
+				(orientation='vertical' AND x>=${input.x} AND x<=${xEnd} AND y>=${input.y} AND y+height<=${yEnd})
+			)
+		`;
+		return {
+			tiles: input.width * input.height, props: Number(props.affectedRows),
+			doors: Number(doors.affectedRows), walls: Number(walls.affectedRows)
+		};
+	});
+}
+
 export async function deleteWorldWall(guildId: string, id: string) {
 	const db = await getDB();
 	const result = await db`DELETE FROM world_walls WHERE guild_id=${guildId} AND id=${id}`;

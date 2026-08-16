@@ -52,6 +52,7 @@
 	let editingProp = $state<(typeof data.props)[number] | null>(null);
 	let copiedRegion = $state<{ x: number; y: number; width: number; height: number } | null>(null);
 	let pastingRegion = $state(false);
+	let pasteTarget = $state<{ x: number; y: number } | null>(null);
 	let selectedDoor = $state<(typeof data.doors)[number] | null>(null);
 	let unlockingDoor = $state<(typeof data.doors)[number] | null>(null);
 	let unlockPassword = $state('');
@@ -364,6 +365,7 @@
 						if (success) {
 							copiedRegion = null;
 							pastingRegion = false;
+							pasteTarget = null;
 							building = false;
 						}
 					}
@@ -799,6 +801,8 @@
 	}
 
 	function resizeRoom(event: PointerEvent) {
+		if (building && buildTool === 'selection' && pastingRegion && copiedRegion)
+			pasteTarget = cell(event);
 		if (propMoveSession && (event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
 			const point = cell(event);
 			selectedProp = {
@@ -836,12 +840,13 @@
 		}
 		if (building && buildTool === 'selection' && draft) {
 			if (draft.width > 100 || draft.height > 100) {
-				showNotice(false, '복사할 영역은 최대 100×100칸까지 선택할 수 있습니다.');
+				showNotice(false, '작업할 영역은 최대 100×100칸까지 선택할 수 있습니다.');
 				cancelDraft();
 				return;
 			}
 			copiedRegion = { x: draft.x, y: draft.y, width: draft.width, height: draft.height };
 			pastingRegion = false;
+			pasteTarget = null;
 			cancelDraft();
 		} else if (building && buildTool === 'wall' && draft) {
 			send({ type: 'basecamp-create-wall', ...draft });
@@ -999,7 +1004,13 @@
 	function cancelRegionCopy() {
 		copiedRegion = null;
 		pastingRegion = false;
+		pasteTarget = null;
 		cancelDraft();
+	}
+
+	function deleteSelectedRegion() {
+		if (!copiedRegion) return;
+		regionRequestId = send({ type: 'basecamp-delete-region', ...copiedRegion });
 	}
 
 	function selectDoor(event: PointerEvent, door: (typeof data.doors)[number]) {
@@ -1116,9 +1127,9 @@
 				)
 			: false
 	);
-	const copiedRegionCounts = $derived.by(() => {
+	const selectedRegionContents = $derived.by(() => {
 		const region = copiedRegion;
-		if (!region) return { tiles: 0, props: 0, doors: 0, walls: 0 };
+		if (!region) return { tiles: [], props: [], doors: [], walls: [] };
 		const xEnd = region.x + region.width;
 		const yEnd = region.y + region.height;
 		const containsSegment = (item: { x: number; y: number; orientation: 'horizontal' | 'vertical'; width?: number; height?: number; length?: number }) => {
@@ -1128,12 +1139,22 @@
 				: item.x >= region.x && item.x <= xEnd && item.y >= region.y && item.y + length <= yEnd;
 		};
 		return {
-			tiles: region.width * region.height,
-			props: worldProps.filter((prop) => prop.x >= region.x && prop.x + prop.width <= xEnd && prop.y >= region.y && prop.y + prop.height <= yEnd).length,
-			doors: doors.filter(containsSegment).length,
-			walls: walls.filter(containsSegment).length
+			tiles: tiles.filter((tile) => tile.x >= region.x && tile.x < xEnd && tile.y >= region.y && tile.y < yEnd),
+			props: worldProps.filter((prop) => prop.x >= region.x && prop.x + prop.width <= xEnd && prop.y >= region.y && prop.y + prop.height <= yEnd),
+			doors: doors.filter(containsSegment),
+			walls: walls.filter(containsSegment)
 		};
 	});
+	const copiedRegionCounts = $derived({
+		tiles: copiedRegion ? copiedRegion.width * copiedRegion.height : 0,
+		props: selectedRegionContents.props.length,
+		doors: selectedRegionContents.doors.length,
+		walls: selectedRegionContents.walls.length
+	});
+	const pastePreviewOffset = $derived(copiedRegion && pasteTarget ? {
+		x: pasteTarget.x - copiedRegion.x,
+		y: pasteTarget.y - copiedRegion.y
+	} : null);
 	const rightPanelPinned = $derived(Boolean(
 		designingTile || selectedDoor || copyingProp || copiedRegion || editingProp || selectedProp || selectedRoom ||
 		(building && (buildTool === 'door' || buildTool === 'prop')) ||
@@ -1343,7 +1364,7 @@
 					<button class:active={designingTile} onclick={beginTileDesign}>바닥 타일 만들기</button>
 					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option>{#each tileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select></label>
 					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
-					<button class:active={building && buildTool === 'selection'} onclick={() => setBuildTool('selection')}>영역 복사</button>
+					<button class:active={building && buildTool === 'selection'} onclick={() => setBuildTool('selection')}>영역 선택</button>
 				{/if}
 				<button class:active={building && buildTool === 'prop'} onclick={() => setBuildTool('prop')}>소품 놓기</button>
 			</div>
@@ -1419,6 +1440,15 @@
 					{/each}
 					{#if draft && (buildTool === 'wall' || buildTool === 'eraser')}<div class:cut-wall={buildTool === 'eraser'} class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class:grass={tileType === 'grass'} class="painted-tile tile-draft" style={roomStyle(draft)}>{#if tileTypes.find((type) => type.id === tileType)?.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tileTypes.find((type) => type.id === tileType)?.imageData || '') as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft && buildTool === 'selection'}<div class="region-selection" style={roomStyle(draft)}><small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
 					{#if copiedRegion}<div class:pasting={pastingRegion} class="region-selection selected" style={roomStyle(copiedRegion)}><small>{pastingRegion ? '붙여넣을 기준 칸을 선택하세요' : `${copiedRegion.width} × ${copiedRegion.height}`}</small></div>{/if}
+					{#if copiedRegion && pasteTarget && pastePreviewOffset}
+						<div class="paste-preview">
+							<div class="paste-floor-preview" style={roomStyle({ ...copiedRegion, x: pasteTarget.x, y: pasteTarget.y })}></div>
+							{#each selectedRegionContents.tiles as tile}<div class="painted-tile" style={tileStyle({ x: tile.x + pastePreviewOffset.x, y: tile.y + pastePreviewOffset.y })}>{#if tile.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tile.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{/each}
+							{#each selectedRegionContents.walls as wall}<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} style={wallStyle({ ...wall, x: wall.x + pastePreviewOffset.x, y: wall.y + pastePreviewOffset.y })}></div>{/each}
+							{#each selectedRegionContents.doors as door}<div class="door" class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} style={doorStyle({ ...door, x: door.x + pastePreviewOffset.x, y: door.y + pastePreviewOffset.y })}></div>{/each}
+							{#each selectedRegionContents.props as prop}<div class="world-prop" style={`left:${(prop.x + pastePreviewOffset.x + prop.width / 2) * cameraLayout.cellSize}px;top:${(prop.y + pastePreviewOffset.y + prop.height / 2) * cameraLayout.cellSize}px;width:${prop.width * cameraLayout.cellSize}px;height:${prop.height * cameraLayout.cellSize}px;--prop-size:${Math.min(prop.width, prop.height) * cameraLayout.cellSize}px`}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</div>{/each}
+						</div>
+					{/if}
 					{#if teleportTarget && draft && buildTool === 'prop'}<div class="teleport-target-marker" style={`left:${teleportTarget.x * cameraLayout.cellSize}px;top:${teleportTarget.y * cameraLayout.cellSize}px`}><span>목적지</span></div>{/if}
 					{#each presences as presence (presence.id)}
 						<div class:mine={presence.id === presenceId} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom * movementZoom}px;--avatar-border:${3 * renderedZoom * movementZoom}px`} title={presence.username}>
@@ -1449,7 +1479,7 @@
 						</div>
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '격자선을 따라 드래그해서 없앨 벽 구간을 선택하세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'selection' ? (pastingRegion ? '붙여넣을 영역의 왼쪽 위 기준 칸을 선택하세요.' : '복사할 영역을 드래그하세요.') : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '빈 영역을 드래그해 만들거나 기존 소품을 드래그해 옮기세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '격자선을 따라 드래그해서 없앨 벽 구간을 선택하세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'selection' ? (pastingRegion ? '미리보기를 확인하고 붙여넣을 위치를 선택하세요.' : '작업할 영역을 드래그하세요.') : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '빈 영역을 드래그해 만들거나 기존 소품을 드래그해 옮기세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
 			</div>
 
 			<aside>
@@ -1462,7 +1492,7 @@
 				{:else if copyingProp}
 					<div class="guide"><small>소품 복사</small><h2>{copyingProp.name}</h2><p>월드에서 복사본을 놓을 칸을 선택하세요. 크기 {copyingProp.width} × {copyingProp.height}가 유지됩니다.</p><button class="secondary" onclick={cancelCopyProp}>복사 취소</button></div>
 				{:else if copiedRegion}
-					<div class="guide"><small>영역 복사</small><h2>{copiedRegion.width} × {copiedRegion.height}칸 선택</h2><p>배경 {copiedRegionCounts.tiles}칸 · 소품 {copiedRegionCounts.props}개 · 문 {copiedRegionCounts.doors}개 · 벽 {copiedRegionCounts.walls}개</p><p>{pastingRegion ? '월드에서 붙여넣을 영역의 왼쪽 위 칸을 선택하세요.' : '방과 음성 채널은 복사되지 않습니다.'}</p>{#if !pastingRegion}<button disabled={processing || !connected || !copiedRegionCounts.tiles && !copiedRegionCounts.props && !copiedRegionCounts.doors && !copiedRegionCounts.walls} onclick={() => (pastingRegion = true)}>붙여넣을 위치 선택</button>{/if}<button class="secondary" type="button" onclick={cancelRegionCopy}>취소</button></div>
+					<div class="guide"><small>영역 선택</small><h2>{copiedRegion.width} × {copiedRegion.height}칸 선택</h2><p>배경 {copiedRegionCounts.tiles}칸 · 소품 {copiedRegionCounts.props}개 · 문 {copiedRegionCounts.doors}개 · 벽 {copiedRegionCounts.walls}개</p><p>{pastingRegion ? '반투명 미리보기를 확인하고 놓을 위치를 선택하세요.' : '방과 음성 채널은 작업 대상에서 제외됩니다.'}</p>{#if !pastingRegion}<button disabled={processing || !connected} onclick={() => { pastingRegion = true; pasteTarget = null; }}>영역 복사</button><button class="danger" disabled={processing || !connected} onclick={deleteSelectedRegion}>영역 삭제</button>{/if}<button class="secondary" type="button" onclick={cancelRegionCopy}>취소</button></div>
 				{:else if editingProp}
 					<form onsubmit={updateProp}><small>소품 편집</small><h2>{editingProp.name}</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" value={editingProp.name} required /></label><div class="prop-size-fields"><label>가로 칸<input name="width" type="number" min="1" max="32" value={editingProp.width} required /></label><label>세로 칸<input name="height" type="number" min="1" max="32" value={editingProp.height} required /></label></div><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option><option value="sign">표지판</option></select></label>{#if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>선택한 목적지: {teleportTarget.x}, {teleportTarget.y}</p>{/if}{:else if propAction === 'sign'}<label>표지판 문구<textarea bind:value={signText} maxlength="500" rows="4" placeholder="가까이 왔을 때 보여줄 문구" required></textarea></label>{/if}<button disabled={processing || !connected || !propPixels.some((pixel) => pixel !== '0') || (propAction === 'teleport' && !teleportTarget) || (propAction === 'sign' && !signText.trim())}>변경 저장</button><button class="secondary" type="button" onclick={cancelPropEdit}>취소</button></form>
 				{:else if selectedProp}
@@ -1541,6 +1571,7 @@
 	.world-prop.sign{box-shadow:0 0 0 2px #ffcf7266,0 0 14px #ffcf7233}.empty p{color:#899187}
 	.world-grid{z-index:2;display:block;overflow:visible;background-image:none}
 	.region-selection{position:absolute;z-index:8;display:grid;place-items:center;box-sizing:border-box;border:2px dashed #69c7df;background:#69c7df22;color:#d9f8ff;pointer-events:none}.region-selection.selected{border-style:solid;background:#69c7df16}.region-selection.pasting{border-color:#ffcf72;background:#ffcf7218;color:#fff0c3}.region-selection small{padding:4px 7px;border-radius:6px;background:#0a0d12d9;font-size:10px;font-weight:850;white-space:nowrap}
+	.paste-preview{position:absolute;z-index:9;inset:0;opacity:.5;pointer-events:none}.paste-preview>*{pointer-events:none}.paste-floor-preview{position:absolute;z-index:0;background:#1a251d;box-shadow:inset 0 0 0 2px #ffcf72}.paste-preview .painted-tile{z-index:1}.paste-preview .wall,.paste-preview .world-prop{z-index:3}.paste-preview .door{z-index:6}
 	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
 	.notification-queue{position:fixed;z-index:30;bottom:52px;left:14px;display:flex;width:min(420px,calc(100vw - 28px));flex-direction:column;gap:8px;pointer-events:none}.notification-queue .notice{position:relative;inset:auto;width:auto;max-width:none;margin:0;padding:10px 13px;box-sizing:border-box;transform:none;box-shadow:0 10px 30px #0009;backdrop-filter:blur(12px);animation:notice-in .16s ease-out}.notification-queue .notice.success{background:#172619e8}.notification-queue .notice:not(.success){background:#2a1717e8}@keyframes notice-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@media(hover:none),(pointer:coarse){.notification-queue{bottom:calc(160px + env(safe-area-inset-bottom))}}
 </style>

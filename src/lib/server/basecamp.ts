@@ -8,6 +8,7 @@ import {
 	createWorldProp,
 	createWorldTileType,
 	copyWorldRegion,
+	deleteWorldRegion,
 	deleteWorldDoor,
 	deleteWorldProp,
 	cutWorldWalls,
@@ -305,6 +306,22 @@ export async function copyBasecampRegion(input: {
 	const counts = await copyWorldRegion(input);
 	if (!counts.tiles && !counts.props && !counts.doors && !counts.walls)
 		throw new BasecampError('선택한 영역에 복사할 배경, 소품, 문 또는 벽이 없습니다.');
+	return { state: await getBasecampState(input.guildId), counts };
+}
+
+export async function deleteBasecampRegion(input: {
+	guildId: string;
+	userId: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}) {
+	await requireGuildManager(input.guildId, input.userId);
+	if (![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
+		input.width < 1 || input.height < 1 || input.width > 100 || input.height > 100)
+		throw new BasecampError('삭제할 영역은 1×1칸부터 100×100칸까지 선택해 주세요.');
+	const counts = await deleteWorldRegion(input);
 	return { state: await getBasecampState(input.guildId), counts };
 }
 
