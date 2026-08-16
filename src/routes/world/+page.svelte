@@ -591,7 +591,11 @@
 
 	function beginCopyProp() {
 		if (!selectedProp) return;
-		copyingProp = selectedProp;
+		beginCopyExistingProp(selectedProp);
+	}
+
+	function beginCopyExistingProp(prop: (typeof data.props)[number]) {
+		copyingProp = prop;
 		selectedProp = null;
 		cancelDraft();
 	}
@@ -1211,6 +1215,15 @@
 		x: pasteTarget.x - copiedRegion.x,
 		y: pasteTarget.y - copiedRegion.y
 	} : null);
+	const propTemplates = $derived.by(() => {
+		const unique = new Map<string, (typeof data.props)[number]>();
+		for (const prop of worldProps) {
+			const appearance = prop.imageData ? `pixels:${prop.imageData}` : `emoji:${prop.emoji}`;
+			const key = `${appearance}:${prop.width}x${prop.height}`;
+			if (!unique.has(key)) unique.set(key, prop);
+		}
+		return [...unique.values()];
+	});
 	const rightPanelPinned = $derived(Boolean(
 		designingTile || selectedDoor || copyingProp || copiedRegion || editingProp || selectedProp || selectedRoom ||
 		(building && (buildTool === 'door' || buildTool === 'prop')) ||
@@ -1574,7 +1587,7 @@
 				{:else if draft && buildTool === 'prop'}
 					<form onsubmit={createProp}><small>새 소품 · {draft.width} × {draft.height}칸</small><h2>소품 직접 그리기</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" placeholder="예: 안내 표지판" required /></label><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option><option value="sign">표지판</option><option value="seat">앉을 수 있는 가구</option></select></label>{#if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>선택한 목적지: {teleportTarget.x}, {teleportTarget.y}</p>{:else}<p>버튼을 누른 뒤 이동할 월드의 칸을 직접 선택하세요.</p>{/if}{:else if propAction === 'sign'}<label>표지판 문구<textarea bind:value={signText} maxlength="500" rows="4" placeholder="가까이 왔을 때 보여줄 문구" required></textarea></label>{:else}<p>최대 32×32칸이며 같은 영역에 다른 소품도 함께 놓을 수 있습니다.</p>{/if}<button disabled={processing || !connected || draft.width > 32 || draft.height > 32 || (propAction === 'teleport' && !teleportTarget) || (propAction === 'sign' && !signText.trim())}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button></form>
 				{:else if building && buildTool === 'prop'}
-					<div class="guide"><small>소품 놓기</small><h2>소품을 만들거나 선택하세요</h2><p>빈 영역을 드래그하면 새 소품을 만들 수 있습니다. 기존 소품을 선택하면 이동·복사·편집할 수 있습니다.</p></div>
+					<div class="guide"><small>소품 놓기</small><h2>소품을 만들거나 선택하세요</h2><p>빈 영역을 드래그하면 새 소품을 만들 수 있습니다. 아래에서 기존 소품을 고르면 월드에 복사해서 놓을 수 있습니다.</p>{#if propTemplates.length}<div class="prop-library" aria-label="기존 소품 목록">{#each propTemplates as prop (prop.id)}<button type="button" title={`${prop.name} · ${prop.width}×${prop.height}`} aria-label={`${prop.name} 소품 선택`} onclick={() => beginCopyExistingProp(prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}<span>{prop.emoji}</span>{/if}<small>{prop.name}</small></button>{/each}</div>{:else}<p>아직 다시 사용할 소품이 없습니다.</p>{/if}</div>
 				{:else if selectedRoom && data.canManage}
 					<form onsubmit={updateRoom}>
 						<small>선택한 공간</small><h2>방 편집하기</h2>
@@ -1657,6 +1670,7 @@
 	.build-actions{display:flex;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:8px}.build-actions button{margin-left:0}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}.draft-wall.cut-wall{background:#ff7777;box-shadow:0 0 0 2px #ff777744}
 	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;overflow:hidden;background:#19231c;pointer-events:none}.painted-tile>svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}.painted-tile.stone{background:#303735 linear-gradient(135deg,#ffffff0d 25%,transparent 25%,transparent 75%,#00000014 75%)}.painted-tile.sand{background:#5a4a2f radial-gradient(circle,#f2cf8155 1px,transparent 1.5px);background-size:18px 18px}.painted-tile.water{background:#173b46 repeating-radial-gradient(ellipse at 50% 0,#69c7df28 0 3px,transparent 4px 12px);background-size:48px 24px}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop.teleport{box-shadow:0 0 0 2px #9d75d688,0 0 18px #9d75d655}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}.tile-pixel-editor{background:#19231c}.prop-size-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.prop-size-fields input{width:100%;min-width:0;box-sizing:border-box}
 	.world-prop.sign{box-shadow:0 0 0 2px #ffcf7266,0 0 14px #ffcf7233}.empty p{color:#899187}
+	.prop-library{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:240px;overflow:auto}.prop-library button{display:grid;min-width:0;aspect-ratio:1;padding:7px;place-items:center;border:1px solid #ffffff18;background:#202720;color:#f4f2ea}.prop-library svg{width:100%;height:100%;min-height:32px;shape-rendering:crispEdges}.prop-library span{font-size:28px}.prop-library small{max-width:100%;overflow:hidden;color:#bfc7bd;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
 	.world-prop.seat{box-shadow:0 0 0 2px #69c7df66,0 0 14px #69c7df33}.world-prop.seat.occupied{box-shadow:0 0 0 2px #ffcf7288,0 0 14px #ffcf7244}.avatar.seated{transform:translate(-50%,-42%) scaleY(.78);border-color:#69c7df}
 	.world-grid{z-index:2;display:block;overflow:visible;background-image:none}
 	.region-selection{position:absolute;z-index:8;display:grid;place-items:center;box-sizing:border-box;border:2px dashed #69c7df;background:#69c7df22;color:#d9f8ff;pointer-events:none}.region-selection.selected{border-style:solid;background:#69c7df16}.region-selection.pasting{border-color:#ffcf72;background:#ffcf7218;color:#fff0c3}.region-selection small{padding:4px 7px;border-radius:6px;background:#0a0d12d9;font-size:10px;font-weight:850;white-space:nowrap}
