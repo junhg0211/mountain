@@ -738,6 +738,7 @@
 
 	function interactWithDoor(door: (typeof data.doors)[number]) {
 		if (door.isOpen) return;
+		sendCurrentPosition();
 		if (door.hasPassword) {
 			unlockingDoor = door;
 			unlockPassword = '';

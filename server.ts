@@ -414,7 +414,7 @@ async function attachBasecampSocket(
 					door.y,
 					doorEndX,
 					doorEndY
-				) > 1.5 ** 2) throw new BasecampError('문 가까이에서 다시 시도해 주세요.');
+				) > 1.75 ** 2) throw new BasecampError('문 가까이에서 다시 시도해 주세요.');
 				state = await openBasecampDoor({
 					guildId,
 					userId,
