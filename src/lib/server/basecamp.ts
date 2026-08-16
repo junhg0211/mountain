@@ -326,12 +326,13 @@ export async function createBasecampWall(input: {
 		(horizontal ? input.height !== 1 : input.width !== 1)
 	)
 		throw new BasecampError('가로 또는 세로 벽을 그려 주세요.');
-	await mergeWorldWall({
+	const created = await mergeWorldWall({
 		...input,
 		orientation: input.orientation as 'horizontal' | 'vertical',
 		id: crypto.randomUUID(),
 		createdBy: input.userId
 	});
+	if (!created) throw new BasecampError('문이 있는 구간에는 벽을 만들 수 없습니다.');
 	return getBasecampState(input.guildId);
 }
 

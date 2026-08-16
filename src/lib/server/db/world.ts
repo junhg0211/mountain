@@ -249,16 +249,26 @@ export async function createWorldWall(input: WorldWall & { guildId: string; crea
 
 export async function mergeWorldWall(input: WorldWall & { guildId: string; createdBy: string }) {
 	const db = await getDB();
-	await db.begin(async (tx) => {
+	return db.begin(async (tx) => {
+		const horizontal = input.orientation === 'horizontal';
+		const fixed = horizontal ? input.y : input.x;
+		let start = horizontal ? input.x : input.y;
+		let end = start + (horizontal ? input.width : input.height);
+		const doors = await tx`
+			SELECT x, y, length FROM world_doors
+			WHERE guild_id=${input.guildId} AND orientation=${input.orientation}
+			FOR UPDATE
+		`;
+		if ((doors as Array<Record<string, unknown>>).some((door) => {
+			if (Number(horizontal ? door.y : door.x) !== fixed) return false;
+			const doorStart = Number(horizontal ? door.x : door.y);
+			return doorStart < end && doorStart + Number(door.length) > start;
+		})) return false;
 		const rows = await tx`
 			SELECT id, x, y, width, height FROM world_walls
 			WHERE guild_id=${input.guildId} AND orientation=${input.orientation}
 			FOR UPDATE
 		`;
-		const horizontal = input.orientation === 'horizontal';
-		const fixed = horizontal ? input.y : input.x;
-		let start = horizontal ? input.x : input.y;
-		let end = start + (horizontal ? input.width : input.height);
 		const mergedIds = new Set<string>();
 		let expanded = true;
 		while (expanded) {
@@ -283,6 +293,7 @@ export async function mergeWorldWall(input: WorldWall & { guildId: string; creat
 				${horizontal ? fixed : start}, ${horizontal ? end - start : 1},
 				${horizontal ? 1 : end - start}, ${input.orientation}, ${input.createdBy})
 		`;
+		return true;
 	});
 }
 
@@ -494,10 +505,37 @@ export async function createWorldDoor(input: {
 	createdBy: string;
 }) {
 	const db = await getDB();
-	await db`
-		INSERT INTO world_doors (id, guild_id, x, y, orientation, length, password_hash, created_by)
-		VALUES (${input.id}, ${input.guildId}, ${input.x}, ${input.y}, ${input.orientation}, ${input.length}, ${input.passwordHash}, ${input.createdBy})
-	`;
+	await db.begin(async (tx) => {
+		const horizontal = input.orientation === 'horizontal';
+		const fixed = horizontal ? input.y : input.x;
+		const doorStart = horizontal ? input.x : input.y;
+		const doorEnd = doorStart + input.length;
+		const walls = await tx`
+			SELECT id, x, y, width, height, created_by FROM world_walls
+			WHERE guild_id=${input.guildId} AND orientation=${input.orientation}
+			FOR UPDATE
+		`;
+		for (const wall of walls as Array<Record<string, unknown>>) {
+			if (Number(horizontal ? wall.y : wall.x) !== fixed) continue;
+			const wallStart = Number(horizontal ? wall.x : wall.y);
+			const wallEnd = wallStart + Number(horizontal ? wall.width : wall.height);
+			if (wallEnd <= doorStart || wallStart >= doorEnd) continue;
+			await tx`DELETE FROM world_walls WHERE guild_id=${input.guildId} AND id=${String(wall.id)}`;
+			for (const [start, end] of [[wallStart, Math.min(wallEnd, doorStart)], [Math.max(wallStart, doorEnd), wallEnd]]) {
+				if (end <= start) continue;
+				await tx`
+					INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by)
+					VALUES (${crypto.randomUUID()}, ${input.guildId}, ${horizontal ? start : fixed},
+						${horizontal ? fixed : start}, ${horizontal ? end - start : 1},
+						${horizontal ? 1 : end - start}, ${input.orientation}, ${String(wall.created_by)})
+				`;
+			}
+		}
+		await tx`
+			INSERT INTO world_doors (id, guild_id, x, y, orientation, length, password_hash, created_by)
+			VALUES (${input.id}, ${input.guildId}, ${input.x}, ${input.y}, ${input.orientation}, ${input.length}, ${input.passwordHash}, ${input.createdBy})
+		`;
+	});
 }
 
 export async function getWorldDoor(guildId: string, id: string) {
