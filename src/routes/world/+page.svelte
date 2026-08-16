@@ -78,6 +78,7 @@
 	let movingToVoiceChannel = $state(false);
 	let autoMoveVoiceChannel = $state(false);
 	let revealedEdge = $state<'top' | 'right' | 'bottom' | 'all' | null>(null);
+	let mobileOverlayOpen = $state(false);
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
 	let movementFrame: number | null = null;
@@ -524,10 +525,7 @@
 	}
 
 	function revealHud(event: PointerEvent) {
-		if (event.pointerType === 'touch') {
-			revealedEdge = 'all';
-			return;
-		}
+		if (event.pointerType === 'touch') return;
 		const target = event.target as HTMLElement;
 		if (target.closest('header,.intro')) return void (revealedEdge = 'top');
 		if (target.closest('aside')) return void (revealedEdge = 'right');
@@ -1389,12 +1387,20 @@
 	class:reveal-top={revealedEdge === 'top' || revealedEdge === 'all'}
 	class:reveal-right={rightPanelPinned || revealedEdge === 'right' || revealedEdge === 'all'}
 	class:reveal-bottom={revealedEdge === 'bottom' || revealedEdge === 'all'}
+	class:mobile-overlay-open={mobileOverlayOpen}
 	onpointermove={revealHud}
 	onpointerleave={() => { if (revealedEdge !== 'all') revealedEdge = null; }}
 >
 	<i class="edge-cue top" aria-hidden="true"></i>
 	<i class="edge-cue right" aria-hidden="true"></i>
 	<i class="edge-cue bottom" aria-hidden="true"></i>
+	<button
+		class="mobile-overlay-toggle"
+		type="button"
+		aria-label={mobileOverlayOpen ? '메뉴 닫기' : '메뉴 열기'}
+		aria-expanded={mobileOverlayOpen}
+		onclick={() => (mobileOverlayOpen = !mobileOverlayOpen)}
+	>{mobileOverlayOpen ? '×' : '☰'}</button>
 	<header>
 		<a class="brand" href="/"><span>M</span>Mountain Basecamp</a>
 		{#if data.guilds.length}
@@ -1628,7 +1634,8 @@
 	@media(max-width:700px){header{top:8px;left:8px;max-width:calc(100% - 16px)}header nav{max-width:45vw}.intro{top:62px;left:8px;max-width:calc(100% - 16px)}.intro h1{display:none}.intro button{margin:0}.world-wrap>.hint{left:8px;bottom:8px}.connection{right:8px;bottom:8px}.setup{right:8px;bottom:48px;width:calc(100% - 16px)}aside{top:62px;right:8px;width:min(220px,calc(100% - 16px));max-height:calc(100% - 116px)}.plaza{inset:16%}}
 	.guide>.voice-status+button{width:100%;margin-top:10px}.build-tip{margin-top:14px;padding-top:12px;border-top:1px solid #ffffff12}
 	header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}header,.intro{transform:translateY(-10px)}aside{transform:translateX(12px)}.setup,.connection,.world-wrap>.hint{transform:translateY(10px)}main.reveal-top header,main.reveal-top .intro,header:focus-within,header:hover,.intro:focus-within,.intro:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-right aside,aside:focus-within,aside:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-bottom .setup,main.reveal-bottom .connection,main.reveal-bottom .world-wrap>.hint,.setup:focus-within,.setup:hover,.connection:hover{opacity:1;transform:none;pointer-events:auto}.edge-cue{position:absolute;z-index:17;display:block;pointer-events:none;opacity:.38;background:#d6ff66;box-shadow:0 0 12px #d6ff6688}.edge-cue.top{top:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}.edge-cue.right{top:50%;right:0;width:2px;height:52px;transform:translateY(-50%)}.edge-cue.bottom{bottom:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}main.reveal-top .edge-cue.top,main.reveal-right .edge-cue.right,main.reveal-bottom .edge-cue.bottom{opacity:0}
-	@media(hover:none){header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:1;transform:none;pointer-events:auto}.edge-cue{display:none}}
+	.mobile-overlay-toggle{display:none}
+	@media(hover:none),(pointer:coarse){header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:0;transform:none;pointer-events:none}.edge-cue{display:none}.mobile-overlay-toggle{position:absolute;z-index:32;top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));display:grid;width:44px;height:44px;padding:0;place-items:center;border:1px solid #ffffff24;border-radius:14px;background:#0a0d12db;color:#f4f2ea;font:800 22px system-ui;box-shadow:0 8px 24px #0008;backdrop-filter:blur(12px);touch-action:manipulation}.mobile-overlay-open header,.mobile-overlay-open .intro,.mobile-overlay-open aside,.mobile-overlay-open .setup,.mobile-overlay-open .connection,.mobile-overlay-open .world-wrap>.hint{opacity:1;transform:none;pointer-events:auto}}
 	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
 	.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
 	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
