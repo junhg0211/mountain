@@ -118,10 +118,13 @@
 	let activeGuildId: string | null = null;
 	let worldViewport = $state<HTMLDivElement>();
 	let tileCanvas = $state<HTMLCanvasElement>();
+	let propCanvas = $state<HTMLCanvasElement>();
 	let viewportWidth = $state(0);
 	let viewportHeight = $state(0);
 	let tileRenderFrame: number | null = null;
+	let propRenderFrame: number | null = null;
 	const tileBuffers = new Map<string, HTMLCanvasElement>();
+	const propBuffers = new Map<string, HTMLCanvasElement>();
 
 	function showNotice(success: boolean, message: string) {
 		if (!message) return;
@@ -214,6 +217,7 @@
 			if (cameraFrame !== null) cancelAnimationFrame(cameraFrame);
 			if (zoomFrame !== null) cancelAnimationFrame(zoomFrame);
 			if (tileRenderFrame !== null) cancelAnimationFrame(tileRenderFrame);
+			if (propRenderFrame !== null) cancelAnimationFrame(propRenderFrame);
 			resizeObserver.disconnect();
 		};
 	});
@@ -1481,7 +1485,9 @@
 	const visibleDoors = $derived(doors.filter(isVisible));
 	const visibleRooms = $derived(roomsByArea.filter(isVisible));
 	const visibleProps = $derived(worldProps.filter(isVisible));
+	const domProps = $derived(visibleProps.filter((prop) => building || prop.actionType !== null || !prop.imageData));
 	const visiblePresences = $derived(presences.filter((presence) => isVisible({ ...presence, width: 1, height: 1 })));
+	const occupiedPropIds = $derived(new Set(presences.map((presence) => presence.seatedPropId).filter(Boolean)));
 	const propStackIndexes = $derived.by(() => {
 		const counts = new Map<string, number>();
 		const indexes = new Map<string, number>();
@@ -1522,6 +1528,26 @@
 		return buffer;
 	}
 
+	function getPropBuffer(imageData: string) {
+		let buffer = propBuffers.get(imageData);
+		if (buffer) return buffer;
+		buffer = document.createElement('canvas');
+		buffer.width = 8;
+		buffer.height = 8;
+		const context = buffer.getContext('2d');
+		if (context) {
+			context.imageSmoothingEnabled = false;
+			for (let index = 0; index < imageData.length; index += 1) {
+				const color = propPalette[Number(imageData[index])];
+				if (!color || color === 'transparent') continue;
+				context.fillStyle = color;
+				context.fillRect(index % 8, Math.floor(index / 8), 1, 1);
+			}
+		}
+		propBuffers.set(imageData, buffer);
+		return buffer;
+	}
+
 	function renderTiles() {
 		tileRenderFrame = null;
 		if (!tileCanvas || !viewportWidth || !viewportHeight) return;
@@ -1548,6 +1574,42 @@
 		}
 	}
 
+	function renderProps() {
+		propRenderFrame = null;
+		if (!propCanvas || !viewportWidth || !viewportHeight) return;
+		const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+		const width = Math.ceil(viewportWidth * pixelRatio);
+		const height = Math.ceil(viewportHeight * pixelRatio);
+		if (propCanvas.width !== width || propCanvas.height !== height) {
+			propCanvas.width = width;
+			propCanvas.height = height;
+		}
+		const context = propCanvas.getContext('2d');
+		if (!context) return;
+		context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+		context.clearRect(0, 0, viewportWidth, viewportHeight);
+		if (building) return;
+		context.imageSmoothingEnabled = false;
+		const cellSize = cameraLayout.cellSize;
+		for (const prop of visibleProps) {
+			if (!prop.imageData || prop.actionType !== null) continue;
+			const stackIndex = propStackIndexes.get(prop.id) ?? 0;
+			const angle = stackIndex * 2.4;
+			const radius = Math.min(0.18, stackIndex * 0.05) * cellSize;
+			const width = prop.width * cellSize;
+			const height = prop.height * cellSize;
+			const centerX = (prop.x + prop.width / 2) * cellSize + cameraX + Math.cos(angle) * radius;
+			const centerY = (prop.y + prop.height / 2) * cellSize + cameraY + Math.sin(angle) * radius;
+			const left = centerX - width / 2;
+			const top = centerY - height / 2;
+			context.fillStyle = '#111913aa';
+			context.beginPath();
+			context.roundRect(left, top, width, height, Math.min(width, height) * 0.2);
+			context.fill();
+			context.drawImage(getPropBuffer(prop.imageData), left + width * 0.09, top + height * 0.09, width * 0.82, height * 0.82);
+		}
+	}
+
 	$effect(() => {
 		void tiles;
 		void cameraX;
@@ -1556,6 +1618,17 @@
 		void viewportWidth;
 		void viewportHeight;
 		if (tileCanvas && tileRenderFrame === null) tileRenderFrame = requestAnimationFrame(renderTiles);
+	});
+
+	$effect(() => {
+		void worldProps;
+		void building;
+		void cameraX;
+		void cameraY;
+		void cameraLayout.cellSize;
+		void viewportWidth;
+		void viewportHeight;
+		if (propCanvas && propRenderFrame === null) propRenderFrame = requestAnimationFrame(renderProps);
 	});
 
 	$effect(() => {
@@ -1796,6 +1869,7 @@
 				>
 					<div class="world-background"></div>
 					<canvas class="tile-layer" bind:this={tileCanvas} aria-hidden="true"></canvas>
+					<canvas class="prop-layer" bind:this={propCanvas} aria-hidden="true"></canvas>
 					<div
 						class="world-map"
 						style={cameraStyle}
@@ -1849,8 +1923,8 @@
 							<small>{presence.username}</small>
 						</div>
 					{/each}
-					{#each visibleProps as prop (prop.id)}
-						<button class:selected={selectedProp?.id === prop.id} class:teleport={prop.actionType === 'teleport'} class:sign={prop.actionType === 'sign'} class:seat={prop.actionType === 'seat'} class:occupied={presences.some((presence) => presence.seatedPropId === prop.id)} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</button>
+					{#each domProps as prop (prop.id)}
+						<button class:selected={selectedProp?.id === prop.id} class:teleport={prop.actionType === 'teleport'} class:sign={prop.actionType === 'sign'} class:seat={prop.actionType === 'seat'} class:occupied={occupiedPropIds.has(prop.id)} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</button>
 					{/each}
 					{#if nearestSign}<div class="sign-message" style={`left:${(nearestSign.x + nearestSign.width / 2) * cameraLayout.cellSize}px;top:${nearestSign.y * cameraLayout.cellSize}px`}>{nearestSign.signText}</div>{/if}
 					{#if nearestDoor || nearestInteractiveProp}
@@ -2004,7 +2078,7 @@
 	.world-prop.sign{box-shadow:0 0 0 2px #ffcf7266,0 0 14px #ffcf7233}.empty p{color:#899187}
 	.prop-library{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:240px;overflow:auto}.prop-library button{display:grid;min-width:0;aspect-ratio:1;padding:7px;place-items:center;border:1px solid #ffffff18;background:#202720;color:#f4f2ea}.prop-library svg{width:100%;height:100%;min-height:32px;shape-rendering:crispEdges}.prop-library span{font-size:28px}.prop-library small{max-width:100%;overflow:hidden;color:#bfc7bd;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
 	.world-prop.seat{box-shadow:0 0 0 2px #69c7df66,0 0 14px #69c7df33}.world-prop.seat.occupied{box-shadow:0 0 0 2px #ffcf7288,0 0 14px #ffcf7244}.avatar.seated{transform:translate(-50%,-42%) scaleY(.78);border-color:#69c7df}
-	.tile-layer{position:absolute;z-index:1;inset:0;width:100%;height:100%;pointer-events:none}.world-grid{z-index:2;display:block;overflow:visible;background-image:none}
+	.tile-layer,.prop-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.tile-layer{z-index:1}.prop-layer{z-index:2}.world-grid{z-index:2;display:block;overflow:visible;background-image:none}
 	.region-selection{position:absolute;z-index:8;display:grid;place-items:center;box-sizing:border-box;border:2px dashed #69c7df;background:#69c7df22;color:#d9f8ff;pointer-events:none}.region-selection.selected{border-style:solid;background:#69c7df16}.region-selection.pasting{border-color:#ffcf72;background:#ffcf7218;color:#fff0c3}.region-selection small{padding:4px 7px;border-radius:6px;background:#0a0d12d9;font-size:10px;font-weight:850;white-space:nowrap}
 	.paste-preview{position:absolute;z-index:9;inset:0;opacity:.5;pointer-events:none}.paste-preview>*{pointer-events:none}.paste-floor-preview{position:absolute;z-index:0;background:#1a251d;box-shadow:inset 0 0 0 2px #ffcf72}.paste-preview .painted-tile{z-index:1}.paste-preview .wall,.paste-preview .world-prop{z-index:3}.paste-preview .door{z-index:6}
 	.world,.mobile-controls,.mobile-controls button{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
