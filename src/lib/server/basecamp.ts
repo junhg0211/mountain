@@ -46,15 +46,9 @@ import { PermissionsBitField } from 'discord.js';
 
 export class BasecampError extends Error {}
 
-export async function requireGuildManager(guildId: string, userId: string) {
+export async function requireBasecampMember(guildId: string, userId: string) {
 	if (!/^\d{17,20}$/.test(guildId) || !(await getGuildMember(guildId, userId)))
-		throw new BasecampError('현재 Discord 서버 관리 권한이 필요합니다.');
-	const client = getClient();
-	if (!client?.isReady()) throw new BasecampError('Discord 봇이 아직 준비되지 않았습니다.');
-	const guild = await client.guilds.fetch(guildId);
-	const member = await guild.members.fetch(userId);
-	if (!member.permissions.has(PermissionsBitField.Flags.ManageGuild))
-		throw new BasecampError('현재 Discord 서버 관리 권한이 필요합니다.');
+		throw new BasecampError('현재 Discord 서버 구성원만 Basecamp를 편집할 수 있습니다.');
 }
 
 async function requireBasecampBotPermissions(guildId: string, roleId: string) {
@@ -92,7 +86,7 @@ export async function createBasecampTileType(input: {
 	name: string;
 	imageData: string;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const name = input.name.trim();
 	const imageData = input.imageData.trim();
 	if (!name || name.length > 40) throw new BasecampError('바닥 타일 이름은 1~40자로 입력해 주세요.');
@@ -116,7 +110,7 @@ export async function updateBasecampTileType(input: {
 	name: string;
 	imageData: string;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const name = input.name.trim();
 	const imageData = input.imageData.trim();
 	if (!name || name.length > 40) throw new BasecampError('바닥 타일 이름은 1~40자로 입력해 주세요.');
@@ -129,7 +123,7 @@ export async function updateBasecampTileType(input: {
 }
 
 export async function deleteBasecampTileType(input: { guildId: string; userId: string; id: string }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	if (!(await getWorldTileType(input.guildId, input.id)))
 		throw new BasecampError('삭제할 바닥 타일을 찾을 수 없습니다.');
 	await deleteWorldTileType(input.guildId, input.id);
@@ -142,7 +136,7 @@ export async function paintBasecampTiles(input: {
 	tileType: string;
 	cells: Array<{ x: number; y: number }>;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	if (input.tileType !== 'grass' && !(await getWorldTileType(input.guildId, input.tileType)))
 		throw new BasecampError('이 서버에서 만든 바닥 타일을 선택해 주세요.');
 	if (!Array.isArray(input.cells) || input.cells.length < 1 || input.cells.length > 2_000 ||
@@ -238,7 +232,7 @@ export async function copyBasecampProp(input: {
 export async function deleteBasecampProp(input: { guildId: string; userId: string; id: string }) {
 	const prop = await getWorldProp(input.guildId, input.id);
 	if (!prop) throw new BasecampError('삭제할 소품을 찾을 수 없습니다.');
-	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
+	if (prop.createdBy !== input.userId) await requireBasecampMember(input.guildId, input.userId);
 	await deleteWorldProp(input.guildId, input.id);
 	return getBasecampState(input.guildId);
 }
@@ -254,7 +248,7 @@ export async function moveBasecampProp(input: {
 		throw new BasecampError('소품을 놓을 칸을 선택해 주세요.');
 	const prop = await getWorldProp(input.guildId, input.id);
 	if (!prop) throw new BasecampError('이동할 소품을 찾을 수 없습니다.');
-	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
+	if (prop.createdBy !== input.userId) await requireBasecampMember(input.guildId, input.userId);
 	await moveWorldProp(input.guildId, input.id, input.x, input.y);
 	return getBasecampState(input.guildId);
 }
@@ -274,7 +268,7 @@ export async function updateBasecampProp(input: {
 }) {
 	const prop = await getWorldProp(input.guildId, input.id);
 	if (!prop) throw new BasecampError('편집할 소품을 찾을 수 없습니다.');
-	if (prop.createdBy !== input.userId) await requireGuildManager(input.guildId, input.userId);
+	if (prop.createdBy !== input.userId) await requireBasecampMember(input.guildId, input.userId);
 	const name = input.name.trim();
 	const imageData = input.imageData.trim();
 	if (!name || name.length > 40) throw new BasecampError('소품 이름은 1~40자로 입력해 주세요.');
@@ -312,7 +306,7 @@ export async function configureBasecampSpawn(input: {
 	x: number;
 	y: number;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	if (![input.x, input.y].every(Number.isFinite))
 		throw new BasecampError('올바른 시작 위치에서 다시 시도해 주세요.');
 	await setWorldSpawn(input.guildId, input.x, input.y);
@@ -329,7 +323,7 @@ export async function copyBasecampRegion(input: {
 	targetX: number;
 	targetY: number;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	if (![input.x, input.y, input.width, input.height, input.targetX, input.targetY].every(Number.isInteger) ||
 		input.width < 1 || input.height < 1 || input.width > 100 || input.height > 100)
 		throw new BasecampError('복사할 영역은 1×1칸부터 100×100칸까지 선택해 주세요.');
@@ -347,7 +341,7 @@ export async function deleteBasecampRegion(input: {
 	width: number;
 	height: number;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	if (![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
 		input.width < 1 || input.height < 1 || input.width > 100 || input.height > 100)
 		throw new BasecampError('삭제할 영역은 1×1칸부터 100×100칸까지 선택해 주세요.');
@@ -364,7 +358,7 @@ export async function createBasecampWall(input: {
 	height: number;
 	orientation: string;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const horizontal = input.orientation === 'horizontal';
 	if (
 		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
@@ -392,7 +386,7 @@ export async function deleteBasecampWall(input: {
 	height: number;
 	orientation: string;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const horizontal = input.orientation === 'horizontal';
 	if (
 		![input.x, input.y, input.width, input.height].every(Number.isInteger) ||
@@ -421,7 +415,7 @@ export async function createBasecampDoor(input: {
 	length: number;
 	password: string;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	if (!Number.isInteger(input.x) || !Number.isInteger(input.y) ||
 		!['horizontal', 'vertical'].includes(input.orientation) ||
 		!Number.isInteger(input.length) || input.length < 1 || input.length > 2)
@@ -463,7 +457,7 @@ export async function closeBasecampDoor(guildId: string, id: string) {
 }
 
 export async function deleteBasecampDoor(input: { guildId: string; userId: string; id: string }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	await deleteWorldDoor(input.guildId, input.id);
 	return getBasecampState(input.guildId);
 }
@@ -474,7 +468,7 @@ export async function configureBasecamp(input: {
 	categoryId: string;
 	accessRoleId: string;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const [categories, roles] = await Promise.all([
 		getGuildCategories(input.guildId),
 		getGuildRoles(input.guildId)
@@ -554,7 +548,7 @@ export async function createBasecampRoom(input: {
 	width: number;
 	height: number;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const name = input.name.trim();
 	if (!name || name.length > 80) throw new BasecampError('방 이름은 1~80자로 입력해 주세요.');
 	if (
@@ -625,7 +619,7 @@ export async function updateBasecampRoom(input: {
 	width: number;
 	height: number;
 }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	const name = input.name.trim();
 	if (!name || name.length > 80) throw new BasecampError('방 이름은 1~80자로 입력해 주세요.');
 	if (
@@ -670,7 +664,7 @@ export async function updateBasecampRoom(input: {
 }
 
 export async function deleteBasecampRoom(input: { guildId: string; userId: string; id: string }) {
-	await requireGuildManager(input.guildId, input.userId);
+	await requireBasecampMember(input.guildId, input.userId);
 	let channelId: string | null;
 	try {
 		channelId = await archiveWorldRoom(input.guildId, input.id);

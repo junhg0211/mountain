@@ -22,7 +22,7 @@ confirm that Basecamp opens without showing the normal browser OAuth page.
 ## Basecamp permissions and first setup
 
 The bot needs **Manage Channels** and **Manage Roles** in every server that uses Basecamp. Its bot
-role must sit above the chosen Basecamp access role. A server manager then opens `/world`, chooses
+role must sit above the chosen Basecamp access role. Any server member can then open `/world`, choose
 the category for Basecamp voice channels and a non-managed access role. Mountain
 creates a `월드 광장` lobby voice channel immediately. Rooms drawn and confirmed inside the world
 create their own voice channels in that same category.

@@ -487,8 +487,6 @@ async function attachBasecampSocket(
 				const history = basecampUndoHistory.get(guildId) || [];
 				const entry = history.at(-1);
 				if (!entry) throw new BasecampError('실행 취소할 월드 편집 작업이 없습니다.');
-				if (entry.userId !== userId && !(await canManageGuild(userId, guildId)))
-					throw new BasecampError('다른 사용자의 최신 작업 뒤에서는 실행 취소할 수 없습니다.');
 				await restoreWorldEditSnapshot(guildId, entry.snapshot);
 				history.pop();
 				state = await getBasecampState(guildId);

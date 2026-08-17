@@ -1,7 +1,6 @@
 import { getSessionUser } from '$lib/server/auth';
 import { getDB } from '$lib/server/db';
 import { getInventory } from '$lib/server/db/items';
-import { canManageGuild } from '$lib/server/db/user-guilds';
 import { getWorldSettings, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
 import { redirect } from '@sveltejs/kit';
@@ -44,7 +43,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const guildId = selectedGuild?.id;
 	if (!guildId || !(await getGuildMember(guildId, user.id))) return { user, guilds, ...emptyWorld };
 
-	const canManage = canManageGuild(selectedGuild.permissions);
+	const canManage = true;
 	const [rooms, walls, doors, tiles, tileTypes, props, settings, inventory] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
@@ -55,9 +54,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		getWorldSettings(guildId),
 		getInventory(guildId, user.id)
 	]);
-	const [categories, roles] = canManage
-		? await Promise.all([getGuildCategories(guildId), getGuildRoles(guildId)])
-		: [[], []];
+	const [categories, roles] = await Promise.all([getGuildCategories(guildId), getGuildRoles(guildId)]);
 	return {
 		user,
 		guilds,
