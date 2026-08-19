@@ -1,7 +1,7 @@
 import { getSessionUser } from '$lib/server/auth';
 import { getDB } from '$lib/server/db';
 import { getInventory } from '$lib/server/db/items';
-import { getWorldSettings, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
+import { getWorldSettings, listWorldCanvasCells, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
@@ -27,6 +27,7 @@ const emptyWorld = {
 	tiles: [],
 	tileTypes: [],
 	props: [],
+	canvasCells: [],
 	settings: null,
 	canManage: false,
 	categories: [],
@@ -44,13 +45,14 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	if (!guildId || !(await getGuildMember(guildId, user.id))) return { user, guilds, ...emptyWorld };
 
 	const canManage = true;
-	const [rooms, walls, doors, tiles, tileTypes, props, settings, inventory] = await Promise.all([
+	const [rooms, walls, doors, tiles, tileTypes, props, canvasCells, settings, inventory] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
 		listWorldDoors(guildId),
 		listWorldTiles(guildId),
 		listWorldTileTypes(guildId),
 		listWorldProps(guildId),
+		listWorldCanvasCells(guildId),
 		getWorldSettings(guildId),
 		getInventory(guildId, user.id)
 	]);
@@ -65,6 +67,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		tiles,
 		tileTypes,
 		props,
+		canvasCells,
 		settings,
 		inventory,
 		canManage,

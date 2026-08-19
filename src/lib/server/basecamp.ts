@@ -19,6 +19,8 @@ import {
 	getWorldTileType,
 	getWorldSettings,
 	listWorldProps,
+	listWorldCanvasCells,
+	paintWorldCanvasCell,
 	listWorldDoors,
 	listWorldRooms,
 	listWorldTiles,
@@ -68,16 +70,17 @@ async function requireBasecampBotPermissions(guildId: string, roleId: string) {
 }
 
 export async function getBasecampState(guildId: string) {
-	const [rooms, walls, doors, tiles, tileTypes, props, settings] = await Promise.all([
+	const [rooms, walls, doors, tiles, tileTypes, props, canvasCells, settings] = await Promise.all([
 		listWorldRooms(guildId),
 		listWorldWalls(guildId),
 		listWorldDoors(guildId),
 		listWorldTiles(guildId),
 		listWorldTileTypes(guildId),
 		listWorldProps(guildId),
+		listWorldCanvasCells(guildId),
 		getWorldSettings(guildId)
 	]);
-	return { rooms, walls, doors, tiles, tileTypes, props, settings };
+	return { rooms, walls, doors, tiles, tileTypes, props, canvasCells, settings };
 }
 
 export async function createBasecampTileType(input: {
@@ -157,6 +160,8 @@ export async function createBasecampProp(input: {
 	userId: string;
 	name: string;
 	imageData: string;
+	alternateImageData: string | null;
+	actionConfig: string | null;
 	x: number;
 	y: number;
 	width: number;
@@ -178,12 +183,20 @@ export async function createBasecampProp(input: {
 	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
 		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
 		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
-	const actionType = input.actionType === 'teleport' || input.actionType === 'sign' || input.actionType === 'seat'
+	const actionType = input.actionType === 'teleport' || input.actionType === 'sign' || input.actionType === 'seat' || input.actionType === 'conveyor' || input.actionType === 'toggle' || input.actionType === 'animated' || input.actionType === 'canvas'
 		? input.actionType
 		: null;
 	if (actionType === 'teleport' && (!Number.isFinite(input.teleportX) || !Number.isFinite(input.teleportY)))
 		throw new BasecampError('텔레포트 목적지 좌표를 입력해 주세요.');
 	const signText = input.signText?.trim() || '';
+	const alternateImageData = input.alternateImageData?.trim() || '';
+	if ((actionType === 'toggle' || actionType === 'animated') && !/^[0-8]{64}$/.test(alternateImageData))
+		throw new BasecampError('변형 또는 애니메이션의 두 번째 8×8 이미지를 그려 주세요.');
+	const actionConfig = input.actionConfig?.trim() || '';
+	if (actionType === 'conveyor' && !/^(up|down|left|right):(\d+(?:\.\d+)?)$/.test(actionConfig))
+		throw new BasecampError('이동 발판의 방향과 속도를 설정해 주세요.');
+	if (actionType === 'conveyor' && (Number(actionConfig.split(':')[1]) < 1 || Number(actionConfig.split(':')[1]) > 40))
+		throw new BasecampError('이동 발판 속도는 1~40으로 설정해 주세요.');
 	if (actionType === 'sign' && (!signText || signText.length > 500))
 		throw new BasecampError('표지판 문구는 1~500자로 입력해 주세요.');
 	await createWorldProp({
@@ -192,6 +205,8 @@ export async function createBasecampProp(input: {
 		name,
 		emoji: '📦',
 		imageData,
+		alternateImageData: alternateImageData || null,
+		actionConfig: actionConfig || null,
 		x: input.x,
 		y: input.y,
 		width: input.width,
@@ -259,6 +274,8 @@ export async function updateBasecampProp(input: {
 	id: string;
 	name: string;
 	imageData: string;
+	alternateImageData: string | null;
+	actionConfig: string | null;
 	width: number;
 	height: number;
 	actionType: string;
@@ -277,12 +294,20 @@ export async function updateBasecampProp(input: {
 	if (!Number.isInteger(input.width) || !Number.isInteger(input.height) ||
 		input.width < 1 || input.height < 1 || input.width > 32 || input.height > 32)
 		throw new BasecampError('소품 크기는 1×1칸부터 32×32칸까지 설정할 수 있습니다.');
-	const actionType = input.actionType === 'teleport' || input.actionType === 'sign' || input.actionType === 'seat'
+	const actionType = input.actionType === 'teleport' || input.actionType === 'sign' || input.actionType === 'seat' || input.actionType === 'conveyor' || input.actionType === 'toggle' || input.actionType === 'animated' || input.actionType === 'canvas'
 		? input.actionType
 		: null;
 	if (actionType === 'teleport' && (!Number.isFinite(input.teleportX) || !Number.isFinite(input.teleportY)))
 		throw new BasecampError('텔레포트 목적지를 선택해 주세요.');
 	const signText = input.signText?.trim() || '';
+	const alternateImageData = input.alternateImageData?.trim() || '';
+	if ((actionType === 'toggle' || actionType === 'animated') && !/^[0-8]{64}$/.test(alternateImageData))
+		throw new BasecampError('변형 또는 애니메이션의 두 번째 8×8 이미지를 그려 주세요.');
+	const actionConfig = input.actionConfig?.trim() || '';
+	if (actionType === 'conveyor' && !/^(up|down|left|right):(\d+(?:\.\d+)?)$/.test(actionConfig))
+		throw new BasecampError('이동 발판의 방향과 속도를 설정해 주세요.');
+	if (actionType === 'conveyor' && (Number(actionConfig.split(':')[1]) < 1 || Number(actionConfig.split(':')[1]) > 40))
+		throw new BasecampError('이동 발판 속도는 1~40으로 설정해 주세요.');
 	if (actionType === 'sign' && (!signText || signText.length > 500))
 		throw new BasecampError('표지판 문구는 1~500자로 입력해 주세요.');
 	await updateWorldProp({
@@ -290,6 +315,8 @@ export async function updateBasecampProp(input: {
 		id: input.id,
 		name,
 		imageData,
+		alternateImageData: alternateImageData || null,
+		actionConfig: actionConfig || null,
 		width: input.width,
 		height: input.height,
 		actionType,
@@ -297,6 +324,17 @@ export async function updateBasecampProp(input: {
 		teleportY: actionType === 'teleport' ? input.teleportY : null,
 		signText: actionType === 'sign' ? signText : null
 	});
+	return getBasecampState(input.guildId);
+}
+
+export async function paintBasecampCanvasCell(input: { guildId: string; userId: string; propId: string; cellX: number; cellY: number; imageData: string }) {
+	await requireBasecampMember(input.guildId, input.userId);
+	const prop = await getWorldProp(input.guildId, input.propId);
+	if (!prop || prop.actionType !== 'canvas') throw new BasecampError('공동 캔버스를 찾을 수 없습니다.');
+	if (!Number.isInteger(input.cellX) || !Number.isInteger(input.cellY) || input.cellX < 0 || input.cellY < 0 || input.cellX >= prop.width || input.cellY >= prop.height)
+		throw new BasecampError('캔버스 안의 칸을 선택해 주세요.');
+	if (!/^[0-8]{64}$/.test(input.imageData)) throw new BasecampError('8×8 캔버스 데이터가 올바르지 않습니다.');
+	await paintWorldCanvasCell(input);
 	return getBasecampState(input.guildId);
 }
 

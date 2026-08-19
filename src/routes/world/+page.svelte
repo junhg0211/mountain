@@ -20,6 +20,7 @@
 	let tiles = $state<typeof data.tiles>([]);
 	let tileTypes = $state<typeof data.tileTypes>([]);
 	let worldProps = $state<typeof data.props>([]);
+	let canvasCells = $state<Array<{ propId: string; cellX: number; cellY: number; imageData: string }>>([]);
 	let settings = $state<typeof data.settings>(null);
 	let building = $state(false);
 	let buildTool = $state<'room' | 'wall' | 'door' | 'eraser' | 'tile' | 'prop' | 'selection'>('room');
@@ -32,8 +33,14 @@
 	let editingTileType = $state<(typeof data.tileTypes)[number] | null>(null);
 	const propPalette = ['transparent', '#20252b', '#f4f2ea', '#d6ff66', '#ee796b', '#ffcf72', '#69c7df', '#9d75d6', '#6f9f55'];
 	let propPixels = $state<string[]>(Array(64).fill('0'));
+	let alternatePropPixels = $state<string[]>(Array(64).fill('0'));
 	let propColor = $state('1');
-	let propAction = $state<'none' | 'teleport' | 'sign' | 'seat'>('none');
+	let propAction = $state<'none' | 'teleport' | 'sign' | 'seat' | 'conveyor' | 'toggle' | 'animated' | 'canvas'>('none');
+	let conveyorDirection = $state<'up' | 'down' | 'left' | 'right'>('right');
+	let conveyorSpeed = $state(18);
+	let toggledPropIds = $state(new Set<string>());
+	let editingCanvasCell = $state<{ propId: string; propName: string; cellX: number; cellY: number } | null>(null);
+	let canvasPixels = $state<string[]>(Array(64).fill('0'));
 	let signText = $state('');
 	let teleportTarget = $state<{ x: number; y: number } | null>(null);
 	let selectingTeleportTarget = $state(false);
@@ -160,8 +167,7 @@
 				cancelDoorUnlock();
 				return;
 			}
-			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement)
-				return;
+			if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLButtonElement) return;
 			if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.code === 'KeyZ') {
 				event.preventDefault();
 				undoLastEdit();
@@ -235,6 +241,7 @@
 		doors = [...data.doors];
 		tiles = [...data.tiles];
 		worldProps = [...data.props];
+		canvasCells = [...data.canvasCells];
 		settings = data.settings;
 		connectionVersion += 1;
 		const version = connectionVersion;
@@ -277,9 +284,7 @@
 				const message = JSON.parse(String(event.data)) as Record<string, unknown>;
 				if (message.type === 'basecamp-connected') {
 					presenceId = String(message.presenceId || '');
-					next.send(
-						JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel })
-					);
+					next.send(JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel }));
 					return;
 				}
 				if (message.type === 'basecamp-voice-status') {
@@ -296,9 +301,7 @@
 				if (message.type === 'basecamp-presences') {
 					const incoming = message.presences as Presence[];
 					const me = presences.find((presence) => presence.id === presenceId);
-					presences = incoming.map((presence) =>
-						presence.id === presenceId && me ? { ...presence, x: me.x, y: me.y } : presence
-					);
+					presences = incoming.map((presence) => (presence.id === presenceId && me ? { ...presence, x: me.x, y: me.y } : presence));
 					return;
 				}
 				if (message.type === 'basecamp-teleport') {
@@ -307,7 +310,7 @@
 					if (Number.isFinite(x) && Number.isFinite(y)) {
 						velocityX = 0;
 						velocityY = 0;
-						presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
+						presences = presences.map((presence) => (presence.id === presenceId ? { ...presence, x, y } : presence));
 					}
 					return;
 				}
@@ -316,13 +319,17 @@
 					if (message.final === true && sequence === movementSequence) {
 						const x = Number(message.x);
 						const y = Number(message.y);
-						if (Number.isFinite(x) && Number.isFinite(y))
-							presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
+						if (Number.isFinite(x) && Number.isFinite(y)) presences = presences.map((presence) => (presence.id === presenceId ? { ...presence, x, y } : presence));
 					}
 					return;
 				}
 				if (message.type === 'basecamp-location-ping') {
-					const ping = { id: String(message.id), username: String(message.username), x: Number(message.x), y: Number(message.y) };
+					const ping = {
+						id: String(message.id),
+						username: String(message.username),
+						x: Number(message.x),
+						y: Number(message.y)
+					};
 					if (Number.isFinite(ping.x) && Number.isFinite(ping.y)) {
 						pings = [...pings, ping];
 						window.setTimeout(() => (pings = pings.filter((item) => item.id !== ping.id)), 4_000);
@@ -330,7 +337,13 @@
 					return;
 				}
 				if (message.type === 'basecamp-projectile') {
-					const projectile = { id: String(message.id), fromX: Number(message.fromX), fromY: Number(message.fromY), x: Number(message.x), y: Number(message.y) };
+					const projectile = {
+						id: String(message.id),
+						fromX: Number(message.fromX),
+						fromY: Number(message.fromY),
+						x: Number(message.x),
+						y: Number(message.y)
+					};
 					if ([projectile.fromX, projectile.fromY, projectile.x, projectile.y].every(Number.isFinite)) {
 						projectiles = [...projectiles, projectile];
 						window.setTimeout(() => (projectiles = projectiles.filter((item) => item.id !== projectile.id)), 700);
@@ -352,9 +365,13 @@
 					tileTypes = message.tileTypes as typeof tileTypes;
 					if (tileType !== 'grass' && !tileTypes.some((type) => type.id === tileType)) tileType = 'grass';
 					worldProps = message.props as typeof worldProps;
-					if (selectedProp && !propMoveSession)
-						selectedProp = worldProps.find((prop) => prop.id === selectedProp?.id) || null;
+					canvasCells = message.canvasCells as typeof canvasCells;
+					if (selectedProp && !propMoveSession) selectedProp = worldProps.find((prop) => prop.id === selectedProp?.id) || null;
 					settings = message.settings as typeof settings;
+					return;
+				}
+				if (message.type === 'basecamp-prop-toggles') {
+					toggledPropIds = new Set((message.ids as string[]) || []);
 					return;
 				}
 				if (message.type === 'basecamp-result') {
@@ -461,15 +478,13 @@
 				movingToVoiceChannel = false;
 				presenceId = null;
 				presences = [];
-				if (!stopped && version === connectionVersion)
-					reconnectTimer = setTimeout(() => void connect(version), 1500);
+				if (!stopped && version === connectionVersion) reconnectTimer = setTimeout(() => void connect(version), 1500);
 			};
 			next.onerror = () => next.close(4001, 'Basecamp connection error');
 		} catch (error) {
 			connected = false;
 			showNotice(false, error instanceof Error ? error.message : 'Basecamp에 연결하지 못했습니다.');
-			if (!stopped && version === connectionVersion)
-				reconnectTimer = setTimeout(() => void connect(version), 1500);
+			if (!stopped && version === connectionVersion) reconnectTimer = setTimeout(() => void connect(version), 1500);
 		}
 	}
 
@@ -487,14 +502,11 @@
 			movementFrame = requestAnimationFrame(moveAvatar);
 			return;
 		}
-		const deltaSeconds = lastMovementFrameAt === null
-			? 1 / 60
-			: Math.min(0.05, Math.max(0.001, (timestamp - lastMovementFrameAt) / 1_000));
+		const deltaSeconds = lastMovementFrameAt === null ? 1 / 60 : Math.min(0.05, Math.max(0.001, (timestamp - lastMovementFrameAt) / 1_000));
 		lastMovementFrameAt = timestamp;
 		let horizontal = Number(pressedKeys.has('arrowright') || pressedKeys.has('d')) - Number(pressedKeys.has('arrowleft') || pressedKeys.has('a'));
 		let vertical = Number(pressedKeys.has('arrowdown') || pressedKeys.has('s')) - Number(pressedKeys.has('arrowup') || pressedKeys.has('w'));
-		while (automaticPath.length > 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.22)
-			automaticPath.shift();
+		while (automaticPath.length > 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.22) automaticPath.shift();
 		if (automaticPath.length === 1 && Math.hypot(automaticPath[0].x - me.x, automaticPath[0].y - me.y) < 0.01 && velocityX === 0 && velocityY === 0) {
 			automaticPath = [];
 		}
@@ -508,24 +520,35 @@
 				vertical = dy / distance;
 			}
 		}
+		let conveyorBoost = 1;
+		const conveyor = worldProps.find((prop) => prop.actionType === 'conveyor' && me.x >= prop.x && me.x <= prop.x + prop.width && me.y >= prop.y && me.y <= prop.y + prop.height);
+		if (conveyor) {
+			const [direction, configuredSpeed] = (conveyor.actionConfig || 'right:18').split(':');
+			const speed = Math.max(1, Math.min(40, Number(configuredSpeed) || 18));
+			conveyorBoost = speed / maximumMovementSpeed;
+			if (direction === 'left') horizontal -= 1;
+			else if (direction === 'up') vertical -= 1;
+			else if (direction === 'down') vertical += 1;
+			else horizontal += 1;
+		}
 		const inputLength = Math.hypot(horizontal, vertical) || 1;
-		const currentMaximumSpeed = maximumMovementSpeed * (sprinting ? sprintSpeedMultiplier : 1);
+		const currentMaximumSpeed = maximumMovementSpeed * Math.max(conveyorBoost, sprinting ? sprintSpeedMultiplier : 1);
 		const currentAcceleration = movementAcceleration * (sprinting ? sprintSpeedMultiplier : 1);
-		const targetVelocityX = horizontal / inputLength * currentMaximumSpeed;
-		const targetVelocityY = vertical / inputLength * currentMaximumSpeed;
+		const targetVelocityX = (horizontal / inputLength) * currentMaximumSpeed;
+		const targetVelocityY = (vertical / inputLength) * currentMaximumSpeed;
 		if (!pressedKeys.size && automaticPath.length === 1) {
 			const target = automaticPath[0];
 			const distance = Math.hypot(target.x - me.x, target.y - me.y);
 			const brakingSpeed = Math.min(currentMaximumSpeed, Math.sqrt(2 * currentAcceleration * distance));
-			const desiredVelocityX = distance > 0 ? (target.x - me.x) / distance * brakingSpeed : 0;
-			const desiredVelocityY = distance > 0 ? (target.y - me.y) / distance * brakingSpeed : 0;
+			const desiredVelocityX = distance > 0 ? ((target.x - me.x) / distance) * brakingSpeed : 0;
+			const desiredVelocityY = distance > 0 ? ((target.y - me.y) / distance) * brakingSpeed : 0;
 			let velocityChangeX = desiredVelocityX - velocityX;
 			let velocityChangeY = desiredVelocityY - velocityY;
 			const velocityChangeLength = Math.hypot(velocityChangeX, velocityChangeY);
 			const maximumVelocityChange = currentAcceleration * deltaSeconds;
 			if (velocityChangeLength > maximumVelocityChange) {
-				velocityChangeX = velocityChangeX / velocityChangeLength * maximumVelocityChange;
-				velocityChangeY = velocityChangeY / velocityChangeLength * maximumVelocityChange;
+				velocityChangeX = (velocityChangeX / velocityChangeLength) * maximumVelocityChange;
+				velocityChangeY = (velocityChangeY / velocityChangeLength) * maximumVelocityChange;
 			}
 			velocityX += velocityChangeX;
 			velocityY += velocityChangeY;
@@ -534,10 +557,10 @@
 			velocityY = approachVelocity(velocityY, targetVelocityY, (vertical ? currentAcceleration : movementFriction) * deltaSeconds);
 		}
 		const speed = Math.hypot(velocityX, velocityY);
-		const absoluteMaximumSpeed = maximumMovementSpeed * sprintSpeedMultiplier;
+		const absoluteMaximumSpeed = maximumMovementSpeed * Math.max(sprintSpeedMultiplier, conveyorBoost);
 		if (speed > absoluteMaximumSpeed) {
-			velocityX = velocityX / speed * absoluteMaximumSpeed;
-			velocityY = velocityY / speed * absoluteMaximumSpeed;
+			velocityX = (velocityX / speed) * absoluteMaximumSpeed;
+			velocityY = (velocityY / speed) * absoluteMaximumSpeed;
 		}
 		const movementZoomTarget = 1 - Math.min(speed / absoluteMaximumSpeed, 1) * 0.06;
 		let nextMovementZoom = movementZoom + (movementZoomTarget - movementZoom) * (1 - Math.exp(-8 * deltaSeconds));
@@ -583,14 +606,13 @@
 				y = me.y;
 				velocityY = 0;
 			}
-			presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
+			presences = presences.map((presence) => (presence.id === presenceId ? { ...presence, x, y } : presence));
 			if (Date.now() - lastMovementSentAt >= 50) {
 				lastMovementSentAt = Date.now();
 				sendPosition(x, y, false);
 			}
 		}
-		if (horizontal || vertical || automaticPath.length || velocityX || velocityY || Math.abs(movementZoom - 1) > 0.0001)
-			movementFrame = requestAnimationFrame(moveAvatar);
+		if (horizontal || vertical || automaticPath.length || velocityX || velocityY || Math.abs(movementZoom - 1) > 0.0001) movementFrame = requestAnimationFrame(moveAvatar);
 		else {
 			lastMovementFrameAt = null;
 			sendCurrentPosition();
@@ -677,13 +699,15 @@
 			type: 'basecamp-create-prop',
 			name: form.get('name'),
 			imageData: propPixels.join(''),
+			alternateImageData: propAction === 'toggle' || propAction === 'animated' ? alternatePropPixels.join('') : null,
+			actionConfig: propAction === 'conveyor' ? `${conveyorDirection}:${conveyorSpeed}` : null,
 			x: draft.x,
 			y: draft.y,
 			width: draft.width,
 			height: draft.height,
 			actionType: propAction,
-			teleportX: propAction === 'teleport' ? teleportTarget?.x ?? null : null,
-			teleportY: propAction === 'teleport' ? teleportTarget?.y ?? null : null,
+			teleportX: propAction === 'teleport' ? (teleportTarget?.x ?? null) : null,
+			teleportY: propAction === 'teleport' ? (teleportTarget?.y ?? null) : null,
 			signText: propAction === 'sign' ? signText : null
 		});
 	}
@@ -704,13 +728,13 @@
 		editingProp = { ...selectedProp };
 		const imageData = selectedProp.imageData || '';
 		propPixels = /^[0-8]{64}$/.test(imageData) ? Array.from(imageData) : Array(64).fill('0');
-		propAction = selectedProp.actionType === 'teleport' || selectedProp.actionType === 'sign' || selectedProp.actionType === 'seat'
-			? selectedProp.actionType
-			: 'none';
+		propAction = selectedProp.actionType === 'teleport' || selectedProp.actionType === 'sign' || selectedProp.actionType === 'seat' || selectedProp.actionType === 'conveyor' || selectedProp.actionType === 'toggle' || selectedProp.actionType === 'animated' || selectedProp.actionType === 'canvas' ? selectedProp.actionType : 'none';
 		signText = selectedProp.signText || '';
-		teleportTarget = selectedProp.teleportX !== null && selectedProp.teleportY !== null
-			? { x: selectedProp.teleportX, y: selectedProp.teleportY }
-			: null;
+		alternatePropPixels = /^[0-8]{64}$/.test(selectedProp.alternateImageData || '') ? Array.from(selectedProp.alternateImageData!) : Array(64).fill('0');
+		const [direction, speed] = (selectedProp.actionConfig || 'right:18').split(':');
+		conveyorDirection = direction === 'up' || direction === 'down' || direction === 'left' ? direction : 'right';
+		conveyorSpeed = Math.max(1, Math.min(40, Number(speed) || 18));
+		teleportTarget = selectedProp.teleportX !== null && selectedProp.teleportY !== null ? { x: selectedProp.teleportX, y: selectedProp.teleportY } : null;
 		selectingTeleportTarget = false;
 	}
 
@@ -723,11 +747,13 @@
 			id: editingProp.id,
 			name: form.get('name'),
 			imageData: propPixels.join(''),
+			alternateImageData: propAction === 'toggle' || propAction === 'animated' ? alternatePropPixels.join('') : null,
+			actionConfig: propAction === 'conveyor' ? `${conveyorDirection}:${conveyorSpeed}` : null,
 			width: Number(form.get('width')),
 			height: Number(form.get('height')),
 			actionType: propAction,
-			teleportX: propAction === 'teleport' ? teleportTarget?.x ?? null : null,
-			teleportY: propAction === 'teleport' ? teleportTarget?.y ?? null : null,
+			teleportX: propAction === 'teleport' ? (teleportTarget?.x ?? null) : null,
+			teleportY: propAction === 'teleport' ? (teleportTarget?.y ?? null) : null,
 			signText: propAction === 'sign' ? signText : null
 		});
 	}
@@ -763,6 +789,35 @@
 		event.preventDefault();
 		propPixels[index] = propColor;
 		propPixels = [...propPixels];
+	}
+
+	function paintAlternatePropPixel(index: number, event: PointerEvent) {
+		event.preventDefault();
+		alternatePropPixels[index] = propColor;
+		alternatePropPixels = [...alternatePropPixels];
+	}
+
+	function openCanvasCell(event: MouseEvent, prop: (typeof data.props)[number]) {
+		if (prop.actionType !== 'canvas') return;
+		event.stopPropagation();
+		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		const cellX = Math.max(0, Math.min(prop.width - 1, Math.floor(((event.clientX - rect.left) / rect.width) * prop.width)));
+		const cellY = Math.max(0, Math.min(prop.height - 1, Math.floor(((event.clientY - rect.top) / rect.height) * prop.height)));
+		const existing = canvasCells.find((cell) => cell.propId === prop.id && cell.cellX === cellX && cell.cellY === cellY);
+		canvasPixels = existing ? Array.from(existing.imageData) : Array(64).fill('0');
+		editingCanvasCell = { propId: prop.id, propName: prop.name, cellX, cellY };
+	}
+
+	function paintCanvasPixel(index: number, event: PointerEvent) {
+		event.preventDefault();
+		canvasPixels[index] = propColor;
+		canvasPixels = [...canvasPixels];
+	}
+
+	function saveCanvasCell() {
+		if (!editingCanvasCell) return;
+		sendEphemeral({ type: 'basecamp-paint-canvas', ...editingCanvasCell, imageData: canvasPixels.join('') });
+		editingCanvasCell = null;
 	}
 
 	function createTileType(event: SubmitEvent) {
@@ -842,7 +897,11 @@
 		event.preventDefault();
 		if (!unlockingDoor) return;
 		unlockError = '';
-		unlockRequestId = send({ type: 'basecamp-open-door', id: unlockingDoor.id, password: unlockPassword });
+		unlockRequestId = send({
+			type: 'basecamp-open-door',
+			id: unlockingDoor.id,
+			password: unlockPassword
+		});
 	}
 
 	function cancelDoorUnlock() {
@@ -904,7 +963,10 @@
 		if (!building && event.button === 0 && (event.altKey || event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			const point = worldPoint(event);
-			sendEphemeral({ type: event.altKey ? 'basecamp-location-ping' : 'basecamp-projectile', ...point });
+			sendEphemeral({
+				type: event.altKey ? 'basecamp-location-ping' : 'basecamp-projectile',
+				...point
+			});
 			return;
 		}
 		if (selectingTeleportTarget && event.button === 0) {
@@ -956,26 +1018,26 @@
 		};
 	}
 
-	function beginEditRoom(
-		event: PointerEvent,
-		room: (typeof data.rooms)[number],
-		mode: 'move' | 'resize'
-	) {
+	function beginEditRoom(event: PointerEvent, room: (typeof data.rooms)[number], mode: 'move' | 'resize') {
 		if (!building || buildTool !== 'room' || room.status !== 'active' || event.button !== 0) return;
 		event.stopPropagation();
 		const current = selectedRoom?.id === room.id ? selectedRoom : room;
 		worldViewport!.setPointerCapture(event.pointerId);
 		selectedRoom = { ...current };
-		editSession = { mode, pointerId: event.pointerId, origin: cell(event), initial: { ...current } };
+		editSession = {
+			mode,
+			pointerId: event.pointerId,
+			origin: cell(event),
+			initial: { ...current }
+		};
 	}
 
 	function resizeRoom(event: PointerEvent) {
-		if (rightMovePointerId === event.pointerId && (event.buttons & 2)) {
+		if (rightMovePointerId === event.pointerId && event.buttons & 2) {
 			updateAutomaticMove(event);
 			return;
 		}
-		if (building && buildTool === 'selection' && pastingRegion && copiedRegion)
-			pasteTarget = cell(event);
+		if (building && buildTool === 'selection' && pastingRegion && copiedRegion) pasteTarget = cell(event);
 		if (propMoveSession && (event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
 			const point = cell(event);
 			selectedProp = {
@@ -990,31 +1052,31 @@
 			const dx = point.x - editSession.origin.x;
 			const dy = point.y - editSession.origin.y;
 			const room = editSession.initial;
-			selectedRoom = editSession.mode === 'move'
-				? { ...room, x: room.x + dx, y: room.y + dy }
-				: { ...room, width: Math.max(2, room.width + dx), height: Math.max(2, room.height + dy) };
+			selectedRoom = editSession.mode === 'move' ? { ...room, x: room.x + dx, y: room.y + dy } : { ...room, width: Math.max(2, room.width + dx), height: Math.max(2, room.height + dy) };
 			return;
 		}
-		if (!building || !start || !(event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
-			return;
+		if (!building || !start || !(event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) return;
 		end = buildTool === 'wall' || buildTool === 'door' || buildTool === 'eraser' ? wallPoint(event) : cell(event);
 	}
 
 	function finishRoom(event: PointerEvent) {
 		if (rightMovePointerId === event.pointerId) {
 			rightMovePointerId = null;
-			if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
-				(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+			if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 			return;
 		}
-		if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
-			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+		if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 		editSession = null;
 		if (propMoveSession) {
 			const initial = propMoveSession.initial;
 			propMoveSession = null;
 			if (selectedProp && (selectedProp.x !== initial.x || selectedProp.y !== initial.y))
-				propMoveRequestId = send({ type: 'basecamp-move-prop', id: selectedProp.id, x: selectedProp.x, y: selectedProp.y });
+				propMoveRequestId = send({
+					type: 'basecamp-move-prop',
+					id: selectedProp.id,
+					x: selectedProp.x,
+					y: selectedProp.y
+				});
 			return;
 		}
 		if (building && buildTool === 'selection' && draft) {
@@ -1032,7 +1094,15 @@
 			cancelDraft();
 		} else if (building && buildTool === 'door' && draft) {
 			const length = draft.orientation === 'horizontal' ? draft.width : draft.height;
-			if (length === 1 || length === 2) send({ type: 'basecamp-create-door', x: draft.x, y: draft.y, orientation: draft.orientation, length, password: doorPassword });
+			if (length === 1 || length === 2)
+				send({
+					type: 'basecamp-create-door',
+					x: draft.x,
+					y: draft.y,
+					orientation: draft.orientation,
+					length,
+					password: doorPassword
+				});
 			else showNotice(false, '문은 격자선 1칸 또는 2칸 길이로 그려 주세요.');
 			cancelDraft();
 		} else if (building && buildTool === 'eraser' && draft) {
@@ -1040,8 +1110,7 @@
 			cancelDraft();
 		} else if (building && buildTool === 'tile' && draft) {
 			const cells = [];
-			for (let x = draft.x; x < draft.x + draft.width; x += 1)
-				for (let y = draft.y; y < draft.y + draft.height; y += 1) cells.push({ x, y });
+			for (let x = draft.x; x < draft.x + draft.width; x += 1) for (let y = draft.y; y < draft.y + draft.height; y += 1) cells.push({ x, y });
 			send({ type: 'basecamp-paint-tiles', tileType, cells });
 			cancelDraft();
 		}
@@ -1083,8 +1152,20 @@
 		if (buildTool === 'wall' || buildTool === 'door' || buildTool === 'eraser') {
 			if (deltaX === 0 && deltaY === 0) return null;
 			return deltaX >= deltaY
-				? { x: Math.min(start.x, end.x), y: start.y, width: deltaX, height: 1, orientation: 'horizontal' as const }
-				: { x: start.x, y: Math.min(start.y, end.y), width: 1, height: deltaY, orientation: 'vertical' as const };
+				? {
+						x: Math.min(start.x, end.x),
+						y: start.y,
+						width: deltaX,
+						height: 1,
+						orientation: 'horizontal' as const
+					}
+				: {
+						x: start.x,
+						y: Math.min(start.y, end.y),
+						width: 1,
+						height: deltaY,
+						orientation: 'vertical' as const
+					};
 		}
 		return {
 			x: Math.min(start.x, end.x),
@@ -1096,20 +1177,24 @@
 
 	function wallBlocksMovement(fromX: number, fromY: number, toX: number, toY: number) {
 		const radius = 0.32;
-		const blockers = [...walls, ...doors.filter((door) => !door.isOpen).map((door) => ({
-			x: door.x,
-			y: door.y,
-			width: door.orientation === 'horizontal' ? door.length : 0,
-			height: door.orientation === 'vertical' ? door.length : 0,
-			orientation: door.orientation
-		}))];
+		const blockers = [
+			...walls,
+			...doors
+				.filter((door) => !door.isOpen)
+				.map((door) => ({
+					x: door.x,
+					y: door.y,
+					width: door.orientation === 'horizontal' ? door.length : 0,
+					height: door.orientation === 'vertical' ? door.length : 0,
+					orientation: door.orientation
+				}))
+		];
 		return blockers.some((wall) => {
 			const wallEndX = wall.orientation === 'horizontal' ? wall.x + wall.width : wall.x;
 			const wallEndY = wall.orientation === 'vertical' ? wall.y + wall.height : wall.y;
 			const startDistance = pointSegmentDistanceSquared(fromX, fromY, wall.x, wall.y, wallEndX, wallEndY);
 			const endDistance = pointSegmentDistanceSquared(toX, toY, wall.x, wall.y, wallEndX, wallEndY);
-			if (startDistance < radius * radius)
-				return endDistance + 1e-9 < startDistance;
+			if (startDistance < radius * radius) return endDistance + 1e-9 < startDistance;
 			return segmentDistanceSquared(fromX, fromY, toX, toY, wall.x, wall.y, wallEndX, wallEndY) < radius * radius;
 		});
 	}
@@ -1199,7 +1284,16 @@
 				break;
 			}
 			closed.add(currentKey);
-			for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+			for (const [dx, dy] of [
+				[1, 0],
+				[-1, 0],
+				[0, 1],
+				[0, -1],
+				[1, 1],
+				[1, -1],
+				[-1, 1],
+				[-1, -1]
+			]) {
 				const next = { x: current.x + dx, y: current.y + dy };
 				const nextKey = key(next.x, next.y);
 				if (closed.has(nextKey) || wallBlocksMovement(current.x + 0.5, current.y + 0.5, next.x + 0.5, next.y + 0.5)) continue;
@@ -1238,12 +1332,9 @@
 			index = furthest + 1;
 		}
 		const finalStart = path.length > 1 ? path[path.length - 2] : startPosition;
-		if (path.length && !wallBlocksMovement(finalStart.x, finalStart.y, targetPosition.x, targetPosition.y))
-			path[path.length - 1] = targetPosition;
-		else if (!path.length && !wallBlocksMovement(startPosition.x, startPosition.y, targetPosition.x, targetPosition.y))
-			path.push(targetPosition);
-		else if (!path.length)
-			path.push({ x: goal.x + 0.5, y: goal.y + 0.5 });
+		if (path.length && !wallBlocksMovement(finalStart.x, finalStart.y, targetPosition.x, targetPosition.y)) path[path.length - 1] = targetPosition;
+		else if (!path.length && !wallBlocksMovement(startPosition.x, startPosition.y, targetPosition.x, targetPosition.y)) path.push(targetPosition);
+		else if (!path.length) path.push({ x: goal.x + 0.5, y: goal.y + 0.5 });
 		return path;
 	}
 
@@ -1259,33 +1350,23 @@
 
 	function segmentDistanceSquared(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
 		if (segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy)) return 0;
-		return Math.min(
-			pointSegmentDistanceSquared(ax, ay, cx, cy, dx, dy),
-			pointSegmentDistanceSquared(bx, by, cx, cy, dx, dy),
-			pointSegmentDistanceSquared(cx, cy, ax, ay, bx, by),
-			pointSegmentDistanceSquared(dx, dy, ax, ay, bx, by)
-		);
+		return Math.min(pointSegmentDistanceSquared(ax, ay, cx, cy, dx, dy), pointSegmentDistanceSquared(bx, by, cx, cy, dx, dy), pointSegmentDistanceSquared(cx, cy, ax, ay, bx, by), pointSegmentDistanceSquared(dx, dy, ax, ay, bx, by));
 	}
 
 	function segmentsIntersect(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
-		const cross = (ux: number, uy: number, vx: number, vy: number, wx: number, wy: number) =>
-			(vx - ux) * (wy - uy) - (vy - uy) * (wx - ux);
+		const cross = (ux: number, uy: number, vx: number, vy: number, wx: number, wy: number) => (vx - ux) * (wy - uy) - (vy - uy) * (wx - ux);
 		const abC = cross(ax, ay, bx, by, cx, cy);
 		const abD = cross(ax, ay, bx, by, dx, dy);
 		const cdA = cross(cx, cy, dx, dy, ax, ay);
 		const cdB = cross(cx, cy, dx, dy, bx, by);
 		if (abC * abD < 0 && cdA * cdB < 0) return true;
-		const onSegment = (px: number, py: number, qx: number, qy: number, rx: number, ry: number, area: number) =>
-			Math.abs(area) < 1e-9 && qx >= Math.min(px, rx) && qx <= Math.max(px, rx) && qy >= Math.min(py, ry) && qy <= Math.max(py, ry);
-		return onSegment(ax, ay, cx, cy, bx, by, abC) || onSegment(ax, ay, dx, dy, bx, by, abD) ||
-			onSegment(cx, cy, ax, ay, dx, dy, cdA) || onSegment(cx, cy, bx, by, dx, dy, cdB);
+		const onSegment = (px: number, py: number, qx: number, qy: number, rx: number, ry: number, area: number) => Math.abs(area) < 1e-9 && qx >= Math.min(px, rx) && qx <= Math.max(px, rx) && qy >= Math.min(py, ry) && qy <= Math.max(py, ry);
+		return onSegment(ax, ay, cx, cy, bx, by, abC) || onSegment(ax, ay, dx, dy, bx, by, abD) || onSegment(cx, cy, ax, ay, dx, dy, cdA) || onSegment(cx, cy, bx, by, dx, dy, cdB);
 	}
 
 	function wallStyle(wall: { x: number; y: number; width: number; height: number; orientation?: 'horizontal' | 'vertical' }) {
 		const thickness = cameraLayout.cellSize * 0.12;
-		return wall.orientation === 'horizontal'
-			? `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${wall.width * cameraLayout.cellSize}px;height:${thickness}px`
-			: `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${thickness}px;height:${wall.height * cameraLayout.cellSize}px`;
+		return wall.orientation === 'horizontal' ? `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${wall.width * cameraLayout.cellSize}px;height:${thickness}px` : `left:${wall.x * cameraLayout.cellSize}px;top:${wall.y * cameraLayout.cellSize}px;width:${thickness}px;height:${wall.height * cameraLayout.cellSize}px`;
 	}
 
 	function doorStyle(door: { x: number; y: number; length: number; orientation: 'horizontal' | 'vertical' }) {
@@ -1303,7 +1384,10 @@
 		editingTileType = null;
 		selectingTeleportTarget = false;
 		if (building && buildTool === tool) building = false;
-		else { building = true; buildTool = tool; }
+		else {
+			building = true;
+			buildTool = tool;
+		}
 		cancelEditing();
 		selectedProp = null;
 		copyingProp = null;
@@ -1343,7 +1427,8 @@
 		if (building || unlockingDoor) return;
 		if (nearestInteractiveProp && (!nearestDoor || nearestInteractiveProp.distance <= nearestDoorDistance)) {
 			sendCurrentPosition();
-			send({ type: 'basecamp-use-prop', id: nearestInteractiveProp.prop.id });
+			if (nearestInteractiveProp.prop.actionType === 'toggle') sendEphemeral({ type: 'basecamp-toggle-prop', id: nearestInteractiveProp.prop.id });
+			else send({ type: 'basecamp-use-prop', id: nearestInteractiveProp.prop.id });
 			return;
 		}
 		if (nearestDoor) interactWithDoor(nearestDoor);
@@ -1376,24 +1461,27 @@
 	const currentRoom = $derived.by(() => {
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
-		return rooms
-			.filter((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height)
-			.sort((left, right) => left.width * left.height - right.width * right.height)[0] || null;
+		return rooms.filter((room) => room.status === 'active' && me.x >= room.x && me.x < room.x + room.width && me.y >= room.y && me.y < room.y + room.height).sort((left, right) => left.width * left.height - right.width * right.height)[0] || null;
 	});
 	const roomsByArea = $derived([...rooms].sort((left, right) => right.width * right.height - left.width * left.height));
 	const nearestDoor = $derived.by(() => {
 		if (building || unlockingDoor) return null;
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
-		return doors
-			.filter((door) => !door.isOpen)
-			.map((door) => {
-				const endX = door.orientation === 'horizontal' ? door.x + door.length : door.x;
-				const endY = door.orientation === 'vertical' ? door.y + door.length : door.y;
-				return { door, distance: pointSegmentDistanceSquared(me.x, me.y, door.x, door.y, endX, endY) };
-			})
-			.filter(({ distance }) => distance <= 1.5 ** 2)
-			.sort((left, right) => left.distance - right.distance)[0]?.door || null;
+		return (
+			doors
+				.filter((door) => !door.isOpen)
+				.map((door) => {
+					const endX = door.orientation === 'horizontal' ? door.x + door.length : door.x;
+					const endY = door.orientation === 'vertical' ? door.y + door.length : door.y;
+					return {
+						door,
+						distance: pointSegmentDistanceSquared(me.x, me.y, door.x, door.y, endX, endY)
+					};
+				})
+				.filter(({ distance }) => distance <= 1.5 ** 2)
+				.sort((left, right) => left.distance - right.distance)[0]?.door || null
+		);
 	});
 	const nearestDoorDistance = $derived.by(() => {
 		if (!nearestDoor) return Infinity;
@@ -1407,59 +1495,48 @@
 		if (building || unlockingDoor) return null;
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
-		return worldProps
-			.filter((prop) => prop.actionType === 'teleport' || prop.actionType === 'seat')
-			.map((prop) => {
-				const nearestX = Math.max(prop.x, Math.min(me.x, prop.x + prop.width));
-				const nearestY = Math.max(prop.y, Math.min(me.y, prop.y + prop.height));
-				return { prop, distance: (me.x - nearestX) ** 2 + (me.y - nearestY) ** 2 };
-			})
-			.filter(({ distance }) => distance <= 1.5 ** 2)
-			.sort((left, right) => left.distance - right.distance)[0] || null;
+		return (
+			worldProps
+				.filter((prop) => prop.actionType === 'teleport' || prop.actionType === 'seat' || prop.actionType === 'toggle')
+				.map((prop) => {
+					const nearestX = Math.max(prop.x, Math.min(me.x, prop.x + prop.width));
+					const nearestY = Math.max(prop.y, Math.min(me.y, prop.y + prop.height));
+					return { prop, distance: (me.x - nearestX) ** 2 + (me.y - nearestY) ** 2 };
+				})
+				.filter(({ distance }) => distance <= 1.5 ** 2)
+				.sort((left, right) => left.distance - right.distance)[0] || null
+		);
 	});
 	const interactionLabel = $derived.by(() => {
 		if (!nearestInteractiveProp || (nearestDoor && nearestInteractiveProp.distance > nearestDoorDistance)) return '문 열기';
 		if (nearestInteractiveProp.prop.actionType === 'teleport') return '텔레포트';
+		if (nearestInteractiveProp.prop.actionType === 'toggle') return '모양 바꾸기';
 		const me = presences.find((presence) => presence.id === presenceId);
 		return me?.seatedPropId === nearestInteractiveProp.prop.id ? '일어나기' : '앉기';
 	});
 	const nearestSign = $derived.by(() => {
 		const me = presences.find((presence) => presence.id === presenceId);
 		if (!me) return null;
-		return worldProps
-			.filter((prop) => prop.actionType === 'sign' && prop.signText)
-			.map((prop) => {
-				const nearestX = Math.max(prop.x, Math.min(me.x, prop.x + prop.width));
-				const nearestY = Math.max(prop.y, Math.min(me.y, prop.y + prop.height));
-				return { prop, distance: (me.x - nearestX) ** 2 + (me.y - nearestY) ** 2 };
-			})
-			.filter(({ distance }) => distance <= 2 ** 2)
-			.sort((left, right) => left.distance - right.distance)[0]?.prop || null;
+		return (
+			worldProps
+				.filter((prop) => prop.actionType === 'sign' && prop.signText)
+				.map((prop) => {
+					const nearestX = Math.max(prop.x, Math.min(me.x, prop.x + prop.width));
+					const nearestY = Math.max(prop.y, Math.min(me.y, prop.y + prop.height));
+					return { prop, distance: (me.x - nearestX) ** 2 + (me.y - nearestY) ** 2 };
+				})
+				.filter(({ distance }) => distance <= 2 ** 2)
+				.sort((left, right) => left.distance - right.distance)[0]?.prop || null
+		);
 	});
-	function roomsConflict(
-		left: { x: number; y: number; width: number; height: number },
-		right: { x: number; y: number; width: number; height: number }
-	) {
-		const overlaps = left.x < right.x + right.width && left.x + left.width > right.x &&
-			left.y < right.y + right.height && left.y + left.height > right.y;
-		const leftContainsRight = left.x < right.x && left.x + left.width > right.x + right.width &&
-			left.y < right.y && left.y + left.height > right.y + right.height;
-		const rightContainsLeft = right.x < left.x && right.x + right.width > left.x + left.width &&
-			right.y < left.y && right.y + right.height > left.y + left.height;
+	function roomsConflict(left: { x: number; y: number; width: number; height: number }, right: { x: number; y: number; width: number; height: number }) {
+		const overlaps = left.x < right.x + right.width && left.x + left.width > right.x && left.y < right.y + right.height && left.y + left.height > right.y;
+		const leftContainsRight = left.x < right.x && left.x + left.width > right.x + right.width && left.y < right.y && left.y + left.height > right.y + right.height;
+		const rightContainsLeft = right.x < left.x && right.x + right.width > left.x + left.width && right.y < left.y && right.y + right.height > left.y + left.height;
 		return overlaps && !leftContainsRight && !rightContainsLeft;
 	}
-	const selectedRoomInvalid = $derived.by(() =>
-		selectedRoom
-			? rooms.some(
-					(room) =>
-						room.id !== selectedRoom!.id &&
-						(room.status === 'active' || room.status === 'creating') &&
-						roomsConflict(room, selectedRoom!)
-				)
-			: false
-	);
-	const draftRoomInvalid = $derived(Boolean(draft && buildTool === 'room' &&
-		rooms.some((room) => (room.status === 'active' || room.status === 'creating') && roomsConflict(room, draft!))));
+	const selectedRoomInvalid = $derived.by(() => (selectedRoom ? rooms.some((room) => room.id !== selectedRoom!.id && (room.status === 'active' || room.status === 'creating') && roomsConflict(room, selectedRoom!)) : false));
+	const draftRoomInvalid = $derived(Boolean(draft && buildTool === 'room' && rooms.some((room) => (room.status === 'active' || room.status === 'creating') && roomsConflict(room, draft!))));
 	const selectedRegionContents = $derived.by(() => {
 		const region = copiedRegion;
 		if (!region) return { tiles: [], props: [], doors: [], walls: [] };
@@ -1467,9 +1544,7 @@
 		const yEnd = region.y + region.height;
 		const containsSegment = (item: { x: number; y: number; orientation: 'horizontal' | 'vertical'; width?: number; height?: number; length?: number }) => {
 			const length = item.length ?? (item.orientation === 'horizontal' ? item.width! : item.height!);
-			return item.orientation === 'horizontal'
-				? item.y >= region.y && item.y <= yEnd && item.x >= region.x && item.x + length <= xEnd
-				: item.x >= region.x && item.x <= xEnd && item.y >= region.y && item.y + length <= yEnd;
+			return item.orientation === 'horizontal' ? item.y >= region.y && item.y <= yEnd && item.x >= region.x && item.x + length <= xEnd : item.x >= region.x && item.x <= xEnd && item.y >= region.y && item.y + length <= yEnd;
 		};
 		return {
 			tiles: tiles.filter((tile) => tile.x >= region.x && tile.x < xEnd && tile.y >= region.y && tile.y < yEnd),
@@ -1484,10 +1559,14 @@
 		doors: selectedRegionContents.doors.length,
 		walls: selectedRegionContents.walls.length
 	});
-	const pastePreviewOffset = $derived(copiedRegion && pasteTarget ? {
-		x: pasteTarget.x - copiedRegion.x,
-		y: pasteTarget.y - copiedRegion.y
-	} : null);
+	const pastePreviewOffset = $derived(
+		copiedRegion && pasteTarget
+			? {
+					x: pasteTarget.x - copiedRegion.x,
+					y: pasteTarget.y - copiedRegion.y
+				}
+			: null
+	);
 	const propTemplates = $derived.by(() => {
 		const unique = new Map<string, (typeof data.props)[number]>();
 		for (const prop of worldProps) {
@@ -1498,18 +1577,8 @@
 		return [...unique.values()];
 	});
 	const sortedTileTypes = $derived([...tileTypes].sort((a, b) => a.name.localeCompare(b.name, 'ko')));
-	const rightPanelPinned = $derived(Boolean(
-		designingTile || selectedDoor || copyingProp || copiedRegion || editingProp || selectedProp || selectedRoom ||
-		(building && (buildTool === 'door' || buildTool === 'prop')) ||
-		(draft && (buildTool === 'room' || buildTool === 'prop'))
-	));
-	const voiceTarget = $derived(
-		currentRoom?.voiceChannelId
-			? { name: currentRoom.name, channelId: currentRoom.voiceChannelId }
-			: settings?.lobbyChannelId
-				? { name: '월드 광장', channelId: settings.lobbyChannelId }
-				: null
-	);
+	const rightPanelPinned = $derived(Boolean(designingTile || selectedDoor || copyingProp || copiedRegion || editingProp || selectedProp || selectedRoom || (building && (buildTool === 'door' || buildTool === 'prop')) || (draft && (buildTool === 'room' || buildTool === 'prop'))));
+	const voiceTarget = $derived(currentRoom?.voiceChannelId ? { name: currentRoom.name, channelId: currentRoom.voiceChannelId } : settings?.lobbyChannelId ? { name: '월드 광장', channelId: settings.lobbyChannelId } : null);
 	const cameraLayout = $derived.by(() => {
 		const cellSize = Math.max(28, viewportWidth / referenceColumns, viewportHeight / referenceRows) * 1.35 * renderedZoom * movementZoom;
 		const me = presences.find((presence) => presence.id === presenceId);
@@ -1521,9 +1590,7 @@
 			targetY: viewportHeight / 2 - focusY
 		};
 	});
-	const cameraStyle = $derived(
-		`transform:translate3d(${cameraX}px,${cameraY}px,0)`
-	);
+	const cameraStyle = $derived(`transform:translate3d(${cameraX}px,${cameraY}px,0)`);
 	const visibleBounds = $derived.by(() => {
 		const padding = 2;
 		return {
@@ -1534,10 +1601,9 @@
 		};
 	});
 	function isVisible(item: { x: number; y: number; width?: number; height?: number; length?: number; orientation?: 'horizontal' | 'vertical' }) {
-		const width = item.width ?? (item.orientation === 'horizontal' ? item.length ?? 1 : 1);
-		const height = item.height ?? (item.orientation === 'vertical' ? item.length ?? 1 : 1);
-		return item.x + width >= visibleBounds.left && item.x <= visibleBounds.right &&
-			item.y + height >= visibleBounds.top && item.y <= visibleBounds.bottom;
+		const width = item.width ?? (item.orientation === 'horizontal' ? (item.length ?? 1) : 1);
+		const height = item.height ?? (item.orientation === 'vertical' ? (item.length ?? 1) : 1);
+		return item.x + width >= visibleBounds.left && item.x <= visibleBounds.right && item.y + height >= visibleBounds.top && item.y <= visibleBounds.bottom;
 	}
 	const visibleWalls = $derived(walls.filter(isVisible));
 	const visibleDoors = $derived(doors.filter(isVisible));
@@ -1650,7 +1716,7 @@
 		context.imageSmoothingEnabled = false;
 		const cellSize = cameraLayout.cellSize;
 		for (const prop of visibleProps) {
-			if (!prop.imageData || prop.actionType !== null) continue;
+			if (!prop.imageData || (prop.actionType !== null && prop.actionType !== 'canvas')) continue;
 			const stackIndex = propStackIndexes.get(prop.id) ?? 0;
 			const angle = stackIndex * 2.4;
 			const radius = Math.min(0.18, stackIndex * 0.05) * cellSize;
@@ -1665,6 +1731,16 @@
 			context.roundRect(left, top, width, height, Math.min(width, height) * 0.2);
 			context.fill();
 			context.drawImage(getPropBuffer(prop.imageData), left + width * 0.09, top + height * 0.09, width * 0.82, height * 0.82);
+			if (prop.actionType === 'canvas') {
+				for (const cell of canvasCells) {
+					if (cell.propId !== prop.id) continue;
+					const cellLeft = left + cell.cellX * cellSize;
+					const cellTop = top + cell.cellY * cellSize;
+					context.fillStyle = '#f4f2ea';
+					context.fillRect(cellLeft, cellTop, cellSize, cellSize);
+					context.drawImage(getPropBuffer(cell.imageData), cellLeft, cellTop, cellSize, cellSize);
+				}
+			}
 		}
 	}
 
@@ -1680,6 +1756,7 @@
 
 	$effect(() => {
 		void worldProps;
+		void canvasCells;
 		void building;
 		void cameraX;
 		void cameraY;
@@ -1753,9 +1830,7 @@
 	function animateZoom() {
 		zoomFrame = null;
 		const difference = targetZoom - renderedZoom;
-		const nextZoom = Math.abs(difference) < 0.001
-			? targetZoom
-			: renderedZoom + difference * 0.18;
+		const nextZoom = Math.abs(difference) < 0.001 ? targetZoom : renderedZoom + difference * 0.18;
 		const ratio = nextZoom / renderedZoom;
 		const me = presences.find((presence) => presence.id === presenceId);
 		const focusX = (me?.x ?? settings?.spawnX ?? 20) * cameraLayout.cellSize;
@@ -1783,14 +1858,8 @@
 
 	function setAutoVoiceChannel(event: Event) {
 		autoMoveVoiceChannel = (event.currentTarget as HTMLInputElement).checked;
-		localStorage.setItem(
-			`basecamp-auto-move:${data.guildId}`,
-			String(autoMoveVoiceChannel)
-		);
-		if (socket?.readyState === WebSocket.OPEN)
-			socket.send(
-				JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel })
-			);
+		localStorage.setItem(`basecamp-auto-move:${data.guildId}`, String(autoMoveVoiceChannel));
+		if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'basecamp-auto-move', enabled: autoMoveVoiceChannel }));
 		else showNotice(false, 'Basecamp에 다시 연결한 뒤 설정해 주세요.');
 	}
 
@@ -1819,9 +1888,7 @@
 		return `left:${x}px;top:${y}px;width:${prop.width * cameraLayout.cellSize}px;height:${prop.height * cameraLayout.cellSize}px;--prop-size:${Math.min(prop.width, prop.height) * cameraLayout.cellSize}px`;
 	}
 
-	const spawnStyle = $derived(
-		`left:${(settings?.spawnX ?? 20) * cameraLayout.cellSize}px;top:${(settings?.spawnY ?? 15) * cameraLayout.cellSize}px`
-	);
+	const spawnStyle = $derived(`left:${(settings?.spawnX ?? 20) * cameraLayout.cellSize}px;top:${(settings?.spawnY ?? 15) * cameraLayout.cellSize}px`);
 </script>
 
 <svelte:head><title>Mountain Basecamp</title></svelte:head>
@@ -1833,32 +1900,16 @@
 	class:mobile-top-overlay-open={mobileTopOverlayOpen}
 	class:mobile-right-overlay-open={mobileRightOverlayOpen}
 	onpointermove={revealHud}
-	onpointerleave={() => { if (revealedEdge !== 'all') revealedEdge = null; }}
+	onpointerleave={() => {
+		if (revealedEdge !== 'all') revealedEdge = null;
+	}}
 >
 	<i class="edge-cue top" aria-hidden="true"></i>
 	<i class="edge-cue right" aria-hidden="true"></i>
 	<i class="edge-cue bottom" aria-hidden="true"></i>
-	<button
-		class="mobile-overlay-toggle mobile-top-toggle"
-		type="button"
-		aria-label={mobileTopOverlayOpen ? '상단 메뉴 닫기' : '상단 메뉴 열기'}
-		aria-expanded={mobileTopOverlayOpen}
-		onclick={() => (mobileTopOverlayOpen = !mobileTopOverlayOpen)}
-	>{mobileTopOverlayOpen ? '×' : '☰'}</button>
-	<button
-		class="mobile-overlay-toggle mobile-right-toggle"
-		type="button"
-		aria-label={mobileRightOverlayOpen ? '오른쪽 패널 닫기' : '오른쪽 패널 열기'}
-		aria-expanded={mobileRightOverlayOpen}
-		onclick={() => (mobileRightOverlayOpen = !mobileRightOverlayOpen)}
-	>{mobileRightOverlayOpen ? '×' : '›'}</button>
-	<button
-		class="inventory-toggle"
-		type="button"
-		aria-label="인벤토리 열기"
-		aria-expanded={inventoryOpen}
-		onclick={() => (inventoryOpen = true)}
-	><span>🎒</span><b>인벤토리</b></button>
+	<button class="mobile-overlay-toggle mobile-top-toggle" type="button" aria-label={mobileTopOverlayOpen ? '상단 메뉴 닫기' : '상단 메뉴 열기'} aria-expanded={mobileTopOverlayOpen} onclick={() => (mobileTopOverlayOpen = !mobileTopOverlayOpen)}>{mobileTopOverlayOpen ? '×' : '☰'}</button>
+	<button class="mobile-overlay-toggle mobile-right-toggle" type="button" aria-label={mobileRightOverlayOpen ? '오른쪽 패널 닫기' : '오른쪽 패널 열기'} aria-expanded={mobileRightOverlayOpen} onclick={() => (mobileRightOverlayOpen = !mobileRightOverlayOpen)}>{mobileRightOverlayOpen ? '×' : '›'}</button>
+	<button class="inventory-toggle" type="button" aria-label="인벤토리 열기" aria-expanded={inventoryOpen} onclick={() => (inventoryOpen = true)}><span>🎒</span><b>인벤토리</b></button>
 	<header>
 		<a class="brand" href="/"><span>M</span>Mountain Basecamp</a>
 		{#if data.guilds.length}
@@ -1871,10 +1922,16 @@
 	</header>
 
 	{#if !data.guildId}
-		<section class="empty"><h1>입장할 수 있는 서버가 없습니다</h1><p>Mountain 봇이 있는 Discord 서버에 먼저 참여해 주세요.</p></section>
+		<section class="empty">
+			<h1>입장할 수 있는 서버가 없습니다</h1>
+			<p>Mountain 봇이 있는 Discord 서버에 먼저 참여해 주세요.</p>
+		</section>
 	{:else}
 		<section class="intro">
-		<div><small>SERVER WORLD</small><h1 hidden>Basecamp</h1></div>
+			<div>
+				<small>SERVER WORLD</small>
+				<h1 hidden>Basecamp</h1>
+			</div>
 			<div class="build-actions">
 				<button disabled={!connected || processing} onclick={undoLastEdit} title="실행 취소 (Ctrl/Cmd+Z)">실행 취소</button>
 				{#if data.canManage}
@@ -1884,7 +1941,11 @@
 					<button class:active={building && buildTool === 'door'} onclick={() => setBuildTool('door')}>문 만들기</button>
 					<button class:active={building && buildTool === 'eraser'} onclick={() => setBuildTool('eraser')}>벽 지우기</button>
 					<button class:active={designingTile} onclick={beginTileDesign}>바닥 타일 만들기</button>
-					<label class="tile-picker">바닥<select bind:value={tileType}><option value="grass">잔디로 지우기</option>{#each sortedTileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select></label>
+					<label class="tile-picker"
+						>바닥<select bind:value={tileType}
+							><option value="grass">잔디로 지우기</option>{#each sortedTileTypes as type}<option value={type.id}>{type.name}</option>{/each}</select
+						></label
+					>
 					{#if tileType !== 'grass'}<button disabled={processing || !connected} onclick={beginTileEdit}>타일 수정</button><button class="danger" disabled={processing || !connected} onclick={askToDeleteTileType}>타일 삭제</button>{/if}
 					<button class:active={building && buildTool === 'tile'} onclick={() => setBuildTool('tile')}>바닥 칠하기</button>
 					<button class:active={building && buildTool === 'selection'} onclick={() => setBuildTool('selection')}>영역 선택</button>
@@ -1893,7 +1954,9 @@
 			</div>
 		</section>
 
-		<div class="connection" class:connected><i></i>{connected ? '실시간 연결됨' : '자동 재연결 중'}</div>
+		<div class="connection" class:connected>
+			<i></i>{connected ? '실시간 연결됨' : '자동 재연결 중'}
+		</div>
 		<div class="notification-queue" aria-live="polite">
 			{#each notices as notice (notice.id)}
 				<p class:success={notice.success} class="notice">{notice.message}</p>
@@ -1902,96 +1965,149 @@
 
 		{#if data.canManage && (!settings?.categoryId || !settings?.accessRoleId)}
 			<form class="setup" onsubmit={configure}>
-				<div><strong>Discord 연결부터 설정해 주세요</strong><p>새 방의 음성 채널을 만들 카테고리와, 방에서 발언할 월드 접속자 역할입니다.</p></div>
-				<label>카테고리<select name="categoryId" required><option value="">선택</option>{#each data.categories as category}<option value={category.id}>{category.name}</option>{/each}</select></label>
-				<label>접속자 역할<select name="accessRoleId" required><option value="">선택</option>{#each data.roles as role}<option value={role.id}>@{role.name}</option>{/each}</select></label>
+				<div>
+					<strong>Discord 연결부터 설정해 주세요</strong>
+					<p>새 방의 음성 채널을 만들 카테고리와, 방에서 발언할 월드 접속자 역할입니다.</p>
+				</div>
+				<label
+					>카테고리<select name="categoryId" required
+						><option value="">선택</option>{#each data.categories as category}<option value={category.id}>{category.name}</option>{/each}</select
+					></label
+				>
+				<label
+					>접속자 역할<select name="accessRoleId" required
+						><option value="">선택</option>{#each data.roles as role}<option value={role.id}>@{role.name}</option>{/each}</select
+					></label
+				>
 				<button disabled={!connected || processing}>연결 설정 저장</button>
 			</form>
 		{/if}
 
 		<div class="workspace">
 			<div class="world-wrap">
-				<div
-					class:building
-					class:zooming
-					class:movement-zoom={Math.abs(movementZoom - 1) > 0.0001}
-					class:room-building={building && buildTool === 'room'}
-					class="world"
-					bind:this={worldViewport}
-					role="application"
-					aria-label="무한 월드 공간"
-					onwheel={zoomWorld}
-					oncontextmenu={moveToRightClick}
-					onpointerdown={beginRoom}
-					onpointermove={resizeRoom}
-					onpointerup={finishRoom}
-					onpointercancel={finishRoom}
-				>
+				<div class:building class:zooming class:movement-zoom={Math.abs(movementZoom - 1) > 0.0001} class:room-building={building && buildTool === 'room'} class="world" bind:this={worldViewport} role="application" aria-label="무한 월드 공간" onwheel={zoomWorld} oncontextmenu={moveToRightClick} onpointerdown={beginRoom} onpointermove={resizeRoom} onpointerup={finishRoom} onpointercancel={finishRoom}>
 					<div class="world-background"></div>
 					<canvas class="tile-layer" bind:this={tileCanvas} aria-hidden="true"></canvas>
 					<canvas class="prop-layer" bind:this={propCanvas} aria-hidden="true"></canvas>
-					<div
-						class="world-map"
-						style={cameraStyle}
-					>
-					<svg class="world-grid" style={gridStyle} aria-hidden="true">
-						<defs>
-							<pattern id="basecamp-grid-pattern" width={cameraLayout.cellSize} height={cameraLayout.cellSize} patternUnits="userSpaceOnUse">
-								<path d={`M ${cameraLayout.cellSize} 0 H 0 V ${cameraLayout.cellSize}`} fill="none" stroke="#ffffff14" stroke-width="1" />
-							</pattern>
-						</defs>
-						<rect width="100%" height="100%" fill="url(#basecamp-grid-pattern)" />
-					</svg>
-					<div class="plaza" style={spawnStyle}><span>START</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}</div>
-					{#each visibleWalls as wall}
-						<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)}></div>
-					{/each}
-					{#each visibleDoors as door}
-						<button class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} class:open={door.isOpen} class="door" style={doorStyle(door)} aria-label={`${door.isOpen ? '열린' : '닫힌'} 문${door.hasPassword ? ', 비밀번호 필요' : ''}`} onpointerdown={(event) => selectDoor(event, door)}></button>
-					{/each}
-					{#each visibleRooms as room}
-						<div
-							class:failed={room.status === 'failed'}
-							class:selected={selectedRoom?.id === room.id}
-							class:invalid={selectedRoom?.id === room.id && selectedRoomInvalid}
-							class="room"
-							style={roomStyle(selectedRoom?.id === room.id ? selectedRoom : room)}
-							role="button"
-							tabindex={building && buildTool === 'room' ? 0 : -1}
-							onpointerdown={(event) => beginEditRoom(event, room, 'move')}
-							onkeydown={(event) => { if (building && buildTool === 'room' && (event.key === 'Enter' || event.key === ' ')) selectedRoom = { ...room }; }}
-						>
-							<span>{room.name}</span><small>{room.status === 'active' ? 'VOICE' : room.status}</small>
-							{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
+					<div class="world-map" style={cameraStyle}>
+						<svg class="world-grid" style={gridStyle} aria-hidden="true">
+							<defs>
+								<pattern id="basecamp-grid-pattern" width={cameraLayout.cellSize} height={cameraLayout.cellSize} patternUnits="userSpaceOnUse">
+									<path d={`M ${cameraLayout.cellSize} 0 H 0 V ${cameraLayout.cellSize}`} fill="none" stroke="#ffffff14" stroke-width="1" />
+								</pattern>
+							</defs>
+							<rect width="100%" height="100%" fill="url(#basecamp-grid-pattern)" />
+						</svg>
+						<div class="plaza" style={spawnStyle}>
+							<span>START</span>{#if settings?.lobbyChannelId}<small>🔊 월드 광장</small>{/if}
 						</div>
-					{/each}
-					{#if draft && (buildTool === 'wall' || buildTool === 'eraser')}<div class:cut-wall={buildTool === 'eraser'} class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class:grass={tileType === 'grass'} class="painted-tile tile-draft" style={roomStyle(draft)}>{#if tileTypes.find((type) => type.id === tileType)?.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tileTypes.find((type) => type.id === tileType)?.imageData || '') as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>＋ <small>{draft.width} × {draft.height}</small></div>{:else if draft && buildTool === 'selection'}<div class="region-selection" style={roomStyle(draft)}><small>{draft.width} × {draft.height}</small></div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2 || draftRoomInvalid} class="room draft" style={roomStyle(draft)}><span>새 방</span><small>{draft.width} × {draft.height}</small></div>{/if}
-					{#if copiedRegion}<div class:pasting={pastingRegion} class="region-selection selected" style={roomStyle(copiedRegion)}><small>{pastingRegion ? '붙여넣을 기준 칸을 선택하세요' : `${copiedRegion.width} × ${copiedRegion.height}`}</small></div>{/if}
-					{#if copiedRegion && pasteTarget && pastePreviewOffset}
-						<div class="paste-preview">
-							<div class="paste-floor-preview" style={roomStyle({ ...copiedRegion, x: pasteTarget.x, y: pasteTarget.y })}></div>
-							{#each selectedRegionContents.tiles as tile}<div class="painted-tile" style={tileStyle({ x: tile.x + pastePreviewOffset.x, y: tile.y + pastePreviewOffset.y })}>{#if tile.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true">{#each Array.from(tile.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg>{/if}</div>{/each}
-							{#each selectedRegionContents.walls as wall}<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} style={wallStyle({ ...wall, x: wall.x + pastePreviewOffset.x, y: wall.y + pastePreviewOffset.y })}></div>{/each}
-							{#each selectedRegionContents.doors as door}<div class="door" class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} style={doorStyle({ ...door, x: door.x + pastePreviewOffset.x, y: door.y + pastePreviewOffset.y })}></div>{/each}
-							{#each selectedRegionContents.props as prop}<div class="world-prop" style={`left:${(prop.x + pastePreviewOffset.x + prop.width / 2) * cameraLayout.cellSize}px;top:${(prop.y + pastePreviewOffset.y + prop.height / 2) * cameraLayout.cellSize}px;width:${prop.width * cameraLayout.cellSize}px;height:${prop.height * cameraLayout.cellSize}px;--prop-size:${Math.min(prop.width, prop.height) * cameraLayout.cellSize}px`}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</div>{/each}
-						</div>
-					{/if}
-					{#if teleportTarget && draft && buildTool === 'prop'}<div class="teleport-target-marker" style={`left:${teleportTarget.x * cameraLayout.cellSize}px;top:${teleportTarget.y * cameraLayout.cellSize}px`}><span>목적지</span></div>{/if}
-					{#each pings as ping (ping.id)}<div class="location-ping" style={`left:${ping.x * cameraLayout.cellSize}px;top:${ping.y * cameraLayout.cellSize}px`}><span>{ping.username}</span></div>{/each}
-					{#each projectiles as projectile (projectile.id)}<div class="projectile" style={`left:${projectile.fromX * cameraLayout.cellSize}px;top:${projectile.fromY * cameraLayout.cellSize}px;--projectile-x:${(projectile.x - projectile.fromX) * cameraLayout.cellSize}px;--projectile-y:${(projectile.y - projectile.fromY) * cameraLayout.cellSize}px`}></div>{/each}
-					{#each visiblePresences as presence (presence.id)}
-						<div class:mine={presence.id === presenceId} class:moving={presence.id === presenceId && (velocityX !== 0 || velocityY !== 0)} class:seated={Boolean(presence.seatedPropId)} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom * movementZoom}px;--avatar-border:${3 * renderedZoom * movementZoom}px`} title={presence.username}>
-							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
-							<small>{presence.username}</small>
-						</div>
-					{/each}
-					{#each domProps as prop (prop.id)}
-						<button class:selected={selectedProp?.id === prop.id} class:teleport={prop.actionType === 'teleport'} class:sign={prop.actionType === 'sign'} class:seat={prop.actionType === 'seat'} class:occupied={occupiedPropIds.has(prop.id)} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}{prop.emoji}{/if}</button>
-					{/each}
-					{#if nearestSign}<div class="sign-message" style={`left:${(nearestSign.x + nearestSign.width / 2) * cameraLayout.cellSize}px;top:${nearestSign.y * cameraLayout.cellSize}px`}>{nearestSign.signText}</div>{/if}
-					{#if nearestDoor || nearestInteractiveProp}
-						<div class="door-interaction-prompt" style={`left:${(presences.find((presence) => presence.id === presenceId)?.x ?? 0) * cameraLayout.cellSize}px;top:${(presences.find((presence) => presence.id === presenceId)?.y ?? 0) * cameraLayout.cellSize}px`}>Space · {interactionLabel}</div>
-					{/if}
+						{#each visibleWalls as wall}
+							<div class="wall" class:horizontal={wall.orientation === 'horizontal'} class:vertical={wall.orientation === 'vertical'} class:editable={building && buildTool === 'eraser'} style={wallStyle(wall)}></div>
+						{/each}
+						{#each visibleDoors as door}
+							<button class:horizontal={door.orientation === 'horizontal'} class:vertical={door.orientation === 'vertical'} class:open={door.isOpen} class="door" style={doorStyle(door)} aria-label={`${door.isOpen ? '열린' : '닫힌'} 문${door.hasPassword ? ', 비밀번호 필요' : ''}`} onpointerdown={(event) => selectDoor(event, door)}></button>
+						{/each}
+						{#each visibleRooms as room}
+							<div
+								class:failed={room.status === 'failed'}
+								class:selected={selectedRoom?.id === room.id}
+								class:invalid={selectedRoom?.id === room.id && selectedRoomInvalid}
+								class="room"
+								style={roomStyle(selectedRoom?.id === room.id ? selectedRoom : room)}
+								role="button"
+								tabindex={building && buildTool === 'room' ? 0 : -1}
+								onpointerdown={(event) => beginEditRoom(event, room, 'move')}
+								onkeydown={(event) => {
+									if (building && buildTool === 'room' && (event.key === 'Enter' || event.key === ' ')) selectedRoom = { ...room };
+								}}
+							>
+								<span>{room.name}</span><small>{room.status === 'active' ? 'VOICE' : room.status}</small>
+								{#if building && buildTool === 'room' && room.status === 'active'}<button class="resize-handle" aria-label={`${room.name} 크기 조절`} onpointerdown={(event) => beginEditRoom(event, room, 'resize')}></button>{/if}
+							</div>
+						{/each}
+						{#if draft && (buildTool === 'wall' || buildTool === 'eraser')}<div class:cut-wall={buildTool === 'eraser'} class="wall draft-wall" class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} style={wallStyle(draft)}></div>{:else if draft && buildTool === 'door'}<div class:horizontal={draft.orientation === 'horizontal'} class:vertical={draft.orientation === 'vertical'} class:invalid={(draft.orientation === 'horizontal' ? draft.width : draft.height) > 2} class="door draft-door" style={wallStyle(draft)}></div>{:else if draft && buildTool === 'tile'}<div class:grass={tileType === 'grass'} class="painted-tile tile-draft" style={roomStyle(draft)}>
+								{#if tileTypes.find((type) => type.id === tileType)?.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true"
+										>{#each Array.from(tileTypes.find((type) => type.id === tileType)?.imageData || '') as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg
+									>{/if}
+							</div>{:else if draft && buildTool === 'prop'}<div class="prop-draft" style={`left:${(draft.x + draft.width / 2) * cameraLayout.cellSize}px;top:${(draft.y + draft.height / 2) * cameraLayout.cellSize}px;width:${draft.width * cameraLayout.cellSize}px;height:${draft.height * cameraLayout.cellSize}px`}>
+								＋ <small>{draft.width} × {draft.height}</small>
+							</div>{:else if draft && buildTool === 'selection'}<div class="region-selection" style={roomStyle(draft)}>
+								<small>{draft.width} × {draft.height}</small>
+							</div>{:else if draft}<div class:invalid={draft.width < 2 || draft.height < 2 || draftRoomInvalid} class="room draft" style={roomStyle(draft)}>
+								<span>새 방</span><small>{draft.width} × {draft.height}</small>
+							</div>{/if}
+						{#if copiedRegion}<div class:pasting={pastingRegion} class="region-selection selected" style={roomStyle(copiedRegion)}>
+								<small>{pastingRegion ? '붙여넣을 기준 칸을 선택하세요' : `${copiedRegion.width} × ${copiedRegion.height}`}</small>
+							</div>{/if}
+						{#if copiedRegion && pasteTarget && pastePreviewOffset}
+							<div class="paste-preview">
+								<div class="paste-floor-preview" style={roomStyle({ ...copiedRegion, x: pasteTarget.x, y: pasteTarget.y })}></div>
+								{#each selectedRegionContents.tiles as tile}<div
+										class="painted-tile"
+										style={tileStyle({
+											x: tile.x + pastePreviewOffset.x,
+											y: tile.y + pastePreviewOffset.y
+										})}
+									>
+										{#if tile.imageData}<svg viewBox="0 0 8 8" preserveAspectRatio="none" aria-hidden="true"
+												>{#each Array.from(tile.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={tilePalette[Number(pixel)]}></rect>{/if}{/each}</svg
+											>{/if}
+									</div>{/each}
+								{#each selectedRegionContents.walls as wall}<div
+										class="wall"
+										class:horizontal={wall.orientation === 'horizontal'}
+										class:vertical={wall.orientation === 'vertical'}
+										style={wallStyle({
+											...wall,
+											x: wall.x + pastePreviewOffset.x,
+											y: wall.y + pastePreviewOffset.y
+										})}
+									></div>{/each}
+								{#each selectedRegionContents.doors as door}<div
+										class="door"
+										class:horizontal={door.orientation === 'horizontal'}
+										class:vertical={door.orientation === 'vertical'}
+										style={doorStyle({
+											...door,
+											x: door.x + pastePreviewOffset.x,
+											y: door.y + pastePreviewOffset.y
+										})}
+									></div>{/each}
+								{#each selectedRegionContents.props as prop}<div class="world-prop" style={`left:${(prop.x + pastePreviewOffset.x + prop.width / 2) * cameraLayout.cellSize}px;top:${(prop.y + pastePreviewOffset.y + prop.height / 2) * cameraLayout.cellSize}px;width:${prop.width * cameraLayout.cellSize}px;height:${prop.height * cameraLayout.cellSize}px;--prop-size:${Math.min(prop.width, prop.height) * cameraLayout.cellSize}px`}>
+										{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true"
+												>{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg
+											>{:else}{prop.emoji}{/if}
+									</div>{/each}
+							</div>
+						{/if}
+						{#if teleportTarget && draft && buildTool === 'prop'}<div class="teleport-target-marker" style={`left:${teleportTarget.x * cameraLayout.cellSize}px;top:${teleportTarget.y * cameraLayout.cellSize}px`}>
+								<span>목적지</span>
+							</div>{/if}
+						{#each pings as ping (ping.id)}<div class="location-ping" style={`left:${ping.x * cameraLayout.cellSize}px;top:${ping.y * cameraLayout.cellSize}px`}>
+								<span>{ping.username}</span>
+							</div>{/each}
+						{#each projectiles as projectile (projectile.id)}<div class="projectile" style={`left:${projectile.fromX * cameraLayout.cellSize}px;top:${projectile.fromY * cameraLayout.cellSize}px;--projectile-x:${(projectile.x - projectile.fromX) * cameraLayout.cellSize}px;--projectile-y:${(projectile.y - projectile.fromY) * cameraLayout.cellSize}px`}></div>{/each}
+						{#each visiblePresences as presence (presence.id)}
+							<div class:mine={presence.id === presenceId} class:moving={presence.id === presenceId && (velocityX !== 0 || velocityY !== 0)} class:seated={Boolean(presence.seatedPropId)} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom * movementZoom}px;--avatar-border:${3 * renderedZoom * movementZoom}px`} title={presence.username}>
+								{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
+								<small>{presence.username}</small>
+							</div>
+						{/each}
+						{#each domProps as prop (prop.id)}
+							<button class:selected={selectedProp?.id === prop.id} class:teleport={prop.actionType === 'teleport'} class:sign={prop.actionType === 'sign'} class:seat={prop.actionType === 'seat'} class:animated={prop.actionType === 'animated'} class:conveyor={prop.actionType === 'conveyor'} class:canvas={prop.actionType === 'canvas'} class:occupied={occupiedPropIds.has(prop.id)} class="world-prop" style={propStyle(prop)} title={prop.name} aria-label={`${prop.name} 소품`} onpointerdown={(event) => selectProp(event, prop)} onclick={(event) => openCanvasCell(event, prop)}
+								>{#if prop.imageData}{#each prop.actionType === 'animated' && prop.alternateImageData ? [prop.imageData, prop.alternateImageData] : [prop.actionType === 'toggle' && toggledPropIds.has(prop.id) && prop.alternateImageData ? prop.alternateImageData : prop.imageData] as frame, frameIndex}<svg class:alternate-frame={frameIndex === 1} viewBox="0 0 8 8" aria-hidden="true"
+											>{#each Array.from(frame) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg
+										>{/each}{:else}{prop.emoji}{/if}</button
+							>
+						{/each}
+						{#if nearestSign}<div class="sign-message" style={`left:${(nearestSign.x + nearestSign.width / 2) * cameraLayout.cellSize}px;top:${nearestSign.y * cameraLayout.cellSize}px`}>
+								{nearestSign.signText}
+							</div>{/if}
+						{#if nearestDoor || nearestInteractiveProp}
+							<div class="door-interaction-prompt" style={`left:${(presences.find((presence) => presence.id === presenceId)?.x ?? 0) * cameraLayout.cellSize}px;top:${(presences.find((presence) => presence.id === presenceId)?.y ?? 0) * cameraLayout.cellSize}px`}>
+								Space · {interactionLabel}
+							</div>
+						{/if}
 					</div>
 					<div class="mobile-controls" role="group" aria-label="모바일 월드 조작" onpointerdown={(event) => event.stopPropagation()} onpointermove={(event) => event.stopPropagation()} onpointerup={(event) => event.stopPropagation()}>
 						<div class="mobile-dpad">
@@ -2008,50 +2124,247 @@
 						</div>
 					</div>
 				</div>
-				<p class="hint">{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '격자선을 따라 드래그해서 없앨 벽 구간을 선택하세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'selection' ? (pastingRegion ? '미리보기를 확인하고 붙여넣을 위치를 선택하세요.' : '작업할 영역을 드래그하세요.') : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '빈 영역을 드래그해 만들거나 기존 소품을 드래그해 옮기세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%</p>
+				<p class="hint">
+					{building ? (buildTool === 'wall' ? '격자선을 따라 드래그해서 벽을 만드세요.' : buildTool === 'door' ? '격자선을 따라 1칸 또는 2칸 길이로 문을 그리세요.' : buildTool === 'eraser' ? '격자선을 따라 드래그해서 없앨 벽 구간을 선택하세요.' : buildTool === 'tile' ? '칠할 칸을 드래그하세요.' : buildTool === 'selection' ? (pastingRegion ? '미리보기를 확인하고 붙여넣을 위치를 선택하세요.' : '작업할 영역을 드래그하세요.') : buildTool === 'prop' ? (copyingProp ? '복사한 소품을 놓을 칸을 누르세요.' : '빈 영역을 드래그해 만들거나 기존 소품을 드래그해 옮기세요.') : '빈 공간을 드래그해서 방을 그려 보세요.') : '방향키 또는 WASD로 이동 · Shift로 달리기 · 문 가까이 Space · 휠로 확대/축소'} · {Math.round(targetZoom * 100)}%
+				</p>
 			</div>
 
 			<aside>
-				{#if designingTile && data.canManage}
-					<form onsubmit={createTileType}><small>{editingTileType ? '바닥 무늬 수정' : '새 바닥 무늬'}</small><h2>바닥 타일 직접 그리기</h2><div class="pixel-palette" aria-label="바닥 타일 색상">{#each tilePalette as color, index}<button type="button" class:active={tileColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (tileColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor tile-pixel-editor" aria-label="8×8 바닥 타일 편집기">{#each tilePixels as pixel, index}<button type="button" style={`--pixel-color:${tilePalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintTilePixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintTilePixel(index, event); }}></button>{/each}</div><label>타일 이름<input name="name" value={editingTileType?.name || ''} maxlength="40" placeholder="예: 어두운 돌길" required /></label><p>수정하면 이 타일로 칠한 모든 칸에 새 무늬가 반영됩니다.</p><button disabled={processing || !connected || !tilePixels.some((pixel) => pixel !== '0')}>{editingTileType ? '타일 수정 저장' : '타일 저장하고 칠하기'}</button><button class="secondary" type="button" onclick={cancelTileDesign}>취소</button></form>
+				{#if editingCanvasCell}
+					<div class="guide">
+						<small>공동 캔버스</small>
+						<h2>{editingCanvasCell.propName}</h2>
+						<p>{editingCanvasCell.cellX + 1}, {editingCanvasCell.cellY + 1} 셀 · 8×8 픽셀</p>
+						<div class="pixel-palette">
+							{#each propPalette as color, index}<button type="button" aria-label={index === 0 ? '지우개' : `${index}번 색상`} class:active={propColor === String(index)} style={`--pixel-color:${color}`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}
+						</div>
+						<div class="pixel-editor">
+							{#each canvasPixels as pixel, index}<button
+									type="button"
+									aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`}
+									style={`--pixel-color:${propPalette[Number(pixel)]}`}
+									onpointerdown={(event) => paintCanvasPixel(index, event)}
+									onpointerenter={(event) => {
+										if (event.buttons & 1) paintCanvasPixel(index, event);
+									}}
+								></button>{/each}
+						</div>
+						<button onclick={saveCanvasCell}>셀 저장</button><button class="secondary" onclick={() => (editingCanvasCell = null)}>취소</button>
+					</div>
+				{:else if designingTile && data.canManage}
+					<form onsubmit={createTileType}>
+						<small>{editingTileType ? '바닥 무늬 수정' : '새 바닥 무늬'}</small>
+						<h2>바닥 타일 직접 그리기</h2>
+						<div class="pixel-palette" aria-label="바닥 타일 색상">
+							{#each tilePalette as color, index}<button type="button" class:active={tileColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (tileColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}
+						</div>
+						<div class="pixel-editor tile-pixel-editor" aria-label="8×8 바닥 타일 편집기">
+							{#each tilePixels as pixel, index}<button
+									type="button"
+									style={`--pixel-color:${tilePalette[Number(pixel)]}`}
+									aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`}
+									onpointerdown={(event) => paintTilePixel(index, event)}
+									onpointerenter={(event) => {
+										if (event.buttons & 1) paintTilePixel(index, event);
+									}}
+								></button>{/each}
+						</div>
+						<label>타일 이름<input name="name" value={editingTileType?.name || ''} maxlength="40" placeholder="예: 어두운 돌길" required /></label>
+						<p>수정하면 이 타일로 칠한 모든 칸에 새 무늬가 반영됩니다.</p>
+						<button disabled={processing || !connected || !tilePixels.some((pixel) => pixel !== '0')}>{editingTileType ? '타일 수정 저장' : '타일 저장하고 칠하기'}</button><button class="secondary" type="button" onclick={cancelTileDesign}>취소</button>
+					</form>
 				{:else if selectedDoor}
-					<div class="guide"><small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small><h2>문</h2><p>{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.</p>{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button></div>
+					<div class="guide">
+						<small>{selectedDoor.isOpen ? '열린 문' : '닫힌 문'}</small>
+						<h2>문</h2>
+						<p>
+							{selectedDoor.length}칸 문입니다. 열린 뒤 30초가 지나거나 사람이 통과한 뒤 5초가 지나면 닫힙니다.
+						</p>
+						{#if data.canManage}<button class="danger" type="button" disabled={processing || !connected} onclick={deleteDoor}>문 철거</button>{/if}<button class="secondary" type="button" onclick={() => (selectedDoor = null)}>닫기</button>
+					</div>
 				{:else if building && buildTool === 'door'}
-					<div class="guide"><small>새 문 설정</small><h2>문 만들기</h2><label>비밀번호 (선택)<input bind:value={doorPassword} type="password" maxlength="40" placeholder="비워 두면 누구나 열 수 있음" /></label><p>설정한 뒤 월드의 격자선을 1칸 또는 2칸 드래그하세요.</p></div>
+					<div class="guide">
+						<small>새 문 설정</small>
+						<h2>문 만들기</h2>
+						<label>비밀번호 (선택)<input bind:value={doorPassword} type="password" maxlength="40" placeholder="비워 두면 누구나 열 수 있음" /></label>
+						<p>설정한 뒤 월드의 격자선을 1칸 또는 2칸 드래그하세요.</p>
+					</div>
 				{:else if copyingProp}
-					<div class="guide"><small>소품 복사</small><h2>{copyingProp.name}</h2><p>월드에서 복사본을 놓을 칸을 선택하세요. 크기 {copyingProp.width} × {copyingProp.height}가 유지됩니다.</p><button class="secondary" onclick={cancelCopyProp}>복사 취소</button></div>
+					<div class="guide">
+						<small>소품 복사</small>
+						<h2>{copyingProp.name}</h2>
+						<p>
+							월드에서 복사본을 놓을 칸을 선택하세요. 크기 {copyingProp.width} × {copyingProp.height}가 유지됩니다.
+						</p>
+						<button class="secondary" onclick={cancelCopyProp}>복사 취소</button>
+					</div>
 				{:else if copiedRegion}
-					<div class="guide"><small>영역 선택</small><h2>{copiedRegion.width} × {copiedRegion.height}칸 선택</h2><p>배경 {copiedRegionCounts.tiles}칸 · 소품 {copiedRegionCounts.props}개 · 문 {copiedRegionCounts.doors}개 · 벽 {copiedRegionCounts.walls}개</p><p>{pastingRegion ? '반투명 미리보기를 확인하고 놓을 위치를 선택하세요.' : '방과 음성 채널은 작업 대상에서 제외됩니다.'}</p>{#if !pastingRegion}<button disabled={processing || !connected} onclick={() => { pastingRegion = true; pasteTarget = null; }}>영역 복사</button><button class="danger" disabled={processing || !connected} onclick={deleteSelectedRegion}>영역 삭제</button>{/if}<button class="secondary" type="button" onclick={cancelRegionCopy}>취소</button></div>
+					<div class="guide">
+						<small>영역 선택</small>
+						<h2>{copiedRegion.width} × {copiedRegion.height}칸 선택</h2>
+						<p>
+							배경 {copiedRegionCounts.tiles}칸 · 소품 {copiedRegionCounts.props}개 · 문 {copiedRegionCounts.doors}개 · 벽 {copiedRegionCounts.walls}개
+						</p>
+						<p>
+							{pastingRegion ? '반투명 미리보기를 확인하고 놓을 위치를 선택하세요.' : '방과 음성 채널은 작업 대상에서 제외됩니다.'}
+						</p>
+						{#if !pastingRegion}<button
+								disabled={processing || !connected}
+								onclick={() => {
+									pastingRegion = true;
+									pasteTarget = null;
+								}}>영역 복사</button
+							><button class="danger" disabled={processing || !connected} onclick={deleteSelectedRegion}>영역 삭제</button>{/if}<button class="secondary" type="button" onclick={cancelRegionCopy}>취소</button>
+					</div>
 				{:else if editingProp}
-					<form onsubmit={updateProp}><small>소품 편집</small><h2>{editingProp.name}</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" value={editingProp.name} required /></label><div class="prop-size-fields"><label>가로 칸<input name="width" type="number" min="1" max="32" value={editingProp.width} required /></label><label>세로 칸<input name="height" type="number" min="1" max="32" value={editingProp.height} required /></label></div><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option><option value="sign">표지판</option><option value="seat">앉을 수 있는 가구</option></select></label>{#if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>선택한 목적지: {teleportTarget.x}, {teleportTarget.y}</p>{/if}{:else if propAction === 'sign'}<label>표지판 문구<textarea bind:value={signText} maxlength="500" rows="4" placeholder="가까이 왔을 때 보여줄 문구" required></textarea></label>{/if}<button disabled={processing || !connected || !propPixels.some((pixel) => pixel !== '0') || (propAction === 'teleport' && !teleportTarget) || (propAction === 'sign' && !signText.trim())}>변경 저장</button><button class="secondary" type="button" onclick={cancelPropEdit}>취소</button></form>
+					<form onsubmit={updateProp}>
+						<small>소품 편집</small>
+						<h2>{editingProp.name}</h2>
+						<div class="pixel-palette" aria-label="그리기 색상">
+							{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}
+						</div>
+						<div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">
+							{#each propPixels as pixel, index}<button
+									type="button"
+									style={`--pixel-color:${propPalette[Number(pixel)]}`}
+									aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`}
+									onpointerdown={(event) => paintPropPixel(index, event)}
+									onpointerenter={(event) => {
+										if (event.buttons & 1) paintPropPixel(index, event);
+									}}
+								></button>{/each}
+						</div>
+						<label>소품 이름<input name="name" maxlength="40" value={editingProp.name} required /></label>
+						<div class="prop-size-fields">
+							<label>가로 칸<input name="width" type="number" min="1" max="32" value={editingProp.width} required /></label><label>세로 칸<input name="height" type="number" min="1" max="32" value={editingProp.height} required /></label>
+						</div>
+						<label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option><option value="sign">표지판</option><option value="seat">앉을 수 있는 가구</option><option value="conveyor">움직이는 발판</option><option value="toggle">누르면 변형</option><option value="animated">애니메이션</option><option value="canvas">공동 캔버스</option></select></label>{#if propAction === 'conveyor'}
+							<label>방향<select bind:value={conveyorDirection}><option value="up">위</option><option value="down">아래</option><option value="left">왼쪽</option><option value="right">오른쪽</option></select></label>
+							<label>속도<input type="number" min="1" max="40" bind:value={conveyorSpeed} /></label>
+						{:else if propAction === 'toggle' || propAction === 'animated'}
+							<p>두 번째 모습</p>
+							<div class="pixel-editor">
+								{#each alternatePropPixels as pixel, index}<button
+										type="button"
+										aria-label={`두 번째 모습 ${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`}
+										style={`--pixel-color:${propPalette[Number(pixel)]}`}
+										onpointerdown={(event) => paintAlternatePropPixel(index, event)}
+										onpointerenter={(event) => {
+											if (event.buttons & 1) paintAlternatePropPixel(index, event);
+										}}
+									></button>{/each}
+							</div>
+						{:else if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>
+									선택한 목적지: {teleportTarget.x}, {teleportTarget.y}
+								</p>{/if}{:else if propAction === 'sign'}<label>표지판 문구<textarea bind:value={signText} maxlength="500" rows="4" placeholder="가까이 왔을 때 보여줄 문구" required></textarea></label>{/if}<button disabled={processing || !connected || !propPixels.some((pixel) => pixel !== '0') || (propAction === 'teleport' && !teleportTarget) || (propAction === 'sign' && !signText.trim())}>변경 저장</button><button class="secondary" type="button" onclick={cancelPropEdit}>취소</button>
+					</form>
 				{:else if selectedProp}
-					<div class="guide"><small>선택한 소품</small><h2>{selectedProp.name}</h2><p>위치 {selectedProp.x}, {selectedProp.y} · 크기 {selectedProp.width} × {selectedProp.height}</p>{#if selectedProp.actionType === 'teleport'}<p>텔레포트 목적지: {selectedProp.teleportX}, {selectedProp.teleportY}</p>{:else if selectedProp.actionType === 'sign'}<p>표지판 문구: {selectedProp.signText}</p>{/if}<button disabled={processing || !connected} onclick={beginCopyProp}>복사해서 놓기</button>{#if selectedProp.createdBy === data.user.id || data.canManage}<button disabled={processing || !connected} onclick={beginEditProp}>소품 편집</button><button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button></div>
+					<div class="guide">
+						<small>선택한 소품</small>
+						<h2>{selectedProp.name}</h2>
+						<p>
+							위치 {selectedProp.x}, {selectedProp.y} · 크기 {selectedProp.width} × {selectedProp.height}
+						</p>
+						{#if selectedProp.actionType === 'teleport'}<p>
+								텔레포트 목적지: {selectedProp.teleportX}, {selectedProp.teleportY}
+							</p>{:else if selectedProp.actionType === 'sign'}<p>
+								표지판 문구: {selectedProp.signText}
+							</p>{/if}<button disabled={processing || !connected} onclick={beginCopyProp}>복사해서 놓기</button>{#if selectedProp.createdBy === data.user.id || data.canManage}<button disabled={processing || !connected} onclick={beginEditProp}>소품 편집</button><button class="danger" disabled={processing || !connected} onclick={deleteProp}>소품 치우기</button>{/if}<button class="secondary" onclick={() => (selectedProp = null)}>선택 해제</button>
+					</div>
 				{:else if draft && buildTool === 'prop'}
-					<form onsubmit={createProp}><small>새 소품 · {draft.width} × {draft.height}칸</small><h2>소품 직접 그리기</h2><div class="pixel-palette" aria-label="그리기 색상">{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}</div><div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">{#each propPixels as pixel, index}<button type="button" style={`--pixel-color:${propPalette[Number(pixel)]}`} aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`} onpointerdown={(event) => paintPropPixel(index, event)} onpointerenter={(event) => { if (event.buttons & 1) paintPropPixel(index, event); }}></button>{/each}</div><label>소품 이름<input name="name" maxlength="40" placeholder="예: 안내 표지판" required /></label><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option><option value="sign">표지판</option><option value="seat">앉을 수 있는 가구</option></select></label>{#if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>선택한 목적지: {teleportTarget.x}, {teleportTarget.y}</p>{:else}<p>버튼을 누른 뒤 이동할 월드의 칸을 직접 선택하세요.</p>{/if}{:else if propAction === 'sign'}<label>표지판 문구<textarea bind:value={signText} maxlength="500" rows="4" placeholder="가까이 왔을 때 보여줄 문구" required></textarea></label>{:else}<p>최대 32×32칸이며 같은 영역에 다른 소품도 함께 놓을 수 있습니다.</p>{/if}<button disabled={processing || !connected || draft.width > 32 || draft.height > 32 || (propAction === 'teleport' && !teleportTarget) || (propAction === 'sign' && !signText.trim())}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button></form>
+					<form onsubmit={createProp}>
+						<small>새 소품 · {draft.width} × {draft.height}칸</small>
+						<h2>소품 직접 그리기</h2>
+						<div class="pixel-palette" aria-label="그리기 색상">
+							{#each propPalette as color, index}<button type="button" class:active={propColor === String(index)} style={`--pixel-color:${color}`} aria-label={index === 0 ? '지우개' : `${index}번 색상`} onclick={() => (propColor = String(index))}>{index === 0 ? '⌫' : ''}</button>{/each}
+						</div>
+						<div class="pixel-editor" aria-label="8×8 소품 이미지 편집기">
+							{#each propPixels as pixel, index}<button
+									type="button"
+									style={`--pixel-color:${propPalette[Number(pixel)]}`}
+									aria-label={`${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`}
+									onpointerdown={(event) => paintPropPixel(index, event)}
+									onpointerenter={(event) => {
+										if (event.buttons & 1) paintPropPixel(index, event);
+									}}
+								></button>{/each}
+						</div>
+						<label>소품 이름<input name="name" maxlength="40" placeholder="예: 안내 표지판" required /></label><label>기능<select value={propAction} onchange={changePropAction}><option value="none">기능 없음</option><option value="teleport">텔레포트</option><option value="sign">표지판</option><option value="seat">앉을 수 있는 가구</option><option value="conveyor">움직이는 발판</option><option value="toggle">누르면 변형</option><option value="animated">애니메이션</option><option value="canvas">공동 캔버스</option></select></label>{#if propAction === 'conveyor'}
+							<label>방향<select bind:value={conveyorDirection}><option value="up">위</option><option value="down">아래</option><option value="left">왼쪽</option><option value="right">오른쪽</option></select></label>
+							<label>속도<input type="number" min="1" max="40" bind:value={conveyorSpeed} /></label>
+						{:else if propAction === 'toggle' || propAction === 'animated'}
+							<p>두 번째 모습</p>
+							<div class="pixel-editor">
+								{#each alternatePropPixels as pixel, index}<button
+										type="button"
+										aria-label={`두 번째 모습 ${(index % 8) + 1}열 ${Math.floor(index / 8) + 1}행`}
+										style={`--pixel-color:${propPalette[Number(pixel)]}`}
+										onpointerdown={(event) => paintAlternatePropPixel(index, event)}
+										onpointerenter={(event) => {
+											if (event.buttons & 1) paintAlternatePropPixel(index, event);
+										}}
+									></button>{/each}
+							</div>
+						{:else if propAction === 'teleport'}<button class:active={selectingTeleportTarget} type="button" onclick={beginTeleportTargetSelection}>{selectingTeleportTarget ? '월드에서 목적지를 선택하세요' : teleportTarget ? '목적지 다시 선택' : '월드에서 목적지 선택'}</button>{#if teleportTarget}<p>
+									선택한 목적지: {teleportTarget.x}, {teleportTarget.y}
+								</p>{:else}<p>버튼을 누른 뒤 이동할 월드의 칸을 직접 선택하세요.</p>{/if}{:else if propAction === 'sign'}<label>표지판 문구<textarea bind:value={signText} maxlength="500" rows="4" placeholder="가까이 왔을 때 보여줄 문구" required></textarea></label>{:else}<p>최대 32×32칸이며 같은 영역에 다른 소품도 함께 놓을 수 있습니다.</p>{/if}<button disabled={processing || !connected || draft.width > 32 || draft.height > 32 || (propAction === 'teleport' && !teleportTarget) || (propAction === 'sign' && !signText.trim())}>소품 놓기</button><button class="secondary" type="button" onclick={cancelPropDraft}>취소</button>
+					</form>
 				{:else if building && buildTool === 'prop'}
-					<div class="guide"><small>소품 놓기</small><h2>소품을 만들거나 선택하세요</h2><p>빈 영역을 드래그하면 새 소품을 만들 수 있습니다. 아래에서 기존 소품을 고르면 월드에 복사해서 놓을 수 있습니다.</p>{#if propTemplates.length}<div class="prop-library" aria-label="기존 소품 목록">{#each propTemplates as prop (prop.id)}<button type="button" title={`${prop.name} · ${prop.width}×${prop.height}`} aria-label={`${prop.name} 소품 선택`} onclick={() => beginCopyExistingProp(prop)}>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true">{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg>{:else}<span>{prop.emoji}</span>{/if}<small>{prop.name}</small></button>{/each}</div>{:else}<p>아직 다시 사용할 소품이 없습니다.</p>{/if}</div>
+					<div class="guide">
+						<small>소품 놓기</small>
+						<h2>소품을 만들거나 선택하세요</h2>
+						<p>빈 영역을 드래그하면 새 소품을 만들 수 있습니다. 아래에서 기존 소품을 고르면 월드에 복사해서 놓을 수 있습니다.</p>
+						{#if propTemplates.length}<div class="prop-library" aria-label="기존 소품 목록">
+								{#each propTemplates as prop (prop.id)}<button type="button" title={`${prop.name} · ${prop.width}×${prop.height}`} aria-label={`${prop.name} 소품 선택`} onclick={() => beginCopyExistingProp(prop)}
+										>{#if prop.imageData}<svg viewBox="0 0 8 8" aria-hidden="true"
+												>{#each Array.from(prop.imageData) as pixel, index}{#if pixel !== '0'}<rect x={index % 8} y={Math.floor(index / 8)} width="1" height="1" fill={propPalette[Number(pixel)]}></rect>{/if}{/each}</svg
+											>{:else}<span>{prop.emoji}</span>{/if}<small>{prop.name}</small></button
+									>{/each}
+							</div>{:else}<p>아직 다시 사용할 소품이 없습니다.</p>{/if}
+					</div>
 				{:else if selectedRoom && data.canManage}
 					<form onsubmit={updateRoom}>
-						<small>선택한 공간</small><h2>방 편집하기</h2>
+						<small>선택한 공간</small>
+						<h2>방 편집하기</h2>
 						<label>방 이름<input name="name" maxlength="80" value={selectedRoom.name} required /></label>
 						<p>방을 드래그해 이동하고 오른쪽 아래 손잡이로 크기를 조절하세요.</p>
-						<p class="room-size">위치 {selectedRoom.x}, {selectedRoom.y} · 크기 {selectedRoom.width} × {selectedRoom.height}</p>
+						<p class="room-size">
+							위치 {selectedRoom.x}, {selectedRoom.y} · 크기 {selectedRoom.width} × {selectedRoom.height}
+						</p>
 						{#if selectedRoomInvalid}<p class="edit-error">방을 완전히 안쪽에 넣거나 다른 방과 겹치지 않게 배치해 주세요.</p>{/if}
 						<button disabled={processing || !connected || selectedRoomInvalid}>변경 저장</button>
 						<button class="danger" type="button" disabled={processing || !connected} onclick={deleteRoom}>방과 채널 삭제</button>
-						<button class="secondary" type="button" onclick={() => { selectedRoom = null; editSession = null; }}>선택 해제</button>
+						<button
+							class="secondary"
+							type="button"
+							onclick={() => {
+								selectedRoom = null;
+								editSession = null;
+							}}>선택 해제</button
+						>
 					</form>
 				{:else if draft && buildTool === 'room' && data.canManage}
 					<form onsubmit={createRoom}>
-						<small>새로운 공간</small><h2>방 확정하기</h2>
+						<small>새로운 공간</small>
+						<h2>방 확정하기</h2>
 						<label>방 이름<input name="name" maxlength="80" placeholder="예: 라운지" required /></label>
-						<p>확정하면 <strong>{data.categories.find((item) => item.id === settings?.categoryId)?.name || '설정한 카테고리'}</strong>에 같은 이름의 음성 채널이 생성됩니다.</p>
+						<p>
+							확정하면 <strong>{data.categories.find((item) => item.id === settings?.categoryId)?.name || '설정한 카테고리'}</strong>에 같은 이름의 음성 채널이 생성됩니다.
+						</p>
 						{#if draftRoomInvalid}<p class="edit-error">방을 완전히 안쪽에 넣거나 다른 방과 겹치지 않게 그려 주세요.</p>{/if}
 						<button disabled={processing || !connected || draft.width < 2 || draft.height < 2 || draftRoomInvalid || !settings?.categoryId}>방과 채널 만들기</button>
 						<button class="secondary" type="button" onclick={cancelDraft}>취소</button>
 					</form>
 				{/if}
-				<div class:room-status={currentRoom} class="guide world-context"><small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small><h2>{currentRoom?.name || '월드 광장'}</h2><p>{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}</p>{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div><button disabled={movingToVoiceChannel} onclick={moveToVoiceChannel}>{voiceTarget.name} 채널로 이동</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}<button class="secondary" disabled={processing || !connected} onclick={returnToSpawn}>월드 시작 지점으로 돌아가기</button>{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}</div>
+				<div class:room-status={currentRoom} class="guide world-context">
+					<small>{currentRoom ? 'CURRENT ROOM' : 'WORLD LOBBY'}</small>
+					<h2>{currentRoom?.name || '월드 광장'}</h2>
+					<p>
+						{currentRoom ? '이 방에 들어와 있습니다.' : '아직 어떤 방에도 들어가 있지 않습니다.'}
+					</p>
+					{#if voiceTarget}<div class="voice-status">🔊 현재 공간: {voiceTarget.name}</div>
+						<button disabled={movingToVoiceChannel} onclick={moveToVoiceChannel}>{voiceTarget.name} 채널로 이동</button><label class="auto-voice"><input type="checkbox" checked={autoMoveVoiceChannel} onchange={setAutoVoiceChannel} /><span>방 이동 시 통화 자동 이동</span></label>{/if}<button class="secondary" disabled={processing || !connected} onclick={returnToSpawn}>월드 시작 지점으로 돌아가기</button>{#if data.canManage && !currentRoom}<p class="build-tip">방 만들기를 누른 다음 월드 위에서 원하는 크기만큼 드래그하세요.</p>{/if}
+				</div>
 			</aside>
 		</div>
 	{/if}
@@ -2064,7 +2377,9 @@
 			<h2>비밀번호 입력</h2>
 			<input use:focusOnMount bind:value={unlockPassword} type="password" maxlength="40" placeholder="문 비밀번호" aria-label="문 비밀번호" required />
 			{#if unlockError}<p class="door-unlock-error">{unlockError}</p>{/if}
-			<div><button disabled={processing || !connected}>문 열기</button><button class="secondary" type="button" onclick={cancelDoorUnlock}>취소</button></div>
+			<div>
+				<button disabled={processing || !connected}>문 열기</button><button class="secondary" type="button" onclick={cancelDoorUnlock}>취소</button>
+			</div>
 		</form>
 	</div>
 {/if}
@@ -2073,7 +2388,10 @@
 	<div class="inventory-backdrop" role="presentation" onpointerdown={() => (inventoryOpen = false)}>
 		<div class="inventory-panel" role="dialog" aria-modal="true" aria-labelledby="basecamp-inventory-title" tabindex="-1" onpointerdown={(event) => event.stopPropagation()}>
 			<header>
-				<div><small>MY INVENTORY</small><h2 id="basecamp-inventory-title">마운틴 인벤토리</h2></div>
+				<div>
+					<small>MY INVENTORY</small>
+					<h2 id="basecamp-inventory-title">마운틴 인벤토리</h2>
+				</div>
 				<button type="button" aria-label="인벤토리 닫기" onclick={() => (inventoryOpen = false)}>×</button>
 			</header>
 			<p class="inventory-summary">이 서버에서 보유 중인 아이템 · {data.inventory.length}종</p>
@@ -2082,70 +2400,1937 @@
 					{#each data.inventory as entry}
 						<article>
 							<span>{entry.item.iconEmoji}</span>
-							<div><strong>{entry.item.name}</strong><p>{entry.item.description || '설명이 없는 아이템입니다.'}</p></div>
+							<div>
+								<strong>{entry.item.name}</strong>
+								<p>{entry.item.description || '설명이 없는 아이템입니다.'}</p>
+							</div>
 							<b>× {entry.quantity}</b>
 						</article>
 					{/each}
 				</div>
 			{:else}
-				<div class="inventory-empty"><span>🎒</span><strong>아직 보유한 아이템이 없습니다.</strong><p>아이템을 획득하면 이곳에서 바로 확인할 수 있습니다.</p></div>
+				<div class="inventory-empty">
+					<span>🎒</span><strong>아직 보유한 아이템이 없습니다.</strong>
+					<p>아이템을 획득하면 이곳에서 바로 확인할 수 있습니다.</p>
+				</div>
 			{/if}
 			<footer>Basecamp에서 사용할 수 있는 아이템은 추후 이 화면에서 바로 사용할 수 있게 됩니다.</footer>
 		</div>
 	</div>
 {/if}
 
-<ConfirmDialog
-	open={roomDeletionOpen}
-	title={`${selectedRoom?.name || '선택한 방'}을 삭제할까요?`}
-	description="연결된 Discord 음성 채널도 함께 삭제되며 되돌릴 수 없습니다."
-	confirmLabel="방과 채널 삭제"
-	danger
-	onconfirm={confirmRoomDeletion}
-	oncancel={() => (roomDeletionOpen = false)}
-/>
+<ConfirmDialog open={roomDeletionOpen} title={`${selectedRoom?.name || '선택한 방'}을 삭제할까요?`} description="연결된 Discord 음성 채널도 함께 삭제되며 되돌릴 수 없습니다." confirmLabel="방과 채널 삭제" danger onconfirm={confirmRoomDeletion} oncancel={() => (roomDeletionOpen = false)} />
 
-<ConfirmDialog
-	open={Boolean(deletingTileType)}
-	title={`${deletingTileType?.name || '선택한 타일'}을 삭제할까요?`}
-	description="이 타일로 칠한 모든 칸이 기본 잔디로 돌아갑니다. 이 작업은 되돌릴 수 없습니다."
-	confirmLabel="바닥 타일 삭제"
-	danger
-	onconfirm={confirmTileTypeDeletion}
-	oncancel={() => (deletingTileType = null)}
-/>
+<ConfirmDialog open={Boolean(deletingTileType)} title={`${deletingTileType?.name || '선택한 타일'}을 삭제할까요?`} description="이 타일로 칠한 모든 칸이 기본 잔디로 돌아갑니다. 이 작업은 되돌릴 수 없습니다." confirmLabel="바닥 타일 삭제" danger onconfirm={confirmTileTypeDeletion} oncancel={() => (deletingTileType = null)} />
 
 <style>
-	:global(body){margin:0;background:#0a0d12;color:#f4f2ea;font-family:Inter,ui-sans-serif,system-ui,sans-serif}main{min-height:100vh;padding:28px;box-sizing:border-box;background:radial-gradient(circle at 50% 0,#23372d 0,transparent 34%)}header,.intro,.workspace{max-width:1280px;margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:850;text-decoration:none}.brand span{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:#d6ff66;color:#17200d}nav{display:flex;gap:8px;overflow:auto}nav a{padding:8px 12px;border-radius:999px;color:#899187;text-decoration:none;font-size:12px;white-space:nowrap}nav a.active{background:#26312a;color:#e5f2dc}.intro{display:flex;align-items:end;justify-content:space-between;gap:20px;padding:70px 0 28px}.intro small,.guide>small,aside form>small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.intro h1{max-width:680px;margin:8px 0 0;font-size:clamp(28px,4vw,52px);line-height:1.04}.intro button,.setup button,aside button{border:0;border-radius:12px;background:#d6ff66;color:#15200c;padding:12px 16px;font:inherit;font-weight:850;cursor:pointer}.intro button.active{background:#ffcf72}.intro button:disabled,.setup button:disabled,aside button:disabled{cursor:not-allowed;opacity:.4}.connection{max-width:1240px;margin:0 auto 10px;color:#848c85;font-size:10px;text-align:right}.connection i{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#9b5c5c}.connection.connected{color:#9eac9c}.connection.connected i{background:#94cf70}.notice{max-width:1240px;margin:0 auto 18px;padding:12px 16px;border:1px solid #663d3d;border-radius:12px;background:#2a1717;color:#ffb6b6;font-size:13px}.notice.success{border-color:#405e38;background:#172619;color:#bfeab6}.setup{max-width:1240px;margin:0 auto 18px;padding:16px 18px;display:grid;grid-template-columns:1fr auto auto auto;align-items:end;gap:14px;border:1px solid #39433a;border-radius:16px;background:#171c18}.setup strong{font-size:14px}.setup p{margin:4px 0 0;color:#8f978e;font-size:11px}.setup label,aside label{display:grid;gap:6px;color:#aeb5ac;font-size:11px}.setup select,aside input,aside select,aside textarea{min-width:180px;border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:10px;font:inherit}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:18px}.world-wrap{min-width:0}.world{position:relative;aspect-ratio:5/3;overflow:hidden;border:1px solid #354039;border-radius:20px;background:#101612;box-shadow:0 24px 80px #0008;touch-action:none;user-select:none}.world-background{position:absolute;inset:0;background:#1a251d}.world-map{position:absolute;z-index:2;top:0;left:0;transform-origin:top left;will-change:transform}.world-grid{position:absolute;background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:var(--tile-size) var(--tile-size);pointer-events:none}.world.building{cursor:crosshair}.plaza{position:absolute;z-index:2;display:grid;place-content:center;justify-items:center;width:72px;height:72px;gap:4px;border:1px dashed #44594b;border-radius:50%;color:#ffffff30;font-size:11px;font-weight:950;letter-spacing:.15em;transform:translate(-50%,-50%)}.plaza small{color:#9fb09f;font-size:8px;letter-spacing:.08em}.room{position:absolute;display:grid;place-content:center;min-width:0;box-sizing:border-box;border:3px solid transparent;border-radius:8px;background:transparent;color:#fff;text-align:center;pointer-events:none}.world.room-building .room:not(.draft){border-color:#a3c963;background:#4b613fcc;box-shadow:inset 0 0 0 3px #162119}.room span{overflow:hidden;padding:0 5px;font-size:12px;font-weight:850;text-overflow:ellipsis;white-space:nowrap}.room small{color:#d6ff86;font-size:8px;font-weight:900;letter-spacing:.12em}.world.room-building .room.failed{border-color:#a55b5b;background:#572e2ecc}.room.draft{z-index:3;border-color:#a3c963;border-style:dashed;background:#d6ff6633}.room.draft.invalid{border-color:#ff7d7d;background:#ff5d5d22}.avatar{position:absolute;z-index:4;display:grid;place-items:center;width:var(--avatar-size);height:var(--avatar-size);box-sizing:border-box;border:var(--avatar-border) solid #88918a;border-radius:50%;background:#566057;color:#fff;font-size:12px;font-weight:900;box-shadow:0 8px 15px #0008;transform:translate(-50%,-50%);transition:left 70ms linear,top 70ms linear,width .08s linear,height .08s linear,border-width .08s linear}.avatar.mine{border-color:#f8f2da;background:#ee796b;transition:none}.world.zooming .avatar{transition:none}.avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover}.avatar small{position:absolute;top:calc(var(--avatar-size) + 2px);max-width:100px;padding:2px 5px;border-radius:4px;background:#0a0d12cc;color:#f4f2ea;font-size:8px;white-space:nowrap}.hint{margin:10px 4px 0;color:#788279;font-size:11px}.voice-status{margin-top:14px;padding:10px;border:1px solid #405e38;border-radius:10px;background:#172619;color:#bfeab6;font-size:11px}.room-status h2{color:#d6ff86}aside{border:1px solid #2e3730;border-radius:18px;background:#141916;padding:20px}aside h2{margin:8px 0 12px;font-size:20px}aside p{color:#8f978f;font-size:12px;line-height:1.65}aside form{display:grid;gap:12px}aside form p{margin:0}aside button.secondary{background:#282f29;color:#b8c0b8}.teleport-target-marker{position:absolute;z-index:8;width:22px;height:22px;border:2px solid #d6ff66;border-radius:50%;background:#9d75d688;box-shadow:0 0 20px #9d75d6;transform:translate(-50%,-50%);pointer-events:none}.teleport-target-marker span{position:absolute;bottom:calc(100% + 5px);left:50%;padding:3px 6px;border-radius:6px;background:#0a0d12dd;color:#fff;font-size:9px;white-space:nowrap;transform:translateX(-50%)}.sign-message{position:absolute;z-index:10;width:max-content;max-width:min(320px,70vw);padding:9px 12px;border:1px solid #ffcf7277;border-radius:10px;background:#17130eea;color:#fff4d1;font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;transform:translate(-50%,calc(-100% - 12px));box-shadow:0 8px 24px #0009;pointer-events:none}.empty{max-width:720px;margin:120px auto;text-align:center}@media(max-width:900px){main{padding:16px}.intro{padding-top:48px;align-items:flex-start;flex-direction:column}.workspace{grid-template-columns:1fr}.setup{grid-template-columns:1fr 1fr}.setup>div{grid-column:1/-1}}@media(max-width:600px){header{align-items:flex-start;flex-direction:column}.setup{grid-template-columns:1fr}.world-wrap{overflow:hidden}.hint{position:sticky;left:0}.intro h1{font-size:30px}}
-	:global(html.world-page),:global(body.world-page){height:100%;overflow:hidden}main{display:flex;height:100dvh;min-height:0;overflow:hidden;flex-direction:column;padding:clamp(10px,2.2vh,24px)}header,.intro,.workspace,.setup,.notice,.connection{width:100%;box-sizing:border-box}header{flex:none}.intro{flex:none;padding:clamp(12px,2.5vh,24px) 0 clamp(8px,1.5vh,16px)}.intro h1{font-size:clamp(22px,3.2vw,42px)}.connection{flex:none;margin-bottom:6px}.notice{flex:none;margin-bottom:8px;padding:8px 12px}.setup{flex:none;margin-bottom:8px;padding:10px 12px}.workspace{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) clamp(190px,22vw,280px);gap:clamp(8px,1.5vw,18px)}.world-wrap{display:grid;min-width:0;min-height:0;overflow:hidden;grid-template-rows:minmax(0,1fr) auto}.world{width:100%;height:100%;min-width:0;min-height:0;aspect-ratio:auto}.hint{margin:6px 4px 0}aside{min-width:0;min-height:0;overflow:auto;padding:clamp(10px,1.7vw,20px)}
-	@media(max-height:650px){.intro{padding:8px 0}.intro small{display:none}.intro h1{margin:0;font-size:22px}.connection{margin-bottom:4px}.setup p{display:none}.setup{padding:8px 10px}.brand span{width:28px;height:28px}.hint{margin-top:3px}}
-	@media(max-width:900px){main{padding:10px}.intro{align-items:center;flex-direction:row;padding:10px 0}.workspace{grid-template-columns:minmax(0,1fr) clamp(170px,28vw,230px)}.setup{grid-template-columns:1fr auto auto auto}.setup>div{grid-column:auto}.setup select{min-width:120px}}
-	@media(max-width:600px){header{align-items:center;flex-direction:row}.brand{font-size:12px}nav{max-width:52vw}.intro h1{font-size:18px}.intro small{display:none}.intro button{padding:9px 10px;font-size:11px}.workspace{grid-template-columns:minmax(0,1fr) 150px}.world{min-width:0}.world-wrap{overflow:hidden}aside{padding:9px}aside h2{font-size:15px}.guide p{font-size:10px}.setup{grid-template-columns:1fr 1fr}.setup>div{display:none}.setup button{grid-column:1/-1}.setup select{width:100%;min-width:0;padding:7px}.hint{position:static;font-size:9px}}
-	main{position:relative;display:block;padding:0}.workspace{position:absolute;inset:0;display:block;max-width:none}.world-wrap{position:absolute;inset:0;display:block}.world{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}.world-wrap>.hint{position:absolute;z-index:12;left:16px;bottom:14px;margin:0;padding:7px 10px;border:1px solid #ffffff12;border-radius:999px;background:#0a0d12bb;color:#c1c9c0;backdrop-filter:blur(10px);pointer-events:none}header{position:absolute;z-index:20;top:14px;left:14px;width:auto;max-width:calc(100% - 28px);margin:0;padding:8px 10px;border:1px solid #ffffff16;border-radius:14px;background:#0a0d12c7;box-shadow:0 10px 30px #0005;backdrop-filter:blur(14px)}header nav{max-width:min(52vw,520px)}.intro{position:absolute;z-index:19;top:72px;left:14px;width:auto;max-width:calc(100% - 28px);margin:0;padding:9px 10px;align-items:center;border:1px solid #ffffff12;border-radius:14px;background:#111713c7;box-shadow:0 10px 30px #0004;backdrop-filter:blur(14px)}.intro small{display:none}.intro h1{max-width:none;margin:0;font-size:16px;white-space:nowrap}.intro button{margin-left:14px;padding:9px 12px;font-size:12px}.connection{position:absolute;z-index:21;right:18px;bottom:16px;width:auto;margin:0;padding:7px 10px;border:1px solid #ffffff12;border-radius:999px;background:#0a0d12bb;backdrop-filter:blur(10px)}.notice{position:absolute;z-index:24;top:76px;left:50%;width:min(520px,calc(100% - 32px));margin:0;transform:translateX(-50%);box-shadow:0 12px 36px #0008}.setup{position:absolute;z-index:23;right:14px;bottom:60px;width:min(760px,calc(100% - 28px));margin:0;grid-template-columns:1fr auto auto auto;box-shadow:0 18px 50px #0009;backdrop-filter:blur(16px)}aside{position:absolute;z-index:18;right:14px;top:72px;width:min(280px,calc(100% - 28px));max-height:calc(100% - 132px);box-sizing:border-box;background:#0e1410d9;box-shadow:0 18px 50px #0008;backdrop-filter:blur(16px)}
-	@media(max-width:700px){header{top:8px;left:8px;max-width:calc(100% - 16px)}header nav{max-width:45vw}.intro{top:62px;left:8px;max-width:calc(100% - 16px)}.intro h1{display:none}.intro button{margin:0}.world-wrap>.hint{left:8px;bottom:8px}.connection{right:8px;bottom:8px}.setup{right:8px;bottom:48px;width:calc(100% - 16px)}aside{top:62px;right:8px;width:min(220px,calc(100% - 16px));max-height:calc(100% - 116px)}.plaza{inset:16%}}
-	.guide>.voice-status+button{width:100%;margin-top:10px}.build-tip{margin-top:14px;padding-top:12px;border-top:1px solid #ffffff12}
-	.world-context{margin-top:16px;padding-top:16px;border-top:1px solid #ffffff18}.world-context:first-child{margin-top:0;padding-top:0;border-top:0}
-	header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease}header,.intro{transform:translateY(-10px)}aside{transform:translateX(12px)}.setup,.connection,.world-wrap>.hint{transform:translateY(10px)}main.reveal-top header,main.reveal-top .intro,header:focus-within,header:hover,.intro:focus-within,.intro:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-right aside,aside:focus-within,aside:hover{opacity:1;transform:none;pointer-events:auto}main.reveal-bottom .setup,main.reveal-bottom .connection,main.reveal-bottom .world-wrap>.hint,.setup:focus-within,.setup:hover,.connection:hover{opacity:1;transform:none;pointer-events:auto}.edge-cue{position:absolute;z-index:17;display:block;pointer-events:none;opacity:.38;background:#d6ff66;box-shadow:0 0 12px #d6ff6688}.edge-cue.top{top:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}.edge-cue.right{top:50%;right:0;width:2px;height:52px;transform:translateY(-50%)}.edge-cue.bottom{bottom:0;left:50%;width:52px;height:2px;transform:translateX(-50%)}main.reveal-top .edge-cue.top,main.reveal-right .edge-cue.right,main.reveal-bottom .edge-cue.bottom{opacity:0}
-	.mobile-overlay-toggle{display:none}
-	@media(hover:none),(pointer:coarse){header,.intro,aside,.setup,.connection,.world-wrap>.hint{opacity:0;transform:none;pointer-events:none}.edge-cue{display:none}.mobile-overlay-toggle{position:absolute;z-index:32;right:max(8px,env(safe-area-inset-right));display:grid;width:44px;height:44px;padding:0;place-items:center;border:1px solid #ffffff24;border-radius:14px;background:#0a0d12db;color:#f4f2ea;font:800 22px system-ui;box-shadow:0 8px 24px #0008;backdrop-filter:blur(12px);touch-action:manipulation}.mobile-top-toggle{top:max(8px,env(safe-area-inset-top))}.mobile-right-toggle{top:calc(max(8px,env(safe-area-inset-top)) + 52px)}.mobile-top-overlay-open header,.mobile-top-overlay-open .intro,.mobile-top-overlay-open .setup,.mobile-top-overlay-open .connection,.mobile-top-overlay-open .world-wrap>.hint{opacity:1;transform:none;pointer-events:auto}.mobile-right-overlay-open aside{opacity:1;transform:none;pointer-events:auto}}
-	.auto-voice{display:flex!important;align-items:center;gap:8px;margin-top:10px;padding:8px 2px;color:#aeb5ac;font-size:10px;cursor:pointer}.auto-voice input{min-width:0;width:14px;height:14px;margin:0;accent-color:#d6ff66}
-	.room{z-index:2}.world.room-building .room:not(.draft){pointer-events:auto;cursor:move}.world.room-building .room.selected{z-index:5;border-color:#ffcf72;box-shadow:0 0 0 3px #ffcf7244,inset 0 0 0 3px #162119}.resize-handle{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;padding:0;border:2px solid #17200d;border-radius:4px;background:#ffcf72;cursor:nwse-resize}.resize-handle:focus-visible{outline:2px solid #fff}.room-size{padding:8px;border-radius:8px;background:#ffffff08;color:#c6cec5!important}.danger{background:#5d2929!important;color:#ffd1d1!important}
-	.world.room-building .room.selected.invalid{border-color:#ff7777;background:#642f2fcc}.edit-error{margin:0;color:#ff9f9f!important}
-	.door-unlock-backdrop{position:fixed;z-index:40;inset:0;display:grid;place-items:center;padding:20px;background:#050805aa;backdrop-filter:blur(6px)}.door-unlock{display:grid;width:min(320px,100%);box-sizing:border-box;gap:12px;padding:20px;border:1px solid #3d493f;border-radius:16px;background:#141916;box-shadow:0 20px 70px #000b}.door-unlock small{color:#b4d75c;font-size:10px;font-weight:900;letter-spacing:.16em}.door-unlock h2{margin:0}.door-unlock input{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:11px;font:inherit}.door-unlock>div{display:flex;gap:8px}.door-unlock button{flex:1;border:0;border-radius:10px;background:#d6ff66;color:#15200c;padding:10px;font:inherit;font-weight:850;cursor:pointer}.door-unlock button.secondary{background:#282f29;color:#b8c0b8}.door-unlock button:disabled{cursor:not-allowed;opacity:.4}
-	.door-unlock-error{margin:0;color:#ff9f9f;font-size:12px}
-	.door-interaction-prompt{position:absolute;z-index:9;padding:5px 8px;border:1px solid #ffffff22;border-radius:7px;background:#0a0d12e6;color:#f4f2ea;font-size:10px;font-weight:800;white-space:nowrap;transform:translate(-50%,calc(-100% - 28px));box-shadow:0 6px 18px #0008;pointer-events:none}
-	.door{position:absolute;z-index:6;display:grid;place-items:center;min-width:0;min-height:0;padding:0;border:1px solid #d9b875;border-radius:2px;background:#75532f;color:#ffe6ae;font-size:10px;line-height:1;transform-origin:top left;cursor:pointer;overflow:visible}.door.open{border-style:dashed;background:#75532f55;color:#ffd478;opacity:.65}.door.horizontal{transform:translateY(-50%)}.door.vertical{transform:translateX(-50%)}.draft-door{pointer-events:none;border:2px dashed #d6ff66;background:#4c5e32cc;color:#fff}.draft-door.invalid{border-color:#ff7777;background:#642f2fcc}
-	.build-actions{display:flex;max-width:100%;flex-wrap:wrap;justify-content:flex-end;gap:8px}.build-actions button{margin-left:0}.wall{position:absolute;z-index:3;border-radius:999px;background:#7f8877;box-shadow:0 2px 5px #000b,0 0 0 1px #151913;pointer-events:none}.wall.horizontal{height:6px;transform:translateY(-50%)}.wall.vertical{width:6px;transform:translateX(-50%)}.wall.editable{z-index:6}.draft-wall{z-index:7;background:#d6ff66;box-shadow:0 0 0 2px #d6ff6644;pointer-events:none}.draft-wall.cut-wall{background:#ff7777;box-shadow:0 0 0 2px #ff777744}
-	.tile-picker{display:flex;align-items:center;gap:6px;padding:0 8px;color:#aeb5ac;font-size:11px}.tile-picker select{border:1px solid #3a423b;border-radius:9px;background:#0f1310;color:#fff;padding:8px;font:inherit}.painted-tile{position:absolute;z-index:1;box-sizing:border-box;overflow:hidden;background:#19231c;pointer-events:none}.painted-tile>svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}.painted-tile.tile-draft{z-index:2;border:2px dashed #d6ff66;opacity:.72}.painted-tile.tile-draft.grass{background:#1a251dcc}.world-prop{position:absolute;z-index:3;display:grid;place-items:center;width:var(--prop-size);height:var(--prop-size);padding:0;border:0;border-radius:20%;background:#111913aa;font-size:calc(var(--prop-size) * .68);line-height:1;transform:translate(-50%,-50%);cursor:default}.world-prop.teleport{box-shadow:0 0 0 2px #9d75d688,0 0 18px #9d75d655}.world-prop svg{width:82%;height:82%;shape-rendering:crispEdges}.world-prop.selected{outline:2px solid #ffcf72}.world.building .world-prop{cursor:pointer}.prop-draft{position:absolute;z-index:4;display:grid;place-items:center;width:32px;height:32px;border:2px dashed #d6ff66;border-radius:8px;color:#d6ff66;font-size:20px;transform:translate(-50%,-50%);pointer-events:none}.pixel-palette{display:grid;grid-template-columns:repeat(9,1fr);gap:4px}.pixel-palette button{width:100%;aspect-ratio:1;padding:0;border:2px solid transparent;border-radius:5px;background:var(--pixel-color);color:#fff}.pixel-palette button:first-child{background:repeating-conic-gradient(#555 0 25%,#222 0 50%) 0/8px 8px}.pixel-palette button.active{border-color:#d6ff66}.pixel-editor{display:grid;grid-template-columns:repeat(8,1fr);overflow:hidden;border:1px solid #556057;border-radius:8px;touch-action:none}.pixel-editor button{min-width:0;aspect-ratio:1;padding:0;border:1px solid #ffffff0d;border-radius:0;background:var(--pixel-color)}.tile-pixel-editor{background:#19231c}.prop-size-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.prop-size-fields input{width:100%;min-width:0;box-sizing:border-box}
-	.world-prop.sign{box-shadow:0 0 0 2px #ffcf7266,0 0 14px #ffcf7233}.empty p{color:#899187}
-	.prop-library{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:240px;overflow:auto}.prop-library button{display:grid;min-width:0;aspect-ratio:1;padding:7px;place-items:center;border:1px solid #ffffff18;background:#202720;color:#f4f2ea}.prop-library svg{width:100%;height:100%;min-height:32px;shape-rendering:crispEdges}.prop-library span{font-size:28px}.prop-library small{max-width:100%;overflow:hidden;color:#bfc7bd;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
-	.world-prop.seat{box-shadow:0 0 0 2px #69c7df66,0 0 14px #69c7df33}.world-prop.seat.occupied{box-shadow:0 0 0 2px #ffcf7288,0 0 14px #ffcf7244}.avatar.seated{transform:translate(-50%,-42%) scaleY(.78);border-color:#69c7df}
-	.tile-layer,.prop-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.tile-layer{z-index:1}.prop-layer{z-index:2}.world-grid{z-index:2;display:block;overflow:visible;background-image:none}
-	.region-selection{position:absolute;z-index:8;display:grid;place-items:center;box-sizing:border-box;border:2px dashed #69c7df;background:#69c7df22;color:#d9f8ff;pointer-events:none}.region-selection.selected{border-style:solid;background:#69c7df16}.region-selection.pasting{border-color:#ffcf72;background:#ffcf7218;color:#fff0c3}.region-selection small{padding:4px 7px;border-radius:6px;background:#0a0d12d9;font-size:10px;font-weight:850;white-space:nowrap}
-	.paste-preview{position:absolute;z-index:9;inset:0;opacity:.5;pointer-events:none}.paste-preview>*{pointer-events:none}.paste-floor-preview{position:absolute;z-index:0;background:#1a251d;box-shadow:inset 0 0 0 2px #ffcf72}.paste-preview .painted-tile{z-index:1}.paste-preview .wall,.paste-preview .world-prop{z-index:3}.paste-preview .door{z-index:6}
-	.world,.mobile-controls,.mobile-controls button{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
-	.world.movement-zoom .avatar{transition:none}.avatar.mine.moving{filter:drop-shadow(0 0 7px #d6ff66)}.avatar.mine.moving::after{position:absolute;z-index:-1;width:70%;height:70%;border-radius:50%;background:#d6ff6655;content:"";animation:movement-trail .42s ease-out infinite}.location-ping{position:absolute;z-index:12;width:18px;height:18px;border:3px solid #ffcf72;border-radius:50%;transform:translate(-50%,-50%);animation:location-ping 1s ease-out infinite;pointer-events:none}.location-ping span{position:absolute;bottom:24px;left:50%;padding:3px 6px;border-radius:6px;background:#0a0d12dd;color:#fff4d1;font-size:9px;white-space:nowrap;transform:translateX(-50%)}.projectile{position:absolute;z-index:11;width:9px;height:9px;border-radius:50%;background:#d6ff66;box-shadow:0 0 6px #d6ff66,0 0 16px #69c7df;transform:translate(-50%,-50%);animation:projectile-flight .65s ease-out forwards;pointer-events:none}.projectile::after{position:absolute;inset:-7px;border:2px solid #69c7df;border-radius:50%;content:"";animation:projectile-particle .65s ease-out forwards}@keyframes movement-trail{from{opacity:.7;transform:scale(1)}to{opacity:0;transform:scale(2.2)}}@keyframes location-ping{from{box-shadow:0 0 0 0 #ffcf7277}to{box-shadow:0 0 0 18px #ffcf7200}}@keyframes projectile-flight{to{transform:translate(calc(var(--projectile-x) - 50%),calc(var(--projectile-y) - 50%)) scale(.35)}}@keyframes projectile-particle{to{opacity:0;transform:scale(3.5)}}
-	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
-	.notification-queue{position:fixed;z-index:30;bottom:52px;left:14px;display:flex;width:min(420px,calc(100vw - 28px));flex-direction:column;gap:8px;pointer-events:none}.notification-queue .notice{position:relative;inset:auto;width:auto;max-width:none;margin:0;padding:10px 13px;box-sizing:border-box;transform:none;box-shadow:0 10px 30px #0009;backdrop-filter:blur(12px);animation:notice-in .16s ease-out}.notification-queue .notice.success{background:#172619e8}.notification-queue .notice:not(.success){background:#2a1717e8}@keyframes notice-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@media(hover:none),(pointer:coarse){.notification-queue{bottom:calc(160px + env(safe-area-inset-bottom))}}
-	.inventory-toggle{position:absolute;z-index:32;top:14px;right:14px;display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #ffffff24;border-radius:14px;background:#0a0d12db;color:#f4f2ea;font:inherit;box-shadow:0 8px 24px #0008;backdrop-filter:blur(12px);cursor:pointer}.inventory-toggle span{font-size:18px}.inventory-toggle b{font-size:11px}.inventory-backdrop{position:fixed;z-index:50;inset:0;display:grid;place-items:center;padding:18px;background:#050805aa;backdrop-filter:blur(7px)}.inventory-panel{display:flex;width:min(520px,100%);max-height:min(680px,calc(100dvh - 36px));box-sizing:border-box;overflow:hidden;flex-direction:column;border:1px solid #3d493f;border-radius:20px;background:#111713;box-shadow:0 24px 80px #000c}.inventory-panel>header{position:static;display:flex;width:auto;max-width:none;padding:18px 20px;align-items:center;border:0;border-bottom:1px solid #ffffff12;border-radius:0;background:transparent;box-shadow:none;opacity:1;transform:none;pointer-events:auto}.inventory-panel header small{color:#b4d75c;font-size:9px;font-weight:900;letter-spacing:.16em}.inventory-panel header h2{margin:3px 0 0;font-size:20px}.inventory-panel header button{display:grid;width:36px;height:36px;padding:0;place-items:center;border:1px solid #ffffff18;border-radius:10px;background:#242b25;color:#fff;font-size:22px;cursor:pointer}.inventory-summary{margin:0;padding:12px 20px 0;color:#8f978f;font-size:11px}.inventory-list{display:grid;min-height:0;overflow:auto;gap:8px;padding:14px 20px 20px}.inventory-list article{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px;border:1px solid #ffffff0e;border-radius:13px;background:#1a211b}.inventory-list article>span{display:grid;width:44px;height:44px;place-items:center;border-radius:11px;background:#0d120e;font-size:25px}.inventory-list article strong{font-size:13px}.inventory-list article p{margin:4px 0 0;color:#8f978f;font-size:10px;line-height:1.4}.inventory-list article>b{color:#d6ff66;font-size:13px}.inventory-empty{display:grid;margin:26px 20px;padding:28px;place-items:center;border:1px dashed #ffffff1c;border-radius:14px;color:#cbd3c9;text-align:center}.inventory-empty>span{font-size:34px}.inventory-empty strong{margin-top:8px;font-size:13px}.inventory-empty p{margin:5px 0 0;color:#7f897f;font-size:10px}.inventory-panel>footer{padding:12px 20px;border-top:1px solid #ffffff10;color:#737c74;font-size:9px;line-height:1.5}@media(hover:none),(pointer:coarse){.inventory-toggle{top:calc(max(8px,env(safe-area-inset-top)) + 104px);right:max(8px,env(safe-area-inset-right));width:44px;height:44px;padding:0;justify-content:center}.inventory-toggle b{display:none}.inventory-panel{max-height:calc(100dvh - 24px)}.inventory-panel>header{padding:14px 16px}.inventory-list{padding:12px 14px 16px}}
+	:global(body) {
+		margin: 0;
+		background: #0a0d12;
+		color: #f4f2ea;
+		font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+	}
+	main {
+		min-height: 100vh;
+		padding: 28px;
+		box-sizing: border-box;
+		background: radial-gradient(circle at 50% 0, #23372d 0, transparent 34%);
+	}
+	header,
+	.intro,
+	.workspace {
+		max-width: 1280px;
+		margin: auto;
+	}
+	header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 24px;
+	}
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		color: #fff;
+		font-weight: 850;
+		text-decoration: none;
+	}
+	.brand span {
+		display: grid;
+		place-items: center;
+		width: 34px;
+		height: 34px;
+		border-radius: 10px;
+		background: #d6ff66;
+		color: #17200d;
+	}
+	nav {
+		display: flex;
+		gap: 8px;
+		overflow: auto;
+	}
+	nav a {
+		padding: 8px 12px;
+		border-radius: 999px;
+		color: #899187;
+		text-decoration: none;
+		font-size: 12px;
+		white-space: nowrap;
+	}
+	nav a.active {
+		background: #26312a;
+		color: #e5f2dc;
+	}
+	.intro {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 20px;
+		padding: 70px 0 28px;
+	}
+	.intro small,
+	.guide > small,
+	aside form > small {
+		color: #b4d75c;
+		font-size: 10px;
+		font-weight: 900;
+		letter-spacing: 0.16em;
+	}
+	.intro h1 {
+		max-width: 680px;
+		margin: 8px 0 0;
+		font-size: clamp(28px, 4vw, 52px);
+		line-height: 1.04;
+	}
+	.intro button,
+	.setup button,
+	aside button {
+		border: 0;
+		border-radius: 12px;
+		background: #d6ff66;
+		color: #15200c;
+		padding: 12px 16px;
+		font: inherit;
+		font-weight: 850;
+		cursor: pointer;
+	}
+	.intro button.active {
+		background: #ffcf72;
+	}
+	.intro button:disabled,
+	.setup button:disabled,
+	aside button:disabled {
+		cursor: not-allowed;
+		opacity: 0.4;
+	}
+	.connection {
+		max-width: 1240px;
+		margin: 0 auto 10px;
+		color: #848c85;
+		font-size: 10px;
+		text-align: right;
+	}
+	.connection i {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		margin-right: 6px;
+		border-radius: 50%;
+		background: #9b5c5c;
+	}
+	.connection.connected {
+		color: #9eac9c;
+	}
+	.connection.connected i {
+		background: #94cf70;
+	}
+	.notice {
+		max-width: 1240px;
+		margin: 0 auto 18px;
+		padding: 12px 16px;
+		border: 1px solid #663d3d;
+		border-radius: 12px;
+		background: #2a1717;
+		color: #ffb6b6;
+		font-size: 13px;
+	}
+	.notice.success {
+		border-color: #405e38;
+		background: #172619;
+		color: #bfeab6;
+	}
+	.setup {
+		max-width: 1240px;
+		margin: 0 auto 18px;
+		padding: 16px 18px;
+		display: grid;
+		grid-template-columns: 1fr auto auto auto;
+		align-items: end;
+		gap: 14px;
+		border: 1px solid #39433a;
+		border-radius: 16px;
+		background: #171c18;
+	}
+	.setup strong {
+		font-size: 14px;
+	}
+	.setup p {
+		margin: 4px 0 0;
+		color: #8f978e;
+		font-size: 11px;
+	}
+	.setup label,
+	aside label {
+		display: grid;
+		gap: 6px;
+		color: #aeb5ac;
+		font-size: 11px;
+	}
+	.setup select,
+	aside input,
+	aside select,
+	aside textarea {
+		min-width: 180px;
+		border: 1px solid #3a423b;
+		border-radius: 9px;
+		background: #0f1310;
+		color: #fff;
+		padding: 10px;
+		font: inherit;
+	}
+	.workspace {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 280px;
+		gap: 18px;
+	}
+	.world-wrap {
+		min-width: 0;
+	}
+	.world {
+		position: relative;
+		aspect-ratio: 5/3;
+		overflow: hidden;
+		border: 1px solid #354039;
+		border-radius: 20px;
+		background: #101612;
+		box-shadow: 0 24px 80px #0008;
+		touch-action: none;
+		user-select: none;
+	}
+	.world-background {
+		position: absolute;
+		inset: 0;
+		background: #1a251d;
+	}
+	.world-map {
+		position: absolute;
+		z-index: 2;
+		top: 0;
+		left: 0;
+		transform-origin: top left;
+		will-change: transform;
+	}
+	.world-grid {
+		position: absolute;
+		background-image: linear-gradient(#ffffff08 1px, transparent 1px), linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+		background-size: var(--tile-size) var(--tile-size);
+		pointer-events: none;
+	}
+	.world.building {
+		cursor: crosshair;
+	}
+	.plaza {
+		position: absolute;
+		z-index: 2;
+		display: grid;
+		place-content: center;
+		justify-items: center;
+		width: 72px;
+		height: 72px;
+		gap: 4px;
+		border: 1px dashed #44594b;
+		border-radius: 50%;
+		color: #ffffff30;
+		font-size: 11px;
+		font-weight: 950;
+		letter-spacing: 0.15em;
+		transform: translate(-50%, -50%);
+	}
+	.plaza small {
+		color: #9fb09f;
+		font-size: 8px;
+		letter-spacing: 0.08em;
+	}
+	.room {
+		position: absolute;
+		display: grid;
+		place-content: center;
+		min-width: 0;
+		box-sizing: border-box;
+		border: 3px solid transparent;
+		border-radius: 8px;
+		background: transparent;
+		color: #fff;
+		text-align: center;
+		pointer-events: none;
+	}
+	.world.room-building .room:not(.draft) {
+		border-color: #a3c963;
+		background: #4b613fcc;
+		box-shadow: inset 0 0 0 3px #162119;
+	}
+	.room span {
+		overflow: hidden;
+		padding: 0 5px;
+		font-size: 12px;
+		font-weight: 850;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.room small {
+		color: #d6ff86;
+		font-size: 8px;
+		font-weight: 900;
+		letter-spacing: 0.12em;
+	}
+	.world.room-building .room.failed {
+		border-color: #a55b5b;
+		background: #572e2ecc;
+	}
+	.room.draft {
+		z-index: 3;
+		border-color: #a3c963;
+		border-style: dashed;
+		background: #d6ff6633;
+	}
+	.room.draft.invalid {
+		border-color: #ff7d7d;
+		background: #ff5d5d22;
+	}
+	.avatar {
+		position: absolute;
+		z-index: 4;
+		display: grid;
+		place-items: center;
+		width: var(--avatar-size);
+		height: var(--avatar-size);
+		box-sizing: border-box;
+		border: var(--avatar-border) solid #88918a;
+		border-radius: 50%;
+		background: #566057;
+		color: #fff;
+		font-size: 12px;
+		font-weight: 900;
+		box-shadow: 0 8px 15px #0008;
+		transform: translate(-50%, -50%);
+		transition:
+			left 70ms linear,
+			top 70ms linear,
+			width 0.08s linear,
+			height 0.08s linear,
+			border-width 0.08s linear;
+	}
+	.avatar.mine {
+		border-color: #f8f2da;
+		background: #ee796b;
+		transition: none;
+	}
+	.world.zooming .avatar {
+		transition: none;
+	}
+	.avatar img {
+		width: 100%;
+		height: 100%;
+		border-radius: 50%;
+		object-fit: cover;
+	}
+	.avatar small {
+		position: absolute;
+		top: calc(var(--avatar-size) + 2px);
+		max-width: 100px;
+		padding: 2px 5px;
+		border-radius: 4px;
+		background: #0a0d12cc;
+		color: #f4f2ea;
+		font-size: 8px;
+		white-space: nowrap;
+	}
+	.hint {
+		margin: 10px 4px 0;
+		color: #788279;
+		font-size: 11px;
+	}
+	.voice-status {
+		margin-top: 14px;
+		padding: 10px;
+		border: 1px solid #405e38;
+		border-radius: 10px;
+		background: #172619;
+		color: #bfeab6;
+		font-size: 11px;
+	}
+	.room-status h2 {
+		color: #d6ff86;
+	}
+	aside {
+		border: 1px solid #2e3730;
+		border-radius: 18px;
+		background: #141916;
+		padding: 20px;
+	}
+	aside h2 {
+		margin: 8px 0 12px;
+		font-size: 20px;
+	}
+	aside p {
+		color: #8f978f;
+		font-size: 12px;
+		line-height: 1.65;
+	}
+	aside form {
+		display: grid;
+		gap: 12px;
+	}
+	aside form p {
+		margin: 0;
+	}
+	aside button.secondary {
+		background: #282f29;
+		color: #b8c0b8;
+	}
+	.teleport-target-marker {
+		position: absolute;
+		z-index: 8;
+		width: 22px;
+		height: 22px;
+		border: 2px solid #d6ff66;
+		border-radius: 50%;
+		background: #9d75d688;
+		box-shadow: 0 0 20px #9d75d6;
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+	.teleport-target-marker span {
+		position: absolute;
+		bottom: calc(100% + 5px);
+		left: 50%;
+		padding: 3px 6px;
+		border-radius: 6px;
+		background: #0a0d12dd;
+		color: #fff;
+		font-size: 9px;
+		white-space: nowrap;
+		transform: translateX(-50%);
+	}
+	.sign-message {
+		position: absolute;
+		z-index: 10;
+		width: max-content;
+		max-width: min(320px, 70vw);
+		padding: 9px 12px;
+		border: 1px solid #ffcf7277;
+		border-radius: 10px;
+		background: #17130eea;
+		color: #fff4d1;
+		font-size: 12px;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		transform: translate(-50%, calc(-100% - 12px));
+		box-shadow: 0 8px 24px #0009;
+		pointer-events: none;
+	}
+	.empty {
+		max-width: 720px;
+		margin: 120px auto;
+		text-align: center;
+	}
+	@media (max-width: 900px) {
+		main {
+			padding: 16px;
+		}
+		.intro {
+			padding-top: 48px;
+			align-items: flex-start;
+			flex-direction: column;
+		}
+		.workspace {
+			grid-template-columns: 1fr;
+		}
+		.setup {
+			grid-template-columns: 1fr 1fr;
+		}
+		.setup > div {
+			grid-column: 1/-1;
+		}
+	}
+	@media (max-width: 600px) {
+		header {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+		.setup {
+			grid-template-columns: 1fr;
+		}
+		.world-wrap {
+			overflow: hidden;
+		}
+		.hint {
+			position: sticky;
+			left: 0;
+		}
+		.intro h1 {
+			font-size: 30px;
+		}
+	}
+	:global(html.world-page),
+	:global(body.world-page) {
+		height: 100%;
+		overflow: hidden;
+	}
+	main {
+		display: flex;
+		height: 100dvh;
+		min-height: 0;
+		overflow: hidden;
+		flex-direction: column;
+		padding: clamp(10px, 2.2vh, 24px);
+	}
+	header,
+	.intro,
+	.workspace,
+	.setup,
+	.notice,
+	.connection {
+		width: 100%;
+		box-sizing: border-box;
+	}
+	header {
+		flex: none;
+	}
+	.intro {
+		flex: none;
+		padding: clamp(12px, 2.5vh, 24px) 0 clamp(8px, 1.5vh, 16px);
+	}
+	.intro h1 {
+		font-size: clamp(22px, 3.2vw, 42px);
+	}
+	.connection {
+		flex: none;
+		margin-bottom: 6px;
+	}
+	.notice {
+		flex: none;
+		margin-bottom: 8px;
+		padding: 8px 12px;
+	}
+	.setup {
+		flex: none;
+		margin-bottom: 8px;
+		padding: 10px 12px;
+	}
+	.workspace {
+		flex: 1;
+		min-height: 0;
+		grid-template-columns: minmax(0, 1fr) clamp(190px, 22vw, 280px);
+		gap: clamp(8px, 1.5vw, 18px);
+	}
+	.world-wrap {
+		display: grid;
+		min-width: 0;
+		min-height: 0;
+		overflow: hidden;
+		grid-template-rows: minmax(0, 1fr) auto;
+	}
+	.world {
+		width: 100%;
+		height: 100%;
+		min-width: 0;
+		min-height: 0;
+		aspect-ratio: auto;
+	}
+	.hint {
+		margin: 6px 4px 0;
+	}
+	aside {
+		min-width: 0;
+		min-height: 0;
+		overflow: auto;
+		padding: clamp(10px, 1.7vw, 20px);
+	}
+	@media (max-height: 650px) {
+		.intro {
+			padding: 8px 0;
+		}
+		.intro small {
+			display: none;
+		}
+		.intro h1 {
+			margin: 0;
+			font-size: 22px;
+		}
+		.connection {
+			margin-bottom: 4px;
+		}
+		.setup p {
+			display: none;
+		}
+		.setup {
+			padding: 8px 10px;
+		}
+		.brand span {
+			width: 28px;
+			height: 28px;
+		}
+		.hint {
+			margin-top: 3px;
+		}
+	}
+	@media (max-width: 900px) {
+		main {
+			padding: 10px;
+		}
+		.intro {
+			align-items: center;
+			flex-direction: row;
+			padding: 10px 0;
+		}
+		.workspace {
+			grid-template-columns: minmax(0, 1fr) clamp(170px, 28vw, 230px);
+		}
+		.setup {
+			grid-template-columns: 1fr auto auto auto;
+		}
+		.setup > div {
+			grid-column: auto;
+		}
+		.setup select {
+			min-width: 120px;
+		}
+	}
+	@media (max-width: 600px) {
+		header {
+			align-items: center;
+			flex-direction: row;
+		}
+		.brand {
+			font-size: 12px;
+		}
+		nav {
+			max-width: 52vw;
+		}
+		.intro h1 {
+			font-size: 18px;
+		}
+		.intro small {
+			display: none;
+		}
+		.intro button {
+			padding: 9px 10px;
+			font-size: 11px;
+		}
+		.workspace {
+			grid-template-columns: minmax(0, 1fr) 150px;
+		}
+		.world {
+			min-width: 0;
+		}
+		.world-wrap {
+			overflow: hidden;
+		}
+		aside {
+			padding: 9px;
+		}
+		aside h2 {
+			font-size: 15px;
+		}
+		.guide p {
+			font-size: 10px;
+		}
+		.setup {
+			grid-template-columns: 1fr 1fr;
+		}
+		.setup > div {
+			display: none;
+		}
+		.setup button {
+			grid-column: 1/-1;
+		}
+		.setup select {
+			width: 100%;
+			min-width: 0;
+			padding: 7px;
+		}
+		.hint {
+			position: static;
+			font-size: 9px;
+		}
+	}
+	main {
+		position: relative;
+		display: block;
+		padding: 0;
+	}
+	.workspace {
+		position: absolute;
+		inset: 0;
+		display: block;
+		max-width: none;
+	}
+	.world-wrap {
+		position: absolute;
+		inset: 0;
+		display: block;
+	}
+	.world {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		border: 0;
+		border-radius: 0;
+	}
+	.world-wrap > .hint {
+		position: absolute;
+		z-index: 12;
+		left: 16px;
+		bottom: 14px;
+		margin: 0;
+		padding: 7px 10px;
+		border: 1px solid #ffffff12;
+		border-radius: 999px;
+		background: #0a0d12bb;
+		color: #c1c9c0;
+		backdrop-filter: blur(10px);
+		pointer-events: none;
+	}
+	header {
+		position: absolute;
+		z-index: 20;
+		top: 14px;
+		left: 14px;
+		width: auto;
+		max-width: calc(100% - 28px);
+		margin: 0;
+		padding: 8px 10px;
+		border: 1px solid #ffffff16;
+		border-radius: 14px;
+		background: #0a0d12c7;
+		box-shadow: 0 10px 30px #0005;
+		backdrop-filter: blur(14px);
+	}
+	header nav {
+		max-width: min(52vw, 520px);
+	}
+	.intro {
+		position: absolute;
+		z-index: 19;
+		top: 72px;
+		left: 14px;
+		width: auto;
+		max-width: calc(100% - 28px);
+		margin: 0;
+		padding: 9px 10px;
+		align-items: center;
+		border: 1px solid #ffffff12;
+		border-radius: 14px;
+		background: #111713c7;
+		box-shadow: 0 10px 30px #0004;
+		backdrop-filter: blur(14px);
+	}
+	.intro small {
+		display: none;
+	}
+	.intro h1 {
+		max-width: none;
+		margin: 0;
+		font-size: 16px;
+		white-space: nowrap;
+	}
+	.intro button {
+		margin-left: 14px;
+		padding: 9px 12px;
+		font-size: 12px;
+	}
+	.connection {
+		position: absolute;
+		z-index: 21;
+		right: 18px;
+		bottom: 16px;
+		width: auto;
+		margin: 0;
+		padding: 7px 10px;
+		border: 1px solid #ffffff12;
+		border-radius: 999px;
+		background: #0a0d12bb;
+		backdrop-filter: blur(10px);
+	}
+	.notice {
+		position: absolute;
+		z-index: 24;
+		top: 76px;
+		left: 50%;
+		width: min(520px, calc(100% - 32px));
+		margin: 0;
+		transform: translateX(-50%);
+		box-shadow: 0 12px 36px #0008;
+	}
+	.setup {
+		position: absolute;
+		z-index: 23;
+		right: 14px;
+		bottom: 60px;
+		width: min(760px, calc(100% - 28px));
+		margin: 0;
+		grid-template-columns: 1fr auto auto auto;
+		box-shadow: 0 18px 50px #0009;
+		backdrop-filter: blur(16px);
+	}
+	aside {
+		position: absolute;
+		z-index: 18;
+		right: 14px;
+		top: 72px;
+		width: min(280px, calc(100% - 28px));
+		max-height: calc(100% - 132px);
+		box-sizing: border-box;
+		background: #0e1410d9;
+		box-shadow: 0 18px 50px #0008;
+		backdrop-filter: blur(16px);
+	}
+	@media (max-width: 700px) {
+		header {
+			top: 8px;
+			left: 8px;
+			max-width: calc(100% - 16px);
+		}
+		header nav {
+			max-width: 45vw;
+		}
+		.intro {
+			top: 62px;
+			left: 8px;
+			max-width: calc(100% - 16px);
+		}
+		.intro h1 {
+			display: none;
+		}
+		.intro button {
+			margin: 0;
+		}
+		.world-wrap > .hint {
+			left: 8px;
+			bottom: 8px;
+		}
+		.connection {
+			right: 8px;
+			bottom: 8px;
+		}
+		.setup {
+			right: 8px;
+			bottom: 48px;
+			width: calc(100% - 16px);
+		}
+		aside {
+			top: 62px;
+			right: 8px;
+			width: min(220px, calc(100% - 16px));
+			max-height: calc(100% - 116px);
+		}
+		.plaza {
+			inset: 16%;
+		}
+	}
+	.guide > .voice-status + button {
+		width: 100%;
+		margin-top: 10px;
+	}
+	.build-tip {
+		margin-top: 14px;
+		padding-top: 12px;
+		border-top: 1px solid #ffffff12;
+	}
+	.world-context {
+		margin-top: 16px;
+		padding-top: 16px;
+		border-top: 1px solid #ffffff18;
+	}
+	.world-context:first-child {
+		margin-top: 0;
+		padding-top: 0;
+		border-top: 0;
+	}
+	header,
+	.intro,
+	aside,
+	.setup,
+	.connection,
+	.world-wrap > .hint {
+		opacity: 0;
+		pointer-events: none;
+		transition:
+			opacity 0.18s ease,
+			transform 0.18s ease;
+	}
+	header,
+	.intro {
+		transform: translateY(-10px);
+	}
+	aside {
+		transform: translateX(12px);
+	}
+	.setup,
+	.connection,
+	.world-wrap > .hint {
+		transform: translateY(10px);
+	}
+	main.reveal-top header,
+	main.reveal-top .intro,
+	header:focus-within,
+	header:hover,
+	.intro:focus-within,
+	.intro:hover {
+		opacity: 1;
+		transform: none;
+		pointer-events: auto;
+	}
+	main.reveal-right aside,
+	aside:focus-within,
+	aside:hover {
+		opacity: 1;
+		transform: none;
+		pointer-events: auto;
+	}
+	main.reveal-bottom .setup,
+	main.reveal-bottom .connection,
+	main.reveal-bottom .world-wrap > .hint,
+	.setup:focus-within,
+	.setup:hover,
+	.connection:hover {
+		opacity: 1;
+		transform: none;
+		pointer-events: auto;
+	}
+	.edge-cue {
+		position: absolute;
+		z-index: 17;
+		display: block;
+		pointer-events: none;
+		opacity: 0.38;
+		background: #d6ff66;
+		box-shadow: 0 0 12px #d6ff6688;
+	}
+	.edge-cue.top {
+		top: 0;
+		left: 50%;
+		width: 52px;
+		height: 2px;
+		transform: translateX(-50%);
+	}
+	.edge-cue.right {
+		top: 50%;
+		right: 0;
+		width: 2px;
+		height: 52px;
+		transform: translateY(-50%);
+	}
+	.edge-cue.bottom {
+		bottom: 0;
+		left: 50%;
+		width: 52px;
+		height: 2px;
+		transform: translateX(-50%);
+	}
+	main.reveal-top .edge-cue.top,
+	main.reveal-right .edge-cue.right,
+	main.reveal-bottom .edge-cue.bottom {
+		opacity: 0;
+	}
+	.mobile-overlay-toggle {
+		display: none;
+	}
+	@media (hover: none), (pointer: coarse) {
+		header,
+		.intro,
+		aside,
+		.setup,
+		.connection,
+		.world-wrap > .hint {
+			opacity: 0;
+			transform: none;
+			pointer-events: none;
+		}
+		.edge-cue {
+			display: none;
+		}
+		.mobile-overlay-toggle {
+			position: absolute;
+			z-index: 32;
+			right: max(8px, env(safe-area-inset-right));
+			display: grid;
+			width: 44px;
+			height: 44px;
+			padding: 0;
+			place-items: center;
+			border: 1px solid #ffffff24;
+			border-radius: 14px;
+			background: #0a0d12db;
+			color: #f4f2ea;
+			font: 800 22px system-ui;
+			box-shadow: 0 8px 24px #0008;
+			backdrop-filter: blur(12px);
+			touch-action: manipulation;
+		}
+		.mobile-top-toggle {
+			top: max(8px, env(safe-area-inset-top));
+		}
+		.mobile-right-toggle {
+			top: calc(max(8px, env(safe-area-inset-top)) + 52px);
+		}
+		.mobile-top-overlay-open header,
+		.mobile-top-overlay-open .intro,
+		.mobile-top-overlay-open .setup,
+		.mobile-top-overlay-open .connection,
+		.mobile-top-overlay-open .world-wrap > .hint {
+			opacity: 1;
+			transform: none;
+			pointer-events: auto;
+		}
+		.mobile-right-overlay-open aside {
+			opacity: 1;
+			transform: none;
+			pointer-events: auto;
+		}
+	}
+	.auto-voice {
+		display: flex !important;
+		align-items: center;
+		gap: 8px;
+		margin-top: 10px;
+		padding: 8px 2px;
+		color: #aeb5ac;
+		font-size: 10px;
+		cursor: pointer;
+	}
+	.auto-voice input {
+		min-width: 0;
+		width: 14px;
+		height: 14px;
+		margin: 0;
+		accent-color: #d6ff66;
+	}
+	.room {
+		z-index: 2;
+	}
+	.world.room-building .room:not(.draft) {
+		pointer-events: auto;
+		cursor: move;
+	}
+	.world.room-building .room.selected {
+		z-index: 5;
+		border-color: #ffcf72;
+		box-shadow:
+			0 0 0 3px #ffcf7244,
+			inset 0 0 0 3px #162119;
+	}
+	.resize-handle {
+		position: absolute;
+		right: -6px;
+		bottom: -6px;
+		width: 14px;
+		height: 14px;
+		padding: 0;
+		border: 2px solid #17200d;
+		border-radius: 4px;
+		background: #ffcf72;
+		cursor: nwse-resize;
+	}
+	.resize-handle:focus-visible {
+		outline: 2px solid #fff;
+	}
+	.room-size {
+		padding: 8px;
+		border-radius: 8px;
+		background: #ffffff08;
+		color: #c6cec5 !important;
+	}
+	.danger {
+		background: #5d2929 !important;
+		color: #ffd1d1 !important;
+	}
+	.world.room-building .room.selected.invalid {
+		border-color: #ff7777;
+		background: #642f2fcc;
+	}
+	.edit-error {
+		margin: 0;
+		color: #ff9f9f !important;
+	}
+	.door-unlock-backdrop {
+		position: fixed;
+		z-index: 40;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: 20px;
+		background: #050805aa;
+		backdrop-filter: blur(6px);
+	}
+	.door-unlock {
+		display: grid;
+		width: min(320px, 100%);
+		box-sizing: border-box;
+		gap: 12px;
+		padding: 20px;
+		border: 1px solid #3d493f;
+		border-radius: 16px;
+		background: #141916;
+		box-shadow: 0 20px 70px #000b;
+	}
+	.door-unlock small {
+		color: #b4d75c;
+		font-size: 10px;
+		font-weight: 900;
+		letter-spacing: 0.16em;
+	}
+	.door-unlock h2 {
+		margin: 0;
+	}
+	.door-unlock input {
+		border: 1px solid #3a423b;
+		border-radius: 9px;
+		background: #0f1310;
+		color: #fff;
+		padding: 11px;
+		font: inherit;
+	}
+	.door-unlock > div {
+		display: flex;
+		gap: 8px;
+	}
+	.door-unlock button {
+		flex: 1;
+		border: 0;
+		border-radius: 10px;
+		background: #d6ff66;
+		color: #15200c;
+		padding: 10px;
+		font: inherit;
+		font-weight: 850;
+		cursor: pointer;
+	}
+	.door-unlock button.secondary {
+		background: #282f29;
+		color: #b8c0b8;
+	}
+	.door-unlock button:disabled {
+		cursor: not-allowed;
+		opacity: 0.4;
+	}
+	.door-unlock-error {
+		margin: 0;
+		color: #ff9f9f;
+		font-size: 12px;
+	}
+	.door-interaction-prompt {
+		position: absolute;
+		z-index: 9;
+		padding: 5px 8px;
+		border: 1px solid #ffffff22;
+		border-radius: 7px;
+		background: #0a0d12e6;
+		color: #f4f2ea;
+		font-size: 10px;
+		font-weight: 800;
+		white-space: nowrap;
+		transform: translate(-50%, calc(-100% - 28px));
+		box-shadow: 0 6px 18px #0008;
+		pointer-events: none;
+	}
+	.door {
+		position: absolute;
+		z-index: 6;
+		display: grid;
+		place-items: center;
+		min-width: 0;
+		min-height: 0;
+		padding: 0;
+		border: 1px solid #d9b875;
+		border-radius: 2px;
+		background: #75532f;
+		color: #ffe6ae;
+		font-size: 10px;
+		line-height: 1;
+		transform-origin: top left;
+		cursor: pointer;
+		overflow: visible;
+	}
+	.door.open {
+		border-style: dashed;
+		background: #75532f55;
+		color: #ffd478;
+		opacity: 0.65;
+	}
+	.door.horizontal {
+		transform: translateY(-50%);
+	}
+	.door.vertical {
+		transform: translateX(-50%);
+	}
+	.draft-door {
+		pointer-events: none;
+		border: 2px dashed #d6ff66;
+		background: #4c5e32cc;
+		color: #fff;
+	}
+	.draft-door.invalid {
+		border-color: #ff7777;
+		background: #642f2fcc;
+	}
+	.build-actions {
+		display: flex;
+		max-width: 100%;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		gap: 8px;
+	}
+	.build-actions button {
+		margin-left: 0;
+	}
+	.wall {
+		position: absolute;
+		z-index: 3;
+		border-radius: 999px;
+		background: #7f8877;
+		box-shadow:
+			0 2px 5px #000b,
+			0 0 0 1px #151913;
+		pointer-events: none;
+	}
+	.wall.horizontal {
+		height: 6px;
+		transform: translateY(-50%);
+	}
+	.wall.vertical {
+		width: 6px;
+		transform: translateX(-50%);
+	}
+	.wall.editable {
+		z-index: 6;
+	}
+	.draft-wall {
+		z-index: 7;
+		background: #d6ff66;
+		box-shadow: 0 0 0 2px #d6ff6644;
+		pointer-events: none;
+	}
+	.draft-wall.cut-wall {
+		background: #ff7777;
+		box-shadow: 0 0 0 2px #ff777744;
+	}
+	.tile-picker {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 0 8px;
+		color: #aeb5ac;
+		font-size: 11px;
+	}
+	.tile-picker select {
+		border: 1px solid #3a423b;
+		border-radius: 9px;
+		background: #0f1310;
+		color: #fff;
+		padding: 8px;
+		font: inherit;
+	}
+	.painted-tile {
+		position: absolute;
+		z-index: 1;
+		box-sizing: border-box;
+		overflow: hidden;
+		background: #19231c;
+		pointer-events: none;
+	}
+	.painted-tile > svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+		shape-rendering: crispEdges;
+	}
+	.painted-tile.tile-draft {
+		z-index: 2;
+		border: 2px dashed #d6ff66;
+		opacity: 0.72;
+	}
+	.painted-tile.tile-draft.grass {
+		background: #1a251dcc;
+	}
+	.world-prop {
+		position: absolute;
+		z-index: 3;
+		display: grid;
+		place-items: center;
+		width: var(--prop-size);
+		height: var(--prop-size);
+		padding: 0;
+		border: 0;
+		border-radius: 20%;
+		background: #111913aa;
+		font-size: calc(var(--prop-size) * 0.68);
+		line-height: 1;
+		transform: translate(-50%, -50%);
+		cursor: default;
+	}
+	.world-prop.teleport {
+		box-shadow:
+			0 0 0 2px #9d75d688,
+			0 0 18px #9d75d655;
+	}
+	.world-prop svg {
+		width: 82%;
+		height: 82%;
+		shape-rendering: crispEdges;
+	}
+	.world-prop.animated svg {
+		position: absolute;
+		animation: prop-frame 1s steps(1, end) infinite;
+	}
+	.world-prop.animated svg.alternate-frame {
+		animation-delay: -0.5s;
+	}
+	.world-prop.conveyor {
+		box-shadow:
+			0 0 0 2px #69c7df88,
+			0 0 18px #69c7df44;
+		animation: conveyor-glow 0.8s ease-in-out infinite alternate;
+	}
+	.world-prop.canvas {
+		background: transparent;
+		outline: 1px solid #ffffff22;
+	}
+	.world-prop.canvas > svg {
+		opacity: 0;
+	}
+	@keyframes prop-frame {
+		0%,
+		49% {
+			opacity: 1;
+		}
+		50%,
+		100% {
+			opacity: 0;
+		}
+	}
+	@keyframes conveyor-glow {
+		to {
+			filter: brightness(1.35);
+		}
+	}
+	.world-prop.selected {
+		outline: 2px solid #ffcf72;
+	}
+	.world.building .world-prop {
+		cursor: pointer;
+	}
+	.prop-draft {
+		position: absolute;
+		z-index: 4;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border: 2px dashed #d6ff66;
+		border-radius: 8px;
+		color: #d6ff66;
+		font-size: 20px;
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+	.pixel-palette {
+		display: grid;
+		grid-template-columns: repeat(9, 1fr);
+		gap: 4px;
+	}
+	.pixel-palette button {
+		width: 100%;
+		aspect-ratio: 1;
+		padding: 0;
+		border: 2px solid transparent;
+		border-radius: 5px;
+		background: var(--pixel-color);
+		color: #fff;
+	}
+	.pixel-palette button:first-child {
+		background: repeating-conic-gradient(#555 0 25%, #222 0 50%) 0/8px 8px;
+	}
+	.pixel-palette button.active {
+		border-color: #d6ff66;
+	}
+	.pixel-editor {
+		display: grid;
+		grid-template-columns: repeat(8, 1fr);
+		overflow: hidden;
+		border: 1px solid #556057;
+		border-radius: 8px;
+		touch-action: none;
+	}
+	.pixel-editor button {
+		min-width: 0;
+		aspect-ratio: 1;
+		padding: 0;
+		border: 1px solid #ffffff0d;
+		border-radius: 0;
+		background: var(--pixel-color);
+	}
+	.tile-pixel-editor {
+		background: #19231c;
+	}
+	.prop-size-fields {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 8px;
+	}
+	.prop-size-fields input {
+		width: 100%;
+		min-width: 0;
+		box-sizing: border-box;
+	}
+	.world-prop.sign {
+		box-shadow:
+			0 0 0 2px #ffcf7266,
+			0 0 14px #ffcf7233;
+	}
+	.empty p {
+		color: #899187;
+	}
+	.prop-library {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 7px;
+		max-height: 240px;
+		overflow: auto;
+	}
+	.prop-library button {
+		display: grid;
+		min-width: 0;
+		aspect-ratio: 1;
+		padding: 7px;
+		place-items: center;
+		border: 1px solid #ffffff18;
+		background: #202720;
+		color: #f4f2ea;
+	}
+	.prop-library svg {
+		width: 100%;
+		height: 100%;
+		min-height: 32px;
+		shape-rendering: crispEdges;
+	}
+	.prop-library span {
+		font-size: 28px;
+	}
+	.prop-library small {
+		max-width: 100%;
+		overflow: hidden;
+		color: #bfc7bd;
+		font-size: 9px;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.world-prop.seat {
+		box-shadow:
+			0 0 0 2px #69c7df66,
+			0 0 14px #69c7df33;
+	}
+	.world-prop.seat.occupied {
+		box-shadow:
+			0 0 0 2px #ffcf7288,
+			0 0 14px #ffcf7244;
+	}
+	.avatar.seated {
+		transform: translate(-50%, -42%) scaleY(0.78);
+		border-color: #69c7df;
+	}
+	.tile-layer,
+	.prop-layer {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+	.tile-layer {
+		z-index: 1;
+	}
+	.prop-layer {
+		z-index: 2;
+	}
+	.world-grid {
+		z-index: 2;
+		display: block;
+		overflow: visible;
+		background-image: none;
+	}
+	.region-selection {
+		position: absolute;
+		z-index: 8;
+		display: grid;
+		place-items: center;
+		box-sizing: border-box;
+		border: 2px dashed #69c7df;
+		background: #69c7df22;
+		color: #d9f8ff;
+		pointer-events: none;
+	}
+	.region-selection.selected {
+		border-style: solid;
+		background: #69c7df16;
+	}
+	.region-selection.pasting {
+		border-color: #ffcf72;
+		background: #ffcf7218;
+		color: #fff0c3;
+	}
+	.region-selection small {
+		padding: 4px 7px;
+		border-radius: 6px;
+		background: #0a0d12d9;
+		font-size: 10px;
+		font-weight: 850;
+		white-space: nowrap;
+	}
+	.paste-preview {
+		position: absolute;
+		z-index: 9;
+		inset: 0;
+		opacity: 0.5;
+		pointer-events: none;
+	}
+	.paste-preview > * {
+		pointer-events: none;
+	}
+	.paste-floor-preview {
+		position: absolute;
+		z-index: 0;
+		background: #1a251d;
+		box-shadow: inset 0 0 0 2px #ffcf72;
+	}
+	.paste-preview .painted-tile {
+		z-index: 1;
+	}
+	.paste-preview .wall,
+	.paste-preview .world-prop {
+		z-index: 3;
+	}
+	.paste-preview .door {
+		z-index: 6;
+	}
+	.world,
+	.mobile-controls,
+	.mobile-controls button {
+		-webkit-touch-callout: none;
+		-webkit-user-select: none;
+		user-select: none;
+	}
+	.world.movement-zoom .avatar {
+		transition: none;
+	}
+	.avatar.mine.moving {
+		filter: drop-shadow(0 0 7px #d6ff66);
+	}
+	.avatar.mine.moving::after {
+		position: absolute;
+		z-index: -1;
+		width: 70%;
+		height: 70%;
+		border-radius: 50%;
+		background: #d6ff6655;
+		content: '';
+		animation: movement-trail 0.42s ease-out infinite;
+	}
+	.location-ping {
+		position: absolute;
+		z-index: 12;
+		width: 18px;
+		height: 18px;
+		border: 3px solid #ffcf72;
+		border-radius: 50%;
+		transform: translate(-50%, -50%);
+		animation: location-ping 1s ease-out infinite;
+		pointer-events: none;
+	}
+	.location-ping span {
+		position: absolute;
+		bottom: 24px;
+		left: 50%;
+		padding: 3px 6px;
+		border-radius: 6px;
+		background: #0a0d12dd;
+		color: #fff4d1;
+		font-size: 9px;
+		white-space: nowrap;
+		transform: translateX(-50%);
+	}
+	.projectile {
+		position: absolute;
+		z-index: 11;
+		width: 9px;
+		height: 9px;
+		border-radius: 50%;
+		background: #d6ff66;
+		box-shadow:
+			0 0 6px #d6ff66,
+			0 0 16px #69c7df;
+		transform: translate(-50%, -50%);
+		animation: projectile-flight 0.65s ease-out forwards;
+		pointer-events: none;
+	}
+	.projectile::after {
+		position: absolute;
+		inset: -7px;
+		border: 2px solid #69c7df;
+		border-radius: 50%;
+		content: '';
+		animation: projectile-particle 0.65s ease-out forwards;
+	}
+	@keyframes movement-trail {
+		from {
+			opacity: 0.7;
+			transform: scale(1);
+		}
+		to {
+			opacity: 0;
+			transform: scale(2.2);
+		}
+	}
+	@keyframes location-ping {
+		from {
+			box-shadow: 0 0 0 0 #ffcf7277;
+		}
+		to {
+			box-shadow: 0 0 0 18px #ffcf7200;
+		}
+	}
+	@keyframes projectile-flight {
+		to {
+			transform: translate(calc(var(--projectile-x) - 50%), calc(var(--projectile-y) - 50%)) scale(0.35);
+		}
+	}
+	@keyframes projectile-particle {
+		to {
+			opacity: 0;
+			transform: scale(3.5);
+		}
+	}
+	.mobile-controls {
+		display: none;
+	}
+	.mobile-controls button {
+		border: 1px solid #ffffff24;
+		background: #0a0d12c9;
+		color: #f4f2ea;
+		font: 800 13px system-ui;
+		box-shadow: 0 5px 16px #0007;
+		backdrop-filter: blur(8px);
+		touch-action: none;
+		-webkit-user-select: none;
+		user-select: none;
+	}
+	.mobile-controls button:active {
+		background: #d6ff66;
+		color: #15200c;
+	}
+	.mobile-controls button:disabled {
+		opacity: 0.35;
+	}
+	.mobile-dpad {
+		display: grid;
+		width: 132px;
+		height: 132px;
+		grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+		gap: 4px;
+	}
+	.mobile-dpad button {
+		border-radius: 12px;
+	}
+	.mobile-dpad .up {
+		grid-area: 1/2;
+	}
+	.mobile-dpad .left {
+		grid-area: 2/1;
+	}
+	.mobile-dpad .right {
+		grid-area: 2/3;
+	}
+	.mobile-dpad .down {
+		grid-area: 3/2;
+	}
+	.mobile-actions {
+		display: grid;
+		grid-template-columns: repeat(2, 52px);
+		gap: 7px;
+	}
+	.mobile-actions button {
+		min-height: 45px;
+		border-radius: 14px;
+	}
+	.mobile-actions .sprint,
+	.mobile-actions .interact {
+		grid-column: 1/-1;
+	}
+	.mobile-actions .interact {
+		background: #d6ff66cc;
+		color: #15200c;
+	}
+	@media (hover: none), (pointer: coarse) {
+		.mobile-controls {
+			position: absolute;
+			z-index: 16;
+			right: max(14px, env(safe-area-inset-right));
+			bottom: max(14px, env(safe-area-inset-bottom));
+			left: max(14px, env(safe-area-inset-left));
+			display: flex;
+			align-items: end;
+			justify-content: space-between;
+			pointer-events: none;
+		}
+		.mobile-controls > div,
+		.mobile-controls button {
+			pointer-events: auto;
+		}
+		.world-wrap > .hint {
+			display: none;
+		}
+		.connection {
+			bottom: calc(154px + env(safe-area-inset-bottom));
+		}
+	}
+	.notification-queue {
+		position: fixed;
+		z-index: 30;
+		bottom: 52px;
+		left: 14px;
+		display: flex;
+		width: min(420px, calc(100vw - 28px));
+		flex-direction: column;
+		gap: 8px;
+		pointer-events: none;
+	}
+	.notification-queue .notice {
+		position: relative;
+		inset: auto;
+		width: auto;
+		max-width: none;
+		margin: 0;
+		padding: 10px 13px;
+		box-sizing: border-box;
+		transform: none;
+		box-shadow: 0 10px 30px #0009;
+		backdrop-filter: blur(12px);
+		animation: notice-in 0.16s ease-out;
+	}
+	.notification-queue .notice.success {
+		background: #172619e8;
+	}
+	.notification-queue .notice:not(.success) {
+		background: #2a1717e8;
+	}
+	@keyframes notice-in {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
+		to {
+			opacity: 1;
+			transform: none;
+		}
+	}
+	@media (hover: none), (pointer: coarse) {
+		.notification-queue {
+			bottom: calc(160px + env(safe-area-inset-bottom));
+		}
+	}
+	.inventory-toggle {
+		position: absolute;
+		z-index: 32;
+		top: 14px;
+		right: 14px;
+		display: flex;
+		align-items: center;
+		gap: 7px;
+		padding: 9px 12px;
+		border: 1px solid #ffffff24;
+		border-radius: 14px;
+		background: #0a0d12db;
+		color: #f4f2ea;
+		font: inherit;
+		box-shadow: 0 8px 24px #0008;
+		backdrop-filter: blur(12px);
+		cursor: pointer;
+	}
+	.inventory-toggle span {
+		font-size: 18px;
+	}
+	.inventory-toggle b {
+		font-size: 11px;
+	}
+	.inventory-backdrop {
+		position: fixed;
+		z-index: 50;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: 18px;
+		background: #050805aa;
+		backdrop-filter: blur(7px);
+	}
+	.inventory-panel {
+		display: flex;
+		width: min(520px, 100%);
+		max-height: min(680px, calc(100dvh - 36px));
+		box-sizing: border-box;
+		overflow: hidden;
+		flex-direction: column;
+		border: 1px solid #3d493f;
+		border-radius: 20px;
+		background: #111713;
+		box-shadow: 0 24px 80px #000c;
+	}
+	.inventory-panel > header {
+		position: static;
+		display: flex;
+		width: auto;
+		max-width: none;
+		padding: 18px 20px;
+		align-items: center;
+		border: 0;
+		border-bottom: 1px solid #ffffff12;
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+		opacity: 1;
+		transform: none;
+		pointer-events: auto;
+	}
+	.inventory-panel header small {
+		color: #b4d75c;
+		font-size: 9px;
+		font-weight: 900;
+		letter-spacing: 0.16em;
+	}
+	.inventory-panel header h2 {
+		margin: 3px 0 0;
+		font-size: 20px;
+	}
+	.inventory-panel header button {
+		display: grid;
+		width: 36px;
+		height: 36px;
+		padding: 0;
+		place-items: center;
+		border: 1px solid #ffffff18;
+		border-radius: 10px;
+		background: #242b25;
+		color: #fff;
+		font-size: 22px;
+		cursor: pointer;
+	}
+	.inventory-summary {
+		margin: 0;
+		padding: 12px 20px 0;
+		color: #8f978f;
+		font-size: 11px;
+	}
+	.inventory-list {
+		display: grid;
+		min-height: 0;
+		overflow: auto;
+		gap: 8px;
+		padding: 14px 20px 20px;
+	}
+	.inventory-list article {
+		display: grid;
+		grid-template-columns: 44px minmax(0, 1fr) auto;
+		align-items: center;
+		gap: 12px;
+		padding: 12px;
+		border: 1px solid #ffffff0e;
+		border-radius: 13px;
+		background: #1a211b;
+	}
+	.inventory-list article > span {
+		display: grid;
+		width: 44px;
+		height: 44px;
+		place-items: center;
+		border-radius: 11px;
+		background: #0d120e;
+		font-size: 25px;
+	}
+	.inventory-list article strong {
+		font-size: 13px;
+	}
+	.inventory-list article p {
+		margin: 4px 0 0;
+		color: #8f978f;
+		font-size: 10px;
+		line-height: 1.4;
+	}
+	.inventory-list article > b {
+		color: #d6ff66;
+		font-size: 13px;
+	}
+	.inventory-empty {
+		display: grid;
+		margin: 26px 20px;
+		padding: 28px;
+		place-items: center;
+		border: 1px dashed #ffffff1c;
+		border-radius: 14px;
+		color: #cbd3c9;
+		text-align: center;
+	}
+	.inventory-empty > span {
+		font-size: 34px;
+	}
+	.inventory-empty strong {
+		margin-top: 8px;
+		font-size: 13px;
+	}
+	.inventory-empty p {
+		margin: 5px 0 0;
+		color: #7f897f;
+		font-size: 10px;
+	}
+	.inventory-panel > footer {
+		padding: 12px 20px;
+		border-top: 1px solid #ffffff10;
+		color: #737c74;
+		font-size: 9px;
+		line-height: 1.5;
+	}
+	@media (hover: none), (pointer: coarse) {
+		.inventory-toggle {
+			top: calc(max(8px, env(safe-area-inset-top)) + 104px);
+			right: max(8px, env(safe-area-inset-right));
+			width: 44px;
+			height: 44px;
+			padding: 0;
+			justify-content: center;
+		}
+		.inventory-toggle b {
+			display: none;
+		}
+		.inventory-panel {
+			max-height: calc(100dvh - 24px);
+		}
+		.inventory-panel > header {
+			padding: 14px 16px;
+		}
+		.inventory-list {
+			padding: 12px 14px 16px;
+		}
+	}
 </style>

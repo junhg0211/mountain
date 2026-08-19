@@ -60,6 +60,7 @@ import {
 	moveBasecampProp,
 	openBasecampDoor,
 	paintBasecampTiles,
+	paintBasecampCanvasCell,
 	updateBasecampProp,
 	updateBasecampRoom
 } from './src/lib/server/basecamp.ts';
@@ -95,6 +96,7 @@ const basecampVoiceMoveRetryTimers = new Map<WebSocket, ReturnType<typeof setTim
 const basecampVoiceMoveRetryCounts = new Map<WebSocket, number>();
 const basecampDoorCloseTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const basecampDoorSides = new Map<WebSocket, Map<string, number>>();
+const basecampToggledProps = new Map<string, Set<string>>();
 const basecampUndoHistory = new Map<string, Array<{ userId: string; label: string; snapshot: WorldEditSnapshot }>>();
 const basecampUndoableActions = new Map([
 	['basecamp-copy-region', '영역 붙여넣기'], ['basecamp-delete-region', '영역 삭제'],
@@ -333,6 +335,7 @@ async function attachBasecampSocket(
 	});
 	websocket.send(JSON.stringify({ type: 'basecamp-connected', presenceId: presence.id }));
 	websocket.send(JSON.stringify({ type: 'basecamp-state', ...initialState }));
+	websocket.send(JSON.stringify({ type: 'basecamp-prop-toggles', ids: [...(basecampToggledProps.get(guildId) || [])] }));
 	broadcastBasecampPresences(guildId);
 
 	let processing = false;
@@ -346,7 +349,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-location-ping', 'basecamp-projectile', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-update-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-location-ping', 'basecamp-projectile', 'basecamp-toggle-prop', 'basecamp-paint-canvas', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-update-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -367,6 +370,24 @@ async function attachBasecampSocket(
 					fromX: presence.x, fromY: presence.y, x, y });
 				for (const socket of basecampSockets.get(guildId) || [])
 					if (socket.readyState === WebSocket.OPEN) socket.send(payload);
+				return;
+			}
+			if (type === 'basecamp-toggle-prop') {
+				const prop = await getWorldProp(guildId, String(message.id || ''));
+				if (!prop || prop.actionType !== 'toggle') throw new BasecampError('변형할 수 있는 소품이 아닙니다.');
+				const nearestX = Math.max(prop.x, Math.min(presence.x, prop.x + prop.width));
+				const nearestY = Math.max(prop.y, Math.min(presence.y, prop.y + prop.height));
+				if ((presence.x - nearestX) ** 2 + (presence.y - nearestY) ** 2 > 1.75 ** 2) throw new BasecampError('소품 가까이에서 다시 시도해 주세요.');
+				const toggled = basecampToggledProps.get(guildId) || new Set<string>();
+				if (toggled.has(prop.id)) toggled.delete(prop.id); else toggled.add(prop.id);
+				basecampToggledProps.set(guildId, toggled);
+				const payload = JSON.stringify({ type: 'basecamp-prop-toggles', ids: [...toggled] });
+				for (const socket of basecampSockets.get(guildId) || []) if (socket.readyState === WebSocket.OPEN) socket.send(payload);
+				return;
+			}
+			if (type === 'basecamp-paint-canvas') {
+				const state = await paintBasecampCanvasCell({ guildId, userId, propId: String(message.propId || ''), cellX: Number(message.cellX), cellY: Number(message.cellY), imageData: String(message.imageData || '') });
+				broadcastBasecampState(guildId, state);
 				return;
 			}
 			if (type === 'basecamp-move') {
@@ -578,6 +599,8 @@ async function attachBasecampSocket(
 					userId,
 					name: String(message.name || ''),
 					imageData: String(message.imageData || ''),
+					alternateImageData: message.alternateImageData === null ? null : String(message.alternateImageData || ''),
+					actionConfig: message.actionConfig === null ? null : String(message.actionConfig || ''),
 					x: Number(message.x),
 					y: Number(message.y),
 					width: Number(message.width),
@@ -604,6 +627,8 @@ async function attachBasecampSocket(
 					id: String(message.id || ''),
 					name: String(message.name || ''),
 					imageData: String(message.imageData || ''),
+					alternateImageData: message.alternateImageData === null ? null : String(message.alternateImageData || ''),
+					actionConfig: message.actionConfig === null ? null : String(message.actionConfig || ''),
 					width: Number(message.width),
 					height: Number(message.height),
 					actionType: String(message.actionType || ''),

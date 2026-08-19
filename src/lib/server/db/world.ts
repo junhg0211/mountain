@@ -1,5 +1,10 @@
 import { getDB } from '$lib/server/db';
 
+function parsePropAction(value: unknown): WorldProp['actionType'] {
+	return value === 'teleport' || value === 'sign' || value === 'seat' || value === 'conveyor' ||
+		value === 'toggle' || value === 'animated' || value === 'canvas' ? value : null;
+}
+
 export interface WorldRoom {
 	id: string;
 	name: string;
@@ -52,7 +57,9 @@ export interface WorldProp {
 	y: number;
 	width: number;
 	height: number;
-	actionType: 'teleport' | 'sign' | 'seat' | null;
+	actionType: 'teleport' | 'sign' | 'seat' | 'conveyor' | 'toggle' | 'animated' | 'canvas' | null;
+	alternateImageData: string | null;
+	actionConfig: string | null;
 	teleportX: number | null;
 	teleportY: number | null;
 	signText: string | null;
@@ -81,6 +88,7 @@ export interface WorldEditSnapshot {
 	tileTypes: Array<{ id: string; name: string; imageData: string; createdBy: string }>;
 	tiles: Array<{ x: number; y: number; tileType: string; updatedBy: string }>;
 	props: Array<WorldProp>;
+	canvasCells: Array<{ propId: string; cellX: number; cellY: number; imageData: string; updatedBy: string }>;
 	walls: Array<WorldWall & { createdBy: string }>;
 	doors: Array<{
 		id: string;
@@ -96,10 +104,11 @@ export interface WorldEditSnapshot {
 
 export async function captureWorldEditSnapshot(guildId: string): Promise<WorldEditSnapshot> {
 	const db = await getDB();
-	const [tileTypes, tiles, props, walls, doors] = await Promise.all([
+	const [tileTypes, tiles, props, canvasCells, walls, doors] = await Promise.all([
 		db`SELECT id, name, image_data, created_by FROM world_tile_types WHERE guild_id=${guildId}`,
 		db`SELECT x, y, tile_type, updated_by FROM world_tiles WHERE guild_id=${guildId}`,
-		db`SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props WHERE guild_id=${guildId}`,
+		db`SELECT id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props WHERE guild_id=${guildId}`,
+		db`SELECT prop_id, cell_x, cell_y, image_data, updated_by FROM world_canvas_cells WHERE guild_id=${guildId}`,
 		db`SELECT id, x, y, width, height, orientation, created_by FROM world_walls WHERE guild_id=${guildId}`,
 		db`SELECT id, x, y, orientation, length, password_hash, is_open, created_by FROM world_doors WHERE guild_id=${guildId}`
 	]);
@@ -109,10 +118,11 @@ export async function captureWorldEditSnapshot(guildId: string): Promise<WorldEd
 		props: props.map((row: Record<string, unknown>) => ({
 			id: String(row.id), name: String(row.name), emoji: String(row.emoji), imageData: row.image_data === null ? null : String(row.image_data),
 			x: Number(row.x), y: Number(row.y), width: Number(row.width), height: Number(row.height),
-			actionType: row.action_type === 'teleport' || row.action_type === 'sign' || row.action_type === 'seat' ? row.action_type : null,
+			actionType: parsePropAction(row.action_type), alternateImageData: row.alternate_image_data === null ? null : String(row.alternate_image_data), actionConfig: row.action_config === null ? null : String(row.action_config),
 			teleportX: row.teleport_x === null ? null : Number(row.teleport_x), teleportY: row.teleport_y === null ? null : Number(row.teleport_y),
 			signText: row.sign_text === null ? null : String(row.sign_text), createdBy: String(row.created_by)
 		})),
+		canvasCells: canvasCells.map((row: Record<string, unknown>) => ({ propId: String(row.prop_id), cellX: Number(row.cell_x), cellY: Number(row.cell_y), imageData: String(row.image_data), updatedBy: String(row.updated_by) })),
 		walls: walls.map((row: Record<string, unknown>) => ({ id: String(row.id), x: Number(row.x), y: Number(row.y), width: Number(row.width), height: Number(row.height), orientation: String(row.orientation) as WorldWall['orientation'], createdBy: String(row.created_by) })),
 		doors: doors.map((row: Record<string, unknown>) => ({ id: String(row.id), x: Number(row.x), y: Number(row.y), orientation: String(row.orientation) as WorldDoor['orientation'], length: Number(row.length), passwordHash: row.password_hash === null ? null : String(row.password_hash), isOpen: Boolean(row.is_open), createdBy: String(row.created_by) }))
 	};
@@ -128,7 +138,8 @@ export async function restoreWorldEditSnapshot(guildId: string, snapshot: WorldE
 		await tx`DELETE FROM world_doors WHERE guild_id=${guildId}`;
 		for (const item of snapshot.tileTypes) await tx`INSERT INTO world_tile_types (id, guild_id, name, image_data, created_by) VALUES (${item.id}, ${guildId}, ${item.name}, ${item.imageData}, ${item.createdBy})`;
 		for (const item of snapshot.tiles) await tx`INSERT INTO world_tiles (guild_id, x, y, tile_type, updated_by) VALUES (${guildId}, ${item.x}, ${item.y}, ${item.tileType}, ${item.updatedBy})`;
-		for (const item of snapshot.props) await tx`INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by) VALUES (${item.id}, ${guildId}, ${item.name}, ${item.emoji}, ${item.imageData}, ${item.x}, ${item.y}, ${item.width}, ${item.height}, ${item.actionType}, ${item.teleportX}, ${item.teleportY}, ${item.signText}, ${item.createdBy})`;
+		for (const item of snapshot.props) await tx`INSERT INTO world_props (id, guild_id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by) VALUES (${item.id}, ${guildId}, ${item.name}, ${item.emoji}, ${item.imageData}, ${item.alternateImageData}, ${item.actionConfig}, ${item.x}, ${item.y}, ${item.width}, ${item.height}, ${item.actionType}, ${item.teleportX}, ${item.teleportY}, ${item.signText}, ${item.createdBy})`;
+		for (const item of snapshot.canvasCells) await tx`INSERT INTO world_canvas_cells (guild_id, prop_id, cell_x, cell_y, image_data, updated_by) VALUES (${guildId}, ${item.propId}, ${item.cellX}, ${item.cellY}, ${item.imageData}, ${item.updatedBy})`;
 		for (const item of snapshot.walls) await tx`INSERT INTO world_walls (id, guild_id, x, y, width, height, orientation, created_by) VALUES (${item.id}, ${guildId}, ${item.x}, ${item.y}, ${item.width}, ${item.height}, ${item.orientation}, ${item.createdBy})`;
 		for (const item of snapshot.doors) await tx`INSERT INTO world_doors (id, guild_id, x, y, orientation, length, password_hash, is_open, created_by) VALUES (${item.id}, ${guildId}, ${item.x}, ${item.y}, ${item.orientation}, ${item.length}, ${item.passwordHash}, ${item.isOpen}, ${item.createdBy})`;
 	});
@@ -232,7 +243,7 @@ export async function paintWorldTiles(input: {
 export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props
+		SELECT id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props
 		WHERE guild_id=${guildId} ORDER BY created_at
 	`;
 	return rows.map((row: Record<string, unknown>) => ({
@@ -244,7 +255,9 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 		y: Number(row.y),
 		width: Number(row.width),
 		height: Number(row.height),
-		actionType: row.action_type === 'teleport' || row.action_type === 'sign' || row.action_type === 'seat' ? row.action_type : null,
+		actionType: parsePropAction(row.action_type),
+		alternateImageData: row.alternate_image_data === null ? null : String(row.alternate_image_data),
+		actionConfig: row.action_config === null ? null : String(row.action_config),
 		teleportX: row.teleport_x === null ? null : Number(row.teleport_x),
 		teleportY: row.teleport_y === null ? null : Number(row.teleport_y),
 		signText: row.sign_text === null ? null : String(row.sign_text),
@@ -255,15 +268,15 @@ export async function listWorldProps(guildId: string): Promise<WorldProp[]> {
 export async function createWorldProp(input: WorldProp & { guildId: string }) {
 	const db = await getDB();
 	await db`
-		INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by)
-		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.x}, ${input.y}, ${input.width}, ${input.height}, ${input.actionType}, ${input.teleportX}, ${input.teleportY}, ${input.signText}, ${input.createdBy})
+		INSERT INTO world_props (id, guild_id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by)
+		VALUES (${input.id}, ${input.guildId}, ${input.name}, ${input.emoji}, ${input.imageData}, ${input.alternateImageData}, ${input.actionConfig}, ${input.x}, ${input.y}, ${input.width}, ${input.height}, ${input.actionType}, ${input.teleportX}, ${input.teleportY}, ${input.signText}, ${input.createdBy})
 	`;
 }
 
 export async function getWorldProp(guildId: string, id: string): Promise<WorldProp | null> {
 	const db = await getDB();
 	const rows = await db`
-		SELECT id, name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props
+		SELECT id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height, action_type, teleport_x, teleport_y, sign_text, created_by FROM world_props
 		WHERE guild_id=${guildId} AND id=${id} LIMIT 1
 	`;
 	if (!rows.length) return null;
@@ -276,7 +289,9 @@ export async function getWorldProp(guildId: string, id: string): Promise<WorldPr
 		y: Number(rows[0].y),
 		width: Number(rows[0].width),
 		height: Number(rows[0].height),
-		actionType: rows[0].action_type === 'teleport' || rows[0].action_type === 'sign' || rows[0].action_type === 'seat' ? rows[0].action_type : null,
+		actionType: parsePropAction(rows[0].action_type),
+		alternateImageData: rows[0].alternate_image_data === null ? null : String(rows[0].alternate_image_data),
+		actionConfig: rows[0].action_config === null ? null : String(rows[0].action_config),
 		teleportX: rows[0].teleport_x === null ? null : Number(rows[0].teleport_x),
 		teleportY: rows[0].teleport_y === null ? null : Number(rows[0].teleport_y),
 		signText: rows[0].sign_text === null ? null : String(rows[0].sign_text),
@@ -306,16 +321,33 @@ export async function updateWorldProp(input: {
 	width: number;
 	height: number;
 	actionType: WorldProp['actionType'];
+	alternateImageData: string | null;
+	actionConfig: string | null;
 	teleportX: number | null;
 	teleportY: number | null;
 	signText: string | null;
 }) {
 	const db = await getDB();
 	await db`
-		UPDATE world_props SET name=${input.name}, image_data=${input.imageData},
+		UPDATE world_props SET name=${input.name}, image_data=${input.imageData}, alternate_image_data=${input.alternateImageData}, action_config=${input.actionConfig},
 			width=${input.width}, height=${input.height}, action_type=${input.actionType},
 			teleport_x=${input.teleportX}, teleport_y=${input.teleportY}, sign_text=${input.signText}
 		WHERE guild_id=${input.guildId} AND id=${input.id}
+	`;
+}
+
+export async function listWorldCanvasCells(guildId: string) {
+	const db = await getDB();
+	const rows = await db`SELECT prop_id, cell_x, cell_y, image_data FROM world_canvas_cells WHERE guild_id=${guildId}`;
+	return rows.map((row: Record<string, unknown>) => ({ propId: String(row.prop_id), cellX: Number(row.cell_x), cellY: Number(row.cell_y), imageData: String(row.image_data) }));
+}
+
+export async function paintWorldCanvasCell(input: { guildId: string; userId: string; propId: string; cellX: number; cellY: number; imageData: string }) {
+	const db = await getDB();
+	await db`
+		INSERT INTO world_canvas_cells (guild_id, prop_id, cell_x, cell_y, image_data, updated_by)
+		VALUES (${input.guildId}, ${input.propId}, ${input.cellX}, ${input.cellY}, ${input.imageData}, ${input.userId})
+		ON DUPLICATE KEY UPDATE image_data=VALUES(image_data), updated_by=VALUES(updated_by)
 	`;
 }
 
@@ -446,7 +478,7 @@ export async function copyWorldRegion(input: {
 		const yEnd = input.y + input.height;
 		const [tiles, props, doors, allWalls] = await Promise.all([
 			tx`SELECT x, y, tile_type FROM world_tiles WHERE guild_id=${input.guildId} AND x>=${input.x} AND x<${xEnd} AND y>=${input.y} AND y<${yEnd}`,
-			tx`SELECT name, emoji, image_data, x, y, width, height, action_type, teleport_x, teleport_y, sign_text FROM world_props WHERE guild_id=${input.guildId} AND x>=${input.x} AND x+width<=${xEnd} AND y>=${input.y} AND y+height<=${yEnd}`,
+			tx`SELECT id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height, action_type, teleport_x, teleport_y, sign_text FROM world_props WHERE guild_id=${input.guildId} AND x>=${input.x} AND x+width<=${xEnd} AND y>=${input.y} AND y+height<=${yEnd}`,
 			tx`SELECT x, y, orientation, length, password_hash FROM world_doors WHERE guild_id=${input.guildId} FOR UPDATE`,
 			tx`SELECT x, y, width, height, orientation, created_by FROM world_walls WHERE guild_id=${input.guildId} FOR UPDATE`
 		]);
@@ -464,20 +496,26 @@ export async function copyWorldRegion(input: {
 				ON DUPLICATE KEY UPDATE tile_type=VALUES(tile_type), updated_by=VALUES(updated_by)
 			`;
 		for (const row of props as Array<Record<string, unknown>>) {
+			const copiedPropId = crypto.randomUUID();
 			const teleportX = row.teleport_x === null ? null : Number(row.teleport_x);
 			const teleportY = row.teleport_y === null ? null : Number(row.teleport_y);
 			const moveTeleport = teleportX !== null && teleportY !== null &&
 				teleportX >= input.x && teleportX < xEnd && teleportY >= input.y && teleportY < yEnd;
 			await tx`
-				INSERT INTO world_props (id, guild_id, name, emoji, image_data, x, y, width, height,
+				INSERT INTO world_props (id, guild_id, name, emoji, image_data, alternate_image_data, action_config, x, y, width, height,
 					action_type, teleport_x, teleport_y, sign_text, created_by)
-				VALUES (${crypto.randomUUID()}, ${input.guildId}, ${String(row.name)}, ${String(row.emoji)},
-					${row.image_data === null ? null : String(row.image_data)}, ${Number(row.x) + offsetX},
+				VALUES (${copiedPropId}, ${input.guildId}, ${String(row.name)}, ${String(row.emoji)},
+					${row.image_data === null ? null : String(row.image_data)}, ${row.alternate_image_data === null ? null : String(row.alternate_image_data)}, ${row.action_config === null ? null : String(row.action_config)}, ${Number(row.x) + offsetX},
 					${Number(row.y) + offsetY}, ${Number(row.width)}, ${Number(row.height)},
 					${row.action_type === null ? null : String(row.action_type)},
 					${moveTeleport ? teleportX! + offsetX : teleportX},
 					${moveTeleport ? teleportY! + offsetY : teleportY},
 					${row.sign_text === null ? null : String(row.sign_text)}, ${input.userId})
+			`;
+			const cells = await tx`SELECT cell_x, cell_y, image_data FROM world_canvas_cells WHERE guild_id=${input.guildId} AND prop_id=${String(row.id)}`;
+			for (const cell of cells as Array<Record<string, unknown>>) await tx`
+				INSERT INTO world_canvas_cells (guild_id, prop_id, cell_x, cell_y, image_data, updated_by)
+				VALUES (${input.guildId}, ${copiedPropId}, ${Number(cell.cell_x)}, ${Number(cell.cell_y)}, ${String(cell.image_data)}, ${input.userId})
 			`;
 		}
 		const selectedDoors = (doors as Array<Record<string, unknown>>).filter((row) => {

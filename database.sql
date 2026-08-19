@@ -233,6 +233,8 @@ CREATE TABLE IF NOT EXISTS world_props (
     name VARCHAR(40) NOT NULL,
     emoji VARCHAR(32) NOT NULL,
     image_data VARCHAR(64),
+    alternate_image_data VARCHAR(64),
+    action_config VARCHAR(255),
     x INT NOT NULL,
     y INT NOT NULL,
     width INT NOT NULL DEFAULT 1,
@@ -246,6 +248,20 @@ CREATE TABLE IF NOT EXISTS world_props (
     INDEX world_props_guild_idx (guild_id),
     FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT,
     CHECK (width BETWEEN 1 AND 32 AND height BETWEEN 1 AND 32)
+);
+
+CREATE TABLE IF NOT EXISTS world_canvas_cells (
+    guild_id VARCHAR(255) NOT NULL,
+    prop_id CHAR(36) NOT NULL,
+    cell_x INT NOT NULL,
+    cell_y INT NOT NULL,
+    image_data VARCHAR(64) NOT NULL,
+    updated_by VARCHAR(255) NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (guild_id, prop_id, cell_x, cell_y),
+    INDEX world_canvas_cells_prop_idx (guild_id, prop_id),
+    FOREIGN KEY (prop_id) REFERENCES world_props(id) ON DELETE CASCADE,
+    FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS monthly_burn_runs (
