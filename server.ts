@@ -346,7 +346,7 @@ async function attachBasecampSocket(
 			const type = String(message.type || '');
 			requestType = type;
 			if (
-				!['basecamp-ping', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-update-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
+				!['basecamp-ping', 'basecamp-location-ping', 'basecamp-projectile', 'basecamp-sync', 'basecamp-move', 'basecamp-return-spawn', 'basecamp-move-voice', 'basecamp-auto-move', 'basecamp-configure', 'basecamp-set-spawn', 'basecamp-undo', 'basecamp-copy-region', 'basecamp-delete-region', 'basecamp-create-tile-type', 'basecamp-update-tile-type', 'basecamp-delete-tile-type', 'basecamp-paint-tiles', 'basecamp-create-prop', 'basecamp-update-prop', 'basecamp-use-prop', 'basecamp-copy-prop', 'basecamp-move-prop', 'basecamp-delete-prop', 'basecamp-create-room', 'basecamp-update-room', 'basecamp-delete-room', 'basecamp-create-wall', 'basecamp-delete-wall', 'basecamp-create-door', 'basecamp-open-door', 'basecamp-delete-door'].includes(
 					type
 				)
 			)
@@ -356,6 +356,17 @@ async function attachBasecampSocket(
 				if (basecampAutoMoves.get(websocket) && target && !basecampVoiceMoveTimers.has(websocket))
 					queueBasecampVoiceMove(websocket, guildId, userId, target);
 				websocket.send(JSON.stringify({ type: 'basecamp-pong' }));
+				return;
+			}
+			if (type === 'basecamp-location-ping' || type === 'basecamp-projectile') {
+				const x = Number(message.x);
+				const y = Number(message.y);
+				if (!Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(x - presence.x, y - presence.y) > 80)
+					throw new BasecampError('표시할 위치가 올바르지 않습니다.');
+				const payload = JSON.stringify({ type, id: crypto.randomUUID(), username: presence.username,
+					fromX: presence.x, fromY: presence.y, x, y });
+				for (const socket of basecampSockets.get(guildId) || [])
+					if (socket.readyState === WebSocket.OPEN) socket.send(payload);
 				return;
 			}
 			if (type === 'basecamp-move') {

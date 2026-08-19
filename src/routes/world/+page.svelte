@@ -85,8 +85,8 @@
 	let presenceId = $state<string | null>(null);
 	let presences = $state<Presence[]>([]);
 	let movementFrame: number | null = null;
-	let velocityX = 0;
-	let velocityY = 0;
+	let velocityX = $state(0);
+	let velocityY = $state(0);
 	let lastMovementFrameAt: number | null = null;
 	const maximumMovementSpeed = 10.8;
 	const sprintSpeedMultiplier = 1.65;
@@ -105,6 +105,10 @@
 	let lastMovementSentAt = 0;
 	let movementSequence = 0;
 	let automaticPath: Array<{ x: number; y: number }> = [];
+	let rightMovePointerId: number | null = null;
+	let lastRightMovePathAt = 0;
+	let pings = $state<Array<{ id: string; username: string; x: number; y: number }>>([]);
+	let projectiles = $state<Array<{ id: string; fromX: number; fromY: number; x: number; y: number }>>([]);
 	const pressedKeys = new Set<string>();
 	const movementKeys = new Set(['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd']);
 	const movementCodes: Record<string, string> = { KeyW: 'w', KeyA: 'a', KeyS: 's', KeyD: 'd' };
@@ -314,6 +318,22 @@
 						const y = Number(message.y);
 						if (Number.isFinite(x) && Number.isFinite(y))
 							presences = presences.map((presence) => presence.id === presenceId ? { ...presence, x, y } : presence);
+					}
+					return;
+				}
+				if (message.type === 'basecamp-location-ping') {
+					const ping = { id: String(message.id), username: String(message.username), x: Number(message.x), y: Number(message.y) };
+					if (Number.isFinite(ping.x) && Number.isFinite(ping.y)) {
+						pings = [...pings, ping];
+						window.setTimeout(() => (pings = pings.filter((item) => item.id !== ping.id)), 4_000);
+					}
+					return;
+				}
+				if (message.type === 'basecamp-projectile') {
+					const projectile = { id: String(message.id), fromX: Number(message.fromX), fromY: Number(message.fromY), x: Number(message.x), y: Number(message.y) };
+					if ([projectile.fromX, projectile.fromY, projectile.x, projectile.y].every(Number.isFinite)) {
+						projectiles = [...projectiles, projectile];
+						window.setTimeout(() => (projectiles = projectiles.filter((item) => item.id !== projectile.id)), 700);
 					}
 					return;
 				}
@@ -620,6 +640,11 @@
 		return requestId;
 	}
 
+	function sendEphemeral(message: Record<string, unknown>) {
+		if (socket?.readyState !== WebSocket.OPEN) return;
+		socket.send(JSON.stringify(message));
+	}
+
 	function undoLastEdit() {
 		if (!connected || processing) return;
 		send({ type: 'basecamp-undo' });
@@ -869,6 +894,19 @@
 	}
 
 	function beginRoom(event: PointerEvent) {
+		if (!building && event.button === 2) {
+			event.preventDefault();
+			rightMovePointerId = event.pointerId;
+			worldViewport?.setPointerCapture(event.pointerId);
+			updateAutomaticMove(event);
+			return;
+		}
+		if (!building && event.button === 0 && (event.altKey || event.ctrlKey || event.metaKey)) {
+			event.preventDefault();
+			const point = worldPoint(event);
+			sendEphemeral({ type: event.altKey ? 'basecamp-location-ping' : 'basecamp-projectile', ...point });
+			return;
+		}
 		if (selectingTeleportTarget && event.button === 0) {
 			event.preventDefault();
 			const point = cell(event);
@@ -932,6 +970,10 @@
 	}
 
 	function resizeRoom(event: PointerEvent) {
+		if (rightMovePointerId === event.pointerId && (event.buttons & 2)) {
+			updateAutomaticMove(event);
+			return;
+		}
 		if (building && buildTool === 'selection' && pastingRegion && copiedRegion)
 			pasteTarget = cell(event);
 		if (propMoveSession && (event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId)) {
@@ -959,6 +1001,12 @@
 	}
 
 	function finishRoom(event: PointerEvent) {
+		if (rightMovePointerId === event.pointerId) {
+			rightMovePointerId = null;
+			if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
+				(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
+			return;
+		}
 		if ((event.currentTarget as HTMLElement).hasPointerCapture(event.pointerId))
 			(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId);
 		editSession = null;
@@ -1066,24 +1114,32 @@
 		});
 	}
 
-	function moveToRightClick(event: MouseEvent) {
-		event.preventDefault();
-		if (!presenceId || !worldViewport || unlockingDoor) return;
-		const me = presences.find((presence) => presence.id === presenceId);
-		if (!me) return;
-		const rect = worldViewport.getBoundingClientRect();
-		const target = {
+	function worldPoint(event: MouseEvent | PointerEvent) {
+		const rect = worldViewport!.getBoundingClientRect();
+		return {
 			x: (event.clientX - rect.left - cameraX) / cameraLayout.cellSize,
 			y: (event.clientY - rect.top - cameraY) / cameraLayout.cellSize
 		};
-		const path = findWorldPath(me, target);
+	}
+
+	function updateAutomaticMove(event: MouseEvent | PointerEvent) {
+		const now = performance.now();
+		if (event instanceof PointerEvent && event.type === 'pointermove' && now - lastRightMovePathAt < 80) return;
+		lastRightMovePathAt = now;
+		if (!presenceId || !worldViewport || unlockingDoor) return;
+		const me = presences.find((presence) => presence.id === presenceId);
+		if (!me) return;
+		const path = findWorldPath(me, worldPoint(event));
 		if (!path) {
 			automaticPath = [];
-			showNotice(false, '해당 위치로 이동할 수 있는 경로를 찾지 못했습니다.');
 			return;
 		}
 		automaticPath = path;
 		if (movementFrame === null) moveAvatar();
+	}
+
+	function moveToRightClick(event: MouseEvent) {
+		event.preventDefault();
 	}
 
 	function findWorldPath(startPosition: { x: number; y: number }, targetPosition: { x: number; y: number }) {
@@ -1181,8 +1237,10 @@
 			anchor = cellCenters[furthest];
 			index = furthest + 1;
 		}
-		const finalStart = path.at(-1) || startPosition;
-		if (!wallBlocksMovement(finalStart.x, finalStart.y, targetPosition.x, targetPosition.y))
+		const finalStart = path.length > 1 ? path[path.length - 2] : startPosition;
+		if (path.length && !wallBlocksMovement(finalStart.x, finalStart.y, targetPosition.x, targetPosition.y))
+			path[path.length - 1] = targetPosition;
+		else if (!path.length && !wallBlocksMovement(startPosition.x, startPosition.y, targetPosition.x, targetPosition.y))
 			path.push(targetPosition);
 		else if (!path.length)
 			path.push({ x: goal.x + 0.5, y: goal.y + 0.5 });
@@ -1856,6 +1914,7 @@
 				<div
 					class:building
 					class:zooming
+					class:movement-zoom={Math.abs(movementZoom - 1) > 0.0001}
 					class:room-building={building && buildTool === 'room'}
 					class="world"
 					bind:this={worldViewport}
@@ -1866,6 +1925,7 @@
 					onpointerdown={beginRoom}
 					onpointermove={resizeRoom}
 					onpointerup={finishRoom}
+					onpointercancel={finishRoom}
 				>
 					<div class="world-background"></div>
 					<canvas class="tile-layer" bind:this={tileCanvas} aria-hidden="true"></canvas>
@@ -1917,8 +1977,10 @@
 						</div>
 					{/if}
 					{#if teleportTarget && draft && buildTool === 'prop'}<div class="teleport-target-marker" style={`left:${teleportTarget.x * cameraLayout.cellSize}px;top:${teleportTarget.y * cameraLayout.cellSize}px`}><span>목적지</span></div>{/if}
+					{#each pings as ping (ping.id)}<div class="location-ping" style={`left:${ping.x * cameraLayout.cellSize}px;top:${ping.y * cameraLayout.cellSize}px`}><span>{ping.username}</span></div>{/each}
+					{#each projectiles as projectile (projectile.id)}<div class="projectile" style={`left:${projectile.fromX * cameraLayout.cellSize}px;top:${projectile.fromY * cameraLayout.cellSize}px;--projectile-x:${(projectile.x - projectile.fromX) * cameraLayout.cellSize}px;--projectile-y:${(projectile.y - projectile.fromY) * cameraLayout.cellSize}px`}></div>{/each}
 					{#each visiblePresences as presence (presence.id)}
-						<div class:mine={presence.id === presenceId} class:seated={Boolean(presence.seatedPropId)} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom * movementZoom}px;--avatar-border:${3 * renderedZoom * movementZoom}px`} title={presence.username}>
+						<div class:mine={presence.id === presenceId} class:moving={presence.id === presenceId && (velocityX !== 0 || velocityY !== 0)} class:seated={Boolean(presence.seatedPropId)} class="avatar" style={`left:${presence.x * cameraLayout.cellSize}px;top:${presence.y * cameraLayout.cellSize}px;--avatar-size:${30 * renderedZoom * movementZoom}px;--avatar-border:${3 * renderedZoom * movementZoom}px`} title={presence.username}>
 							{#if presence.avatarUrl}<img src={presence.avatarUrl} alt="" />{:else}<span>{presence.username.slice(0, 1).toUpperCase()}</span>{/if}
 							<small>{presence.username}</small>
 						</div>
@@ -2082,6 +2144,7 @@
 	.region-selection{position:absolute;z-index:8;display:grid;place-items:center;box-sizing:border-box;border:2px dashed #69c7df;background:#69c7df22;color:#d9f8ff;pointer-events:none}.region-selection.selected{border-style:solid;background:#69c7df16}.region-selection.pasting{border-color:#ffcf72;background:#ffcf7218;color:#fff0c3}.region-selection small{padding:4px 7px;border-radius:6px;background:#0a0d12d9;font-size:10px;font-weight:850;white-space:nowrap}
 	.paste-preview{position:absolute;z-index:9;inset:0;opacity:.5;pointer-events:none}.paste-preview>*{pointer-events:none}.paste-floor-preview{position:absolute;z-index:0;background:#1a251d;box-shadow:inset 0 0 0 2px #ffcf72}.paste-preview .painted-tile{z-index:1}.paste-preview .wall,.paste-preview .world-prop{z-index:3}.paste-preview .door{z-index:6}
 	.world,.mobile-controls,.mobile-controls button{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+	.world.movement-zoom .avatar{transition:none}.avatar.mine.moving{filter:drop-shadow(0 0 7px #d6ff66)}.avatar.mine.moving::after{position:absolute;z-index:-1;width:70%;height:70%;border-radius:50%;background:#d6ff6655;content:"";animation:movement-trail .42s ease-out infinite}.location-ping{position:absolute;z-index:12;width:18px;height:18px;border:3px solid #ffcf72;border-radius:50%;transform:translate(-50%,-50%);animation:location-ping 1s ease-out infinite;pointer-events:none}.location-ping span{position:absolute;bottom:24px;left:50%;padding:3px 6px;border-radius:6px;background:#0a0d12dd;color:#fff4d1;font-size:9px;white-space:nowrap;transform:translateX(-50%)}.projectile{position:absolute;z-index:11;width:9px;height:9px;border-radius:50%;background:#d6ff66;box-shadow:0 0 6px #d6ff66,0 0 16px #69c7df;transform:translate(-50%,-50%);animation:projectile-flight .65s ease-out forwards;pointer-events:none}.projectile::after{position:absolute;inset:-7px;border:2px solid #69c7df;border-radius:50%;content:"";animation:projectile-particle .65s ease-out forwards}@keyframes movement-trail{from{opacity:.7;transform:scale(1)}to{opacity:0;transform:scale(2.2)}}@keyframes location-ping{from{box-shadow:0 0 0 0 #ffcf7277}to{box-shadow:0 0 0 18px #ffcf7200}}@keyframes projectile-flight{to{transform:translate(calc(var(--projectile-x) - 50%),calc(var(--projectile-y) - 50%)) scale(.35)}}@keyframes projectile-particle{to{opacity:0;transform:scale(3.5)}}
 	.mobile-controls{display:none}.mobile-controls button{border:1px solid #ffffff24;background:#0a0d12c9;color:#f4f2ea;font:800 13px system-ui;box-shadow:0 5px 16px #0007;backdrop-filter:blur(8px);touch-action:none;-webkit-user-select:none;user-select:none}.mobile-controls button:active{background:#d6ff66;color:#15200c}.mobile-controls button:disabled{opacity:.35}.mobile-dpad{display:grid;width:132px;height:132px;grid-template:repeat(3,1fr)/repeat(3,1fr);gap:4px}.mobile-dpad button{border-radius:12px}.mobile-dpad .up{grid-area:1/2}.mobile-dpad .left{grid-area:2/1}.mobile-dpad .right{grid-area:2/3}.mobile-dpad .down{grid-area:3/2}.mobile-actions{display:grid;grid-template-columns:repeat(2,52px);gap:7px}.mobile-actions button{min-height:45px;border-radius:14px}.mobile-actions .sprint,.mobile-actions .interact{grid-column:1/-1}.mobile-actions .interact{background:#d6ff66cc;color:#15200c}@media(hover:none),(pointer:coarse){.mobile-controls{position:absolute;z-index:16;right:max(14px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom));left:max(14px,env(safe-area-inset-left));display:flex;align-items:end;justify-content:space-between;pointer-events:none}.mobile-controls>div,.mobile-controls button{pointer-events:auto}.world-wrap>.hint{display:none}.connection{bottom:calc(154px + env(safe-area-inset-bottom))}}
 	.notification-queue{position:fixed;z-index:30;bottom:52px;left:14px;display:flex;width:min(420px,calc(100vw - 28px));flex-direction:column;gap:8px;pointer-events:none}.notification-queue .notice{position:relative;inset:auto;width:auto;max-width:none;margin:0;padding:10px 13px;box-sizing:border-box;transform:none;box-shadow:0 10px 30px #0009;backdrop-filter:blur(12px);animation:notice-in .16s ease-out}.notification-queue .notice.success{background:#172619e8}.notification-queue .notice:not(.success){background:#2a1717e8}@keyframes notice-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@media(hover:none),(pointer:coarse){.notification-queue{bottom:calc(160px + env(safe-area-inset-bottom))}}
 	.inventory-toggle{position:absolute;z-index:32;top:14px;right:14px;display:flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #ffffff24;border-radius:14px;background:#0a0d12db;color:#f4f2ea;font:inherit;box-shadow:0 8px 24px #0008;backdrop-filter:blur(12px);cursor:pointer}.inventory-toggle span{font-size:18px}.inventory-toggle b{font-size:11px}.inventory-backdrop{position:fixed;z-index:50;inset:0;display:grid;place-items:center;padding:18px;background:#050805aa;backdrop-filter:blur(7px)}.inventory-panel{display:flex;width:min(520px,100%);max-height:min(680px,calc(100dvh - 36px));box-sizing:border-box;overflow:hidden;flex-direction:column;border:1px solid #3d493f;border-radius:20px;background:#111713;box-shadow:0 24px 80px #000c}.inventory-panel>header{position:static;display:flex;width:auto;max-width:none;padding:18px 20px;align-items:center;border:0;border-bottom:1px solid #ffffff12;border-radius:0;background:transparent;box-shadow:none;opacity:1;transform:none;pointer-events:auto}.inventory-panel header small{color:#b4d75c;font-size:9px;font-weight:900;letter-spacing:.16em}.inventory-panel header h2{margin:3px 0 0;font-size:20px}.inventory-panel header button{display:grid;width:36px;height:36px;padding:0;place-items:center;border:1px solid #ffffff18;border-radius:10px;background:#242b25;color:#fff;font-size:22px;cursor:pointer}.inventory-summary{margin:0;padding:12px 20px 0;color:#8f978f;font-size:11px}.inventory-list{display:grid;min-height:0;overflow:auto;gap:8px;padding:14px 20px 20px}.inventory-list article{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px;border:1px solid #ffffff0e;border-radius:13px;background:#1a211b}.inventory-list article>span{display:grid;width:44px;height:44px;place-items:center;border-radius:11px;background:#0d120e;font-size:25px}.inventory-list article strong{font-size:13px}.inventory-list article p{margin:4px 0 0;color:#8f978f;font-size:10px;line-height:1.4}.inventory-list article>b{color:#d6ff66;font-size:13px}.inventory-empty{display:grid;margin:26px 20px;padding:28px;place-items:center;border:1px dashed #ffffff1c;border-radius:14px;color:#cbd3c9;text-align:center}.inventory-empty>span{font-size:34px}.inventory-empty strong{margin-top:8px;font-size:13px}.inventory-empty p{margin:5px 0 0;color:#7f897f;font-size:10px}.inventory-panel>footer{padding:12px 20px;border-top:1px solid #ffffff10;color:#737c74;font-size:9px;line-height:1.5}@media(hover:none),(pointer:coarse){.inventory-toggle{top:calc(max(8px,env(safe-area-inset-top)) + 104px);right:max(8px,env(safe-area-inset-right));width:44px;height:44px;padding:0;justify-content:center}.inventory-toggle b{display:none}.inventory-panel{max-height:calc(100dvh - 24px)}.inventory-panel>header{padding:14px 16px}.inventory-list{padding:12px 14px 16px}}
