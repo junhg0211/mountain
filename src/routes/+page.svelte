@@ -1462,6 +1462,8 @@
 		padding: 7px 8px;
 		border: 0;
 		background: #171b23;
+		color: #f1f3f7;
+		color-scheme: dark;
 		font-size: 12px;
 	}
 
@@ -1477,8 +1479,16 @@
 		border-color: #292f3b;
 		border-radius: 10px;
 		background: #0d1015;
+		color: #f1f3f7;
+		caret-color: #a99cff;
+		font: inherit;
 		line-height: 1.6;
 		resize: vertical;
+	}
+
+	.memory-content textarea::placeholder {
+		color: #687181;
+		opacity: 1;
 	}
 
 	.memory-form button {
@@ -1488,6 +1498,9 @@
 		justify-content: space-between;
 		padding-inline: 16px;
 		background: linear-gradient(135deg, #6751ec, #765cff);
+		color: #fff;
+		font: inherit;
+		font-weight: 800;
 	}
 
 	.memory-form button b {
