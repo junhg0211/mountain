@@ -160,6 +160,10 @@
 			minute: '2-digit'
 		}).format(new Date(value));
 	}
+	function memoryDateParts(value: string) {
+		const [year, month, day] = value.split('-');
+		return { year, day: `${month}.${day}` };
+	}
 	type ItemMovement = (typeof data.itemMovements)[number];
 	const itemMovementLabels: Record<ItemMovement['type'], string> = {
 		grant: '관리자 지급',
@@ -481,49 +485,72 @@
 
 				<section class="card memory-card">
 					<div class="memory-heading">
+						<div class="memory-title-icon">✦</div>
 						<div>
 							<p class="card-label">SERVER MEMORIES</p>
 							<h3>우리 서버의 기록</h3>
-							<p>날짜를 골라 함께 기억하고 싶은 일을 남겨보세요.</p>
+							<p>함께한 하루를 남겨두면, 시간이 지난 뒤 다시 이어볼 수 있어요.</p>
 						</div>
-						<span>최근 {data.dailyMemories.length}개</span>
 					</div>
-					<form class="memory-form" method="POST" action={`?/addMemory&guild=${selectedGuild.id}`}>
-						<input type="hidden" name="guildId" value={selectedGuild.id} />
-						<label
-							>날짜<input
-								type="date"
-								name="date"
-								value={data.defaultMemoryDate}
-								max={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })}
-								required
-							/></label
+					<div class="memory-layout">
+						<form
+							class="memory-form"
+							method="POST"
+							action={`?/addMemory&guild=${selectedGuild.id}`}
 						>
-						<label class="memory-content"
-							>기록<textarea
-								name="content"
-								maxlength="1000"
-								placeholder="서버에 있었던 일을 편하게 적어 주세요."
-								required
-							></textarea></label
-						>
-						<button>기록 남기기</button>
-					</form>
-					{#if data.dailyMemories.length}
-						<div class="memory-list">
-							{#each data.dailyMemories as memory}
-								<article>
-									<div>
-										<time datetime={memory.date}>{memory.date}</time>
-										<strong>{memory.username}</strong>
-									</div>
-									<p>{memory.content}</p>
-								</article>
-							{/each}
+							<input type="hidden" name="guildId" value={selectedGuild.id} />
+							<div class="memory-form-heading">
+								<span>새 기록</span><small>첫 기록에는 설정된 보상이 지급돼요</small>
+							</div>
+							<label class="memory-date"
+								><span>기록할 날짜</span><input
+									type="date"
+									name="date"
+									value={data.defaultMemoryDate}
+									max={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })}
+									required
+								/></label
+							>
+							<label class="memory-content"
+								><span class="sr-only">기록 내용</span><textarea
+									name="content"
+									maxlength="1000"
+									placeholder="오늘 서버에는 어떤 일이 있었나요?"
+									required
+								></textarea></label
+							>
+							<button><span>기록 남기기</span><b>→</b></button>
+						</form>
+						<div class="memory-archive">
+							<div class="memory-archive-heading">
+								<div><strong>최근 기록</strong><span>서버 구성원이 함께 남긴 이야기</span></div>
+								<small>{data.dailyMemories.length}</small>
+							</div>
+							{#if data.dailyMemories.length}
+								<div class="memory-list">
+									{#each data.dailyMemories as memory}
+										<article>
+											<time datetime={memory.date}>
+												<b>{memoryDateParts(memory.date).day}</b>
+												<span>{memoryDateParts(memory.date).year}</span>
+											</time>
+											<div class="memory-entry">
+												<p>{memory.content}</p>
+												<div class="memory-author">
+													<i>{memory.username.slice(0, 1)}</i><span>{memory.username}</span>
+												</div>
+											</div>
+										</article>
+									{/each}
+								</div>
+							{:else}
+								<div class="memory-empty">
+									<span>✦</span>
+									<p>아직 기록이 없어요.<br />첫 장을 열어보세요.</p>
+								</div>
+							{/if}
 						</div>
-					{:else}
-						<p class="history-empty">아직 서버 기록이 없습니다. 첫 기록을 남겨보세요.</p>
-					{/if}
+					</div>
 				</section>
 
 				<a class="card betting-link" href={`/bets?guild=${selectedGuild.id}`}>
@@ -1343,14 +1370,17 @@
 
 	.memory-card {
 		display: grid;
-		gap: 22px;
+		gap: 26px;
+		padding: 0;
+		overflow: hidden;
+		background: radial-gradient(circle at 0 0, rgba(107, 82, 255, 0.13), transparent 34%), #11141a;
 	}
 
 	.memory-heading {
 		display: flex;
-		justify-content: space-between;
-		gap: 20px;
-		align-items: flex-start;
+		gap: 14px;
+		align-items: center;
+		padding: 27px 28px 0;
 	}
 
 	.memory-heading h3,
@@ -1358,78 +1388,241 @@
 		margin: 0;
 	}
 
-	.memory-heading > div > p:last-child {
+	.memory-heading > div:last-child > p:last-child {
 		margin-top: 7px;
-		color: var(--muted);
+		color: #858d9d;
 	}
 
-	.memory-heading > span {
-		color: var(--muted);
-		font-size: 13px;
+	.memory-title-icon {
+		display: grid;
+		width: 42px;
+		height: 42px;
+		place-items: center;
+		flex: 0 0 auto;
+		border: 1px solid #5544b2;
+		border-radius: 13px;
+		color: #c6bcff;
+		background: #2a2351;
+		box-shadow: 0 10px 28px rgba(76, 54, 194, 0.22);
+	}
+
+	.memory-layout {
+		display: grid;
+		grid-template-columns: minmax(270px, 0.7fr) minmax(0, 1.3fr);
+		border-top: 1px solid #222732;
 	}
 
 	.memory-form {
 		display: grid;
-		grid-template-columns: minmax(150px, 0.28fr) 1fr auto;
-		gap: 14px;
-		align-items: end;
+		align-content: start;
+		gap: 16px;
+		padding: 26px 28px 28px;
+		border-right: 1px solid #222732;
+		background: rgba(9, 11, 15, 0.38);
 	}
 
-	.memory-form label {
+	.memory-form-heading {
 		display: grid;
-		gap: 7px;
-		font-size: 13px;
-		font-weight: 700;
+		gap: 3px;
 	}
 
-	.memory-form input,
-	.memory-form textarea {
+	.memory-form-heading span,
+	.memory-archive-heading strong {
+		font-size: 14px;
+		font-weight: 800;
+	}
+
+	.memory-form-heading small,
+	.memory-archive-heading span {
+		color: #737b8b;
+		font-size: 11px;
+	}
+
+	.memory-date {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 8px 8px 8px 13px;
+		border: 1px solid #292f3b;
+		border-radius: 10px;
+		background: #0d1015;
+	}
+
+	.memory-date span {
+		color: #8d95a5;
+		font-size: 11px;
+		font-weight: 700;
+		white-space: nowrap;
+	}
+
+	.memory-date input {
+		width: 142px;
+		padding: 7px 8px;
+		border: 0;
+		background: #171b23;
+		font-size: 12px;
+	}
+
+	.memory-content {
+		display: grid;
+	}
+
+	.memory-content textarea {
 		width: 100%;
 		box-sizing: border-box;
-	}
-
-	.memory-form textarea {
-		min-height: 84px;
+		min-height: 126px;
+		padding: 14px;
+		border-color: #292f3b;
+		border-radius: 10px;
+		background: #0d1015;
+		line-height: 1.6;
 		resize: vertical;
 	}
 
 	.memory-form button {
-		min-height: 44px;
-		margin-bottom: 1px;
+		display: flex;
+		min-height: 45px;
+		align-items: center;
+		justify-content: space-between;
+		padding-inline: 16px;
+		background: linear-gradient(135deg, #6751ec, #765cff);
+	}
+
+	.memory-form button b {
+		font-size: 18px;
+		font-weight: 500;
+	}
+
+	.memory-archive {
+		min-width: 0;
+		padding: 26px 28px 28px;
+	}
+
+	.memory-archive-heading {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 16px;
+	}
+
+	.memory-archive-heading > div {
+		display: grid;
+		gap: 3px;
+	}
+
+	.memory-archive-heading small {
+		display: grid;
+		width: 27px;
+		height: 27px;
+		place-items: center;
+		border-radius: 8px;
+		color: #a99cff;
+		background: #282342;
+		font-size: 11px;
+		font-weight: 800;
 	}
 
 	.memory-list {
 		display: grid;
-		gap: 10px;
+		max-height: 344px;
+		overflow-y: auto;
+		scrollbar-color: #343947 transparent;
 	}
 
 	.memory-list article {
-		padding: 16px;
-		border: 1px solid #292e39;
-		border-radius: 12px;
-		background: rgba(255, 255, 255, 0.025);
+		display: grid;
+		grid-template-columns: 54px minmax(0, 1fr);
+		gap: 15px;
+		padding: 15px 4px;
+		border-bottom: 1px solid #222732;
 	}
 
-	.memory-list article > div {
-		display: flex;
-		gap: 10px;
-		align-items: center;
+	.memory-list article:first-child {
+		padding-top: 2px;
 	}
 
 	.memory-list time {
-		color: #79dfb7;
-		font-size: 13px;
+		display: grid;
+		align-content: start;
+		gap: 1px;
+		padding-top: 2px;
+		color: #a99cff;
+	}
+
+	.memory-list time b {
+		font-size: 14px;
+	}
+
+	.memory-list time span {
+		color: #5f6878;
+		font-size: 10px;
+	}
+
+	.memory-entry {
+		min-width: 0;
+	}
+
+	.memory-entry p {
+		margin: 0;
+		color: #d5d8df;
+		white-space: pre-wrap;
+		line-height: 1.6;
+	}
+
+	.memory-author {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-top: 9px;
+		color: #737b8b;
+		font-size: 11px;
+	}
+
+	.memory-author i {
+		display: grid;
+		width: 18px;
+		height: 18px;
+		place-items: center;
+		border-radius: 50%;
+		color: #cbc4f5;
+		background: #342c59;
+		font-size: 9px;
+		font-style: normal;
 		font-weight: 800;
 	}
 
-	.memory-list strong {
-		font-size: 13px;
+	.memory-empty {
+		display: grid;
+		min-height: 220px;
+		place-items: center;
+		align-content: center;
+		gap: 10px;
+		color: #687181;
+		text-align: center;
 	}
 
-	.memory-list p {
-		margin: 8px 0 0;
-		white-space: pre-wrap;
-		line-height: 1.6;
+	.memory-empty span {
+		font-size: 24px;
+		color: #504979;
+	}
+
+	.memory-empty p {
+		margin: 0;
+		font-size: 12px;
+		line-height: 1.7;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
 	}
 	.card-title {
 		display: flex;
@@ -1794,11 +1987,18 @@
 		.attendance-grid {
 			grid-template-columns: 1fr;
 		}
-		.memory-heading {
-			flex-direction: column;
+		.memory-layout {
+			grid-template-columns: 1fr;
 		}
 		.memory-form {
-			grid-template-columns: 1fr;
+			border-right: 0;
+			border-bottom: 1px solid #222732;
+		}
+		.memory-heading,
+		.memory-form,
+		.memory-archive {
+			padding-left: 20px;
+			padding-right: 20px;
 		}
 		.reward-heading {
 			flex-direction: column;
