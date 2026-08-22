@@ -25,6 +25,7 @@ import ranking from './commands/economy/ranking';
 import inventory from './commands/economy/inventory';
 import useItem from './commands/economy/use-item';
 import dashboard from './commands/utility/dashboard';
+import memory from './commands/utility/memory';
 import { getLanguage } from './i18n';
 import { startMonthlyBurnScheduler, stopMonthlyBurnScheduler } from './monthly-burn';
 import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
@@ -37,6 +38,8 @@ import {
 	stopAttendanceReminderScheduler
 } from './attendance-reminders';
 import { handleMemberMessage } from './member-activity';
+import { startDailyMemoryScheduler, stopDailyMemoryScheduler } from './daily-memories';
+import { handleMemoryButton, handleMemoryModal } from './memory-interactions';
 
 dotenv.config();
 
@@ -71,6 +74,7 @@ async function shutdown(signal: NodeJS.Signals) {
 		stopMonthlyBurnScheduler();
 		stopAutomaticPaymentScheduler();
 		stopAttendanceReminderScheduler();
+		stopDailyMemoryScheduler();
 		state.client?.removeAllListeners();
 		state.client?.destroy();
 		state.client = null;
@@ -115,7 +119,8 @@ const commands = new Map<string, Command>([
 	[ranking.data.name, ranking],
 	[inventory.data.name, inventory],
 	[useItem.data.name, useItem],
-	[dashboard.data.name, dashboard]
+	[dashboard.data.name, dashboard],
+	[memory.data.name, memory]
 ]);
 
 const LOGIN_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000] as const;
@@ -162,6 +167,7 @@ async function start() {
 	startMonthlyBurnScheduler();
 	startAutomaticPaymentScheduler();
 	startAttendanceReminderScheduler();
+	startDailyMemoryScheduler();
 	if (!process.env.BOT_TOKEN) {
 		console.warn('BOT_TOKEN is not configured; Discord bot startup skipped.');
 		return;
@@ -216,6 +222,19 @@ async function start() {
 function bindInteractionHandler(client: Client) {
 	client.removeAllListeners(Events.InteractionCreate);
 	client.on(Events.InteractionCreate, async (interaction) => {
+		try {
+			if (interaction.isButton() && (await handleMemoryButton(interaction))) return;
+			if (interaction.isModalSubmit() && (await handleMemoryModal(interaction))) return;
+		} catch (error) {
+			console.error('Memory interaction failed:', error);
+			const content = '기록 요청을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+			if (interaction.isRepliable()) {
+				if (interaction.replied || interaction.deferred)
+					await interaction.followUp({ content, flags: MessageFlags.Ephemeral });
+				else await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+			}
+			return;
+		}
 		if (interaction.isAutocomplete()) {
 			const command = commands.get(interaction.commandName);
 			try {

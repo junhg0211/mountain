@@ -91,6 +91,7 @@
 		bet_weighted: '가중치 정산',
 		attendance: '출석 보상',
 		voice_activity: '음성 활동 보상',
+		daily_memory: '일일 기록 보상',
 		monthly_burn: '월간 소각',
 		role_subscription: '역할 구독',
 		scheduled_transfer: '자동 송금',
@@ -1207,7 +1208,8 @@
 	.kind.bet_payout,
 	.kind.bet_refund,
 	.kind.attendance,
-	.kind.voice_activity {
+	.kind.voice_activity,
+	.kind.daily_memory {
 		color: #78dcb2;
 		background: #153c32;
 	}

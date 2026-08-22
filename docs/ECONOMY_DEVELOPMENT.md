@@ -46,24 +46,25 @@ remain exact.
 The `transactions` table is the source of transaction history. Every successful balance mutation
 must insert exactly one row in the same database transaction as its balance update.
 
-| Operation      | `sender_id`  | `recipient_id` | `transaction_type` |
-| -------------- | ------------ | -------------- | ------------------ |
-| Transfer       | sender       | recipient      | `transfer`         |
-| Mint           | `NULL`       | credited user  | `mint`             |
-| Burn           | debited user | `NULL`         | `burn`             |
-| Bet stake      | participant  | `NULL`         | `bet_stake`        |
-| Bet payout     | `NULL`       | winner         | `bet_payout`       |
-| Bet refund     | `NULL`       | participant    | `bet_refund`       |
-| Table funding  | owner        | `NULL`         | `bet_fund`         |
-| House fallback | owner        | `NULL`         | `bet_house_cover`  |
-| House return   | `NULL`       | owner          | `bet_house_refund` |
-| Weighted settle| losing user  | winning user   | `bet_weighted`     |
-| Attendance     | `NULL`       | rewarded user  | `attendance`       |
-| Voice activity | `NULL`       | rewarded user  | `voice_activity`   |
-| Monthly burn   | debited user | `NULL`         | `monthly_burn`     |
-| Role renewal   | subscriber   | `NULL`         | `role_subscription` |
-| Scheduled pay  | sender       | recipient      | `scheduled_transfer` |
-| Item use       | `NULL`       | rewarded user  | `item_use`         |
+| Operation       | `sender_id`  | `recipient_id` | `transaction_type`   |
+| --------------- | ------------ | -------------- | -------------------- |
+| Transfer        | sender       | recipient      | `transfer`           |
+| Mint            | `NULL`       | credited user  | `mint`               |
+| Burn            | debited user | `NULL`         | `burn`               |
+| Bet stake       | participant  | `NULL`         | `bet_stake`          |
+| Bet payout      | `NULL`       | winner         | `bet_payout`         |
+| Bet refund      | `NULL`       | participant    | `bet_refund`         |
+| Table funding   | owner        | `NULL`         | `bet_fund`           |
+| House fallback  | owner        | `NULL`         | `bet_house_cover`    |
+| House return    | `NULL`       | owner          | `bet_house_refund`   |
+| Weighted settle | losing user  | winning user   | `bet_weighted`       |
+| Attendance      | `NULL`       | rewarded user  | `attendance`         |
+| Voice activity  | `NULL`       | rewarded user  | `voice_activity`     |
+| Daily memory    | `NULL`       | contributor    | `daily_memory`       |
+| Monthly burn    | debited user | `NULL`         | `monthly_burn`       |
+| Role renewal    | subscriber   | `NULL`         | `role_subscription`  |
+| Scheduled pay   | sender       | recipient      | `scheduled_transfer` |
+| Item use        | `NULL`       | rewarded user  | `item_use`           |
 
 Signed weighted settlement is owner-only and uses an integer weight for every pool member. The
 service centers all weights around their arithmetic mean, treating that mean as zero, so the raw
@@ -255,6 +256,23 @@ Personal history displays the user's balance immediately after each listed trans
 exactly with integer cents by starting from the current guild balance and walking ledger rows from
 newest to oldest, reversing credits and debits after recording each row's displayed balance. This
 keeps legacy rows usable without storing mutable balance snapshots.
+
+## Daily server memories
+
+At midnight in `Asia/Seoul`, every guild with a notification channel receives a lightweight
+prompt to add to its shared history. The form defaults to yesterday but accepts any valid past or
+current date. The prompt run is unique by `(guild_id, prompt_date)` so the
+minute scheduler cannot post it twice. Members contribute through a modal, and records are shared
+within the guild rather than treated as private user journals. One member can keep one entry per
+Korean calendar date and may edit it later.
+
+The `/memory` command and the prompt's history button group guild entries from one week and one,
+two, three, four, six, and twelve calendar months before the base date. Month subtraction clamps to
+the final valid day for short months.
+
+`daily_memory_reward` is `0.00` by default. A positive value rewards only a member's first entry
+for a given date; edits never pay again. Creating the entry, locking and crediting the guild-scoped
+account, and inserting the `daily_memory` ledger row happen in the same database transaction.
 
 ## Database schema changes
 

@@ -16,6 +16,7 @@ export type TransactionType =
 	| 'bet_weighted'
 	| 'attendance'
 	| 'voice_activity'
+	| 'daily_memory'
 	| 'monthly_burn'
 	| 'role_subscription'
 	| 'scheduled_transfer'
@@ -102,6 +103,7 @@ export async function getUserTransactions(guildId: string, userId: string, limit
 			type === 'bet_refund' ||
 			type === 'attendance' ||
 			type === 'voice_activity' ||
+			type === 'daily_memory' ||
 			type === 'item_use' ||
 			type === 'item_sale' ||
 			type === 'bet_house_refund' ||

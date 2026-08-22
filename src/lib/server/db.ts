@@ -125,6 +125,7 @@ const TABLES = [
 		attendance_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
 		voice_activity_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
 		voice_activity_daily_cap DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+		daily_memory_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
 		monthly_burn_enabled BOOLEAN NOT NULL DEFAULT TRUE,
 		monthly_burn_basis_points INT NOT NULL DEFAULT 1000,
 		monthly_burn_day TINYINT NOT NULL DEFAULT 1,
@@ -353,6 +354,24 @@ const TABLES = [
 		PRIMARY KEY (guild_id, reminder_date, chunk_index),
 		INDEX attendance_reminder_runs_sent_idx (sent_at)
 	)`,
+	`CREATE TABLE IF NOT EXISTS daily_memories (
+		guild_id VARCHAR(255) NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		memory_date DATE NOT NULL,
+		content VARCHAR(1000) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		PRIMARY KEY (guild_id, user_id, memory_date),
+		INDEX daily_memories_guild_date_idx (guild_id, memory_date),
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	)`,
+	`CREATE TABLE IF NOT EXISTS daily_memory_prompt_runs (
+		guild_id VARCHAR(255) NOT NULL,
+		prompt_date DATE NOT NULL,
+		sent_at TIMESTAMP NULL DEFAULT NULL,
+		PRIMARY KEY (guild_id, prompt_date),
+		INDEX daily_memory_prompt_runs_sent_idx (sent_at)
+	)`,
 	`CREATE TABLE IF NOT EXISTS betting_pools (
 		id BIGINT AUTO_INCREMENT PRIMARY KEY,
 		guild_id VARCHAR(255) NOT NULL,
@@ -451,6 +470,7 @@ const REPAIRS = [
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS attendance_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS voice_activity_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS voice_activity_daily_cap DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
+	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS daily_memory_reward DECIMAL(15, 2) NOT NULL DEFAULT 0.00`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS monthly_burn_enabled BOOLEAN NOT NULL DEFAULT TRUE`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS monthly_burn_basis_points INT NOT NULL DEFAULT 1000`,
 	`ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS monthly_burn_day TINYINT NOT NULL DEFAULT 1`,

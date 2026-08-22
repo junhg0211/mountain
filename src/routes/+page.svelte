@@ -111,6 +111,7 @@
 			| 'bet_weighted'
 			| 'attendance'
 			| 'voice_activity'
+			| 'daily_memory'
 			| 'monthly_burn'
 			| 'role_subscription'
 			| 'scheduled_transfer'
@@ -125,6 +126,7 @@
 		if (transaction.type === 'burn') return '관리자 소각';
 		if (transaction.type === 'attendance') return '일일 출석 보상';
 		if (transaction.type === 'voice_activity') return '음성 활동 보상';
+		if (transaction.type === 'daily_memory') return '일일 기록 보상';
 		if (transaction.type === 'monthly_burn') return '월간 보유금 소각';
 		if (transaction.type === 'role_subscription') return '역할 구독 결제';
 		if (transaction.type === 'item_use') return '아이템 사용 보상';

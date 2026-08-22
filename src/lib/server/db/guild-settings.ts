@@ -63,6 +63,15 @@ export async function setAttendanceReward(guildId: string, amount: string): Prom
 	`;
 }
 
+export async function setDailyMemoryReward(guildId: string, amount: string): Promise<void> {
+	const db = await getDB();
+	await db`
+		INSERT INTO guild_settings (guild_id, daily_memory_reward)
+		VALUES (${guildId}, ${amount})
+		ON DUPLICATE KEY UPDATE daily_memory_reward=VALUES(daily_memory_reward)
+	`;
+}
+
 export interface VoiceActivitySettings {
 	reward: string;
 	dailyCap: string;

@@ -1,5 +1,6 @@
 import {
 	setCurrencyUnit,
+	setDailyMemoryReward,
 	setMonthlyBurnSettings,
 	setVoiceActivitySettings
 } from '$lib/server/db/guild-settings';
@@ -79,6 +80,27 @@ const data = new SlashCommandBuilder()
 					})
 					.setMinLength(1)
 					.setMaxLength(16)
+					.setRequired(true)
+			)
+	)
+	.addSubcommand((subcommand) =>
+		subcommand
+			.setName('memory-reward')
+			.setNameLocalizations({ [Locale.Korean]: '기록보상', [Locale.Japanese]: '記録報酬' })
+			.setDescription('Configure the reward for contributing a daily server memory.')
+			.setDescriptionLocalizations({
+				[Locale.Korean]: '서버의 일일 기록에 참여할 때 받는 보상을 설정합니다.',
+				[Locale.Japanese]: 'サーバーの日次記録への参加報酬を設定します。'
+			})
+			.addStringOption((option) =>
+				option
+					.setName('reward')
+					.setNameLocalizations({ [Locale.Korean]: '보상', [Locale.Japanese]: '報酬' })
+					.setDescription('Reward for the first entry per user and date. Use 0 to disable.')
+					.setDescriptionLocalizations({
+						[Locale.Korean]: '사용자별·날짜별 첫 기록 보상입니다. 0은 비활성화입니다.',
+						[Locale.Japanese]: 'ユーザー・日付ごとの初回記録報酬です。0で無効になります。'
+					})
 					.setRequired(true)
 			)
 	)
@@ -191,6 +213,38 @@ async function execute(interaction: ChatInputCommandInteraction) {
 
 	const language = getLanguage(interaction.locale);
 	const subcommand = interaction.options.getSubcommand();
+	if (subcommand === 'memory-reward') {
+		const rawReward = interaction.options.getString('reward', true).trim();
+		const reward = isZeroMoney(rawReward) ? '0.00' : parseMoney(rawReward);
+		if (!reward) {
+			await interaction.reply({
+				content: {
+					en: 'Enter 0 to disable, or a reward of at least 0.01.',
+					ko: '비활성화하려면 0, 아니면 0.01 이상의 보상을 입력해 주세요.',
+					ja: '無効にするには0、または0.01以上の報酬を入力してください。'
+				}[language],
+				flags: MessageFlags.Ephemeral
+			});
+			return;
+		}
+		await setDailyMemoryReward(interaction.guildId, reward);
+		await interaction.reply({
+			content:
+				reward === '0.00'
+					? {
+							en: 'Daily memory rewards are disabled.',
+							ko: '일일 기록 보상을 비활성화했습니다.',
+							ja: '日次記録報酬を無効にしました。'
+						}[language]
+					: {
+							en: `Daily memory reward: **${formatMoneyDisplay(reward)}** per user's first entry for each date.`,
+							ko: `일일 기록 보상: 사용자별·날짜별 첫 기록에 **${formatMoneyDisplay(reward)}**`,
+							ja: `日次記録報酬: ユーザー・日付ごとの初回記録に **${formatMoneyDisplay(reward)}**`
+						}[language],
+			flags: MessageFlags.Ephemeral
+		});
+		return;
+	}
 	if (subcommand === 'monthly-burn') {
 		const enabled = interaction.options.getBoolean('enabled', true);
 		const percentage = interaction.options.getString('percentage', true).trim();
