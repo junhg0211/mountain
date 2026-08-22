@@ -1370,6 +1370,7 @@
 
 	.memory-card {
 		display: grid;
+		grid-column: 1 / -1;
 		gap: 26px;
 		padding: 0;
 		overflow: hidden;
