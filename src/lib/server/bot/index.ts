@@ -26,6 +26,7 @@ import inventory from './commands/economy/inventory';
 import useItem from './commands/economy/use-item';
 import dashboard from './commands/utility/dashboard';
 import memory from './commands/utility/memory';
+import record from './commands/utility/record';
 import { getLanguage } from './i18n';
 import { startMonthlyBurnScheduler, stopMonthlyBurnScheduler } from './monthly-burn';
 import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
@@ -120,7 +121,8 @@ const commands = new Map<string, Command>([
 	[inventory.data.name, inventory],
 	[useItem.data.name, useItem],
 	[dashboard.data.name, dashboard],
-	[memory.data.name, memory]
+	[memory.data.name, memory],
+	[record.data.name, record]
 ]);
 
 const LOGIN_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000] as const;
