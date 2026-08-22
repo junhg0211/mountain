@@ -479,6 +479,53 @@
 					</div>
 				{/if}
 
+				<section class="card memory-card">
+					<div class="memory-heading">
+						<div>
+							<p class="card-label">SERVER MEMORIES</p>
+							<h3>우리 서버의 기록</h3>
+							<p>날짜를 골라 함께 기억하고 싶은 일을 남겨보세요.</p>
+						</div>
+						<span>최근 {data.dailyMemories.length}개</span>
+					</div>
+					<form class="memory-form" method="POST" action={`?/addMemory&guild=${selectedGuild.id}`}>
+						<input type="hidden" name="guildId" value={selectedGuild.id} />
+						<label
+							>날짜<input
+								type="date"
+								name="date"
+								value={data.defaultMemoryDate}
+								max={new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })}
+								required
+							/></label
+						>
+						<label class="memory-content"
+							>기록<textarea
+								name="content"
+								maxlength="1000"
+								placeholder="서버에 있었던 일을 편하게 적어 주세요."
+								required
+							></textarea></label
+						>
+						<button>기록 남기기</button>
+					</form>
+					{#if data.dailyMemories.length}
+						<div class="memory-list">
+							{#each data.dailyMemories as memory}
+								<article>
+									<div>
+										<time datetime={memory.date}>{memory.date}</time>
+										<strong>{memory.username}</strong>
+									</div>
+									<p>{memory.content}</p>
+								</article>
+							{/each}
+						</div>
+					{:else}
+						<p class="history-empty">아직 서버 기록이 없습니다. 첫 기록을 남겨보세요.</p>
+					{/if}
+				</section>
+
 				<a class="card betting-link" href={`/bets?guild=${selectedGuild.id}`}>
 					<div>
 						<p class="card-label">LIVE BETTING</p>
@@ -1293,6 +1340,97 @@
 	.attendance-ranking strong {
 		color: #79dfb7;
 	}
+
+	.memory-card {
+		display: grid;
+		gap: 22px;
+	}
+
+	.memory-heading {
+		display: flex;
+		justify-content: space-between;
+		gap: 20px;
+		align-items: flex-start;
+	}
+
+	.memory-heading h3,
+	.memory-heading p {
+		margin: 0;
+	}
+
+	.memory-heading > div > p:last-child {
+		margin-top: 7px;
+		color: var(--muted);
+	}
+
+	.memory-heading > span {
+		color: var(--muted);
+		font-size: 13px;
+	}
+
+	.memory-form {
+		display: grid;
+		grid-template-columns: minmax(150px, 0.28fr) 1fr auto;
+		gap: 14px;
+		align-items: end;
+	}
+
+	.memory-form label {
+		display: grid;
+		gap: 7px;
+		font-size: 13px;
+		font-weight: 700;
+	}
+
+	.memory-form input,
+	.memory-form textarea {
+		width: 100%;
+		box-sizing: border-box;
+	}
+
+	.memory-form textarea {
+		min-height: 84px;
+		resize: vertical;
+	}
+
+	.memory-form button {
+		min-height: 44px;
+		margin-bottom: 1px;
+	}
+
+	.memory-list {
+		display: grid;
+		gap: 10px;
+	}
+
+	.memory-list article {
+		padding: 16px;
+		border: 1px solid #292e39;
+		border-radius: 12px;
+		background: rgba(255, 255, 255, 0.025);
+	}
+
+	.memory-list article > div {
+		display: flex;
+		gap: 10px;
+		align-items: center;
+	}
+
+	.memory-list time {
+		color: #79dfb7;
+		font-size: 13px;
+		font-weight: 800;
+	}
+
+	.memory-list strong {
+		font-size: 13px;
+	}
+
+	.memory-list p {
+		margin: 8px 0 0;
+		white-space: pre-wrap;
+		line-height: 1.6;
+	}
 	.card-title {
 		display: flex;
 		gap: 13px;
@@ -1654,6 +1792,12 @@
 			grid-template-columns: 1fr;
 		}
 		.attendance-grid {
+			grid-template-columns: 1fr;
+		}
+		.memory-heading {
+			flex-direction: column;
+		}
+		.memory-form {
 			grid-template-columns: 1fr;
 		}
 		.reward-heading {

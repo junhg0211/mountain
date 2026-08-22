@@ -17,6 +17,14 @@ export interface DailyMemory {
 	username: string;
 }
 
+export interface ServerMemoryEntry {
+	date: string;
+	content: string;
+	username: string;
+	userId: string;
+	updatedAt: string;
+}
+
 export function koreanDate(now = new Date()) {
 	const parts = new Intl.DateTimeFormat('en-US', {
 		timeZone: 'Asia/Seoul',
@@ -126,6 +134,30 @@ export async function getRelatedMemories(guildId: string, baseDate: string) {
 			label: labels.get(String(row.memory_date))!,
 			content: String(row.content),
 			username: String(row.username)
+		})
+	);
+}
+
+export async function getRecentDailyMemories(guildId: string, limit = 30) {
+	const db = await getDB();
+	const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 100));
+	const rows = await db`
+		SELECT DATE_FORMAT(daily_memories.memory_date, '%Y-%m-%d') AS memory_date,
+			daily_memories.content, daily_memories.user_id, daily_memories.updated_at,
+			users.username
+		FROM daily_memories
+		JOIN users ON users.id=daily_memories.user_id
+		WHERE daily_memories.guild_id=${guildId}
+		ORDER BY daily_memories.memory_date DESC, daily_memories.updated_at DESC
+		LIMIT ${safeLimit}
+	`;
+	return (rows as Record<string, unknown>[]).map(
+		(row): ServerMemoryEntry => ({
+			date: String(row.memory_date),
+			content: String(row.content),
+			username: String(row.username),
+			userId: String(row.user_id),
+			updatedAt: new Date(row.updated_at as string | number | Date).toISOString()
 		})
 	);
 }

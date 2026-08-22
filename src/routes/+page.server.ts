@@ -47,6 +47,13 @@ import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
+import {
+	getRecentDailyMemories,
+	isValidMemoryDate,
+	koreanDate,
+	saveDailyMemory,
+	yesterday
+} from '$lib/server/db/daily-memories';
 import { calculateVoiceReward, getVoiceActivityRemaining } from '$lib/server/db/voice-activity';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { fail, redirect } from '@sveltejs/kit';
@@ -79,6 +86,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			inventory: [],
 			shopItems: [],
 			itemMovements: [],
+			dailyMemories: [],
+			defaultMemoryDate: yesterday(koreanDate().date),
 			notice
 		};
 
@@ -143,7 +152,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		voiceRewardRemaining,
 		inventory,
 		itemMovements,
-		shopItems
+		shopItems,
+		dailyMemories
 	] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
@@ -153,9 +163,10 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				getVoiceActivityRemaining(selectedGuildId, user.id),
 				getInventory(selectedGuildId, user.id),
 				getItemMovements(selectedGuildId, user.id, 10),
-				listItemDefinitions(selectedGuildId)
+				listItemDefinitions(selectedGuildId),
+				getAccessibleDailyMemories(selectedGuildId, user.id)
 			])
-		: [[], [], null, [], '0.00', [], [], []];
+		: [[], [], null, [], '0.00', [], [], [], []];
 	return {
 		user,
 		guilds,
@@ -169,6 +180,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		inventory,
 		itemMovements,
 		shopItems: shopItems.filter((item) => item.purchasePrice !== null || item.sellPrice !== null),
+		dailyMemories,
+		defaultMemoryDate: yesterday(koreanDate().date),
 		notice
 	};
 };
@@ -200,10 +213,48 @@ async function requireMembership(cookies: Parameters<typeof getSessionUser>[0], 
 	return rows.length === 1 ? { user, permissions: String(rows[0].permissions) } : null;
 }
 
+async function getAccessibleDailyMemories(guildId: string, userId: string) {
+	const member = await getGuildMember(guildId, userId);
+	return member && !member.user.bot ? getRecentDailyMemories(guildId) : [];
+}
+
 export const actions: Actions = {
 	logout: async ({ cookies }) => {
 		await deleteSession(cookies);
 		redirect(303, '/');
+	},
+	addMemory: async ({ cookies, request }) => {
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const date = String(form.get('date') || '').trim();
+		const content = String(form.get('content') || '').trim();
+		const membership = await requireMembership(cookies, guildId);
+		if (!membership) return fail(401, { message: '서버 접근 권한이 없습니다.' });
+		if (!isValidMemoryDate(date, koreanDate().date))
+			return fail(400, {
+				message: '날짜를 YYYY-MM-DD 형식의 오늘 또는 과거 날짜로 입력해 주세요.'
+			});
+		if (!content || content.length > 1000)
+			return fail(400, { message: '기록은 1~1,000자로 입력해 주세요.' });
+		const member = await getGuildMember(guildId, membership.user.id);
+		if (!member || member.user.bot)
+			return fail(403, { message: '현재 Discord 서버에 참여 중인 사용자만 기록할 수 있습니다.' });
+		const username = member.nick || member.user.global_name || member.user.username;
+		const reward = await saveDailyMemory({
+			guildId,
+			userId: membership.user.id,
+			username,
+			entryDate: date,
+			content
+		});
+		const unit = await getCurrencyUnit(guildId);
+		redirectToDashboard(
+			cookies,
+			guildId,
+			reward === '0.00'
+				? `${date}의 서버 기록을 저장했습니다.`
+				: `${date}의 서버 기록을 저장하고 ${formatMoneyDisplay(reward)} ${unit}을(를) 받았습니다.`
+		);
 	},
 	tradeItem: async ({ cookies, request }) => {
 		const form = await request.formData();
