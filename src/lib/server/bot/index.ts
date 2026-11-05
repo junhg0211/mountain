@@ -25,6 +25,7 @@ import ranking from './commands/economy/ranking';
 import inventory from './commands/economy/inventory';
 import useItem from './commands/economy/use-item';
 import dashboard from './commands/utility/dashboard';
+import crypt, { handleCryptModal } from './commands/utility/crypt';
 import memory from './commands/utility/memory';
 import record from './commands/utility/record';
 import { getLanguage } from './i18n';
@@ -121,6 +122,7 @@ const commands = new Map<string, Command>([
 	[inventory.data.name, inventory],
 	[useItem.data.name, useItem],
 	[dashboard.data.name, dashboard],
+	[crypt.data.name, crypt],
 	[memory.data.name, memory],
 	[record.data.name, record]
 ]);
@@ -224,6 +226,7 @@ async function start() {
 function bindInteractionHandler(client: Client) {
 	client.removeAllListeners(Events.InteractionCreate);
 	client.on(Events.InteractionCreate, async (interaction) => {
+		if (interaction.isModalSubmit() && (await handleCryptModal(interaction))) return;
 		try {
 			if (interaction.isButton() && (await handleMemoryButton(interaction))) return;
 			if (interaction.isModalSubmit() && (await handleMemoryModal(interaction))) return;
