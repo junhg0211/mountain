@@ -41,8 +41,7 @@ test('RFC 7748 section 6.1 vector and versioned transcript derivation', () => {
 	const context = JSON.stringify(['Mountain/DH3', GROUP_ID, '123', ...[A, B].sort()]);
 	const hash = createHash('sha256').update(context).digest();
 	const expected = {
-		key: Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(32), hash, 32)).toString('base64url'),
-		fingerprint: hash.toString('hex')
+		key: Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(32), hash, 32)).toString('base64url')
 	};
 	expect(sharedKey('123', a, B)).toEqual(expected);
 	expect(sharedKey('123', b, A)).toEqual(expected);

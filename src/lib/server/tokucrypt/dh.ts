@@ -82,8 +82,7 @@ export function sharedKey(guild: string, privateKey: string, peerPublicKey: stri
 		return {
 			key: Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(32), transcript, 32)).toString(
 				'base64url'
-			),
-			fingerprint: transcript.toString('hex')
+			)
 		};
 	} finally {
 		secret.fill(0);

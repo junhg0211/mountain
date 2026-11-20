@@ -15,10 +15,7 @@ must generate new pairs. Already derived old passwords still decrypt existing ci
    complete 43-character public key. Replies are ephemeral.
 2. `/암호 공유키생성` takes your private key and your peer's public key. Your own public key is
    computed automatically. There is no group selection or parameter command.
-3. Compare the full exchange fingerprint through a trusted path associated with the intended
-   participant. Public keys do not authenticate a sender: substitution can enable a man-in-the-middle
-   attack unless the comparison is trustworthy.
-4. Copy the resulting 43-character password into existing encryption/decryption commands.
+3. Copy the resulting 43-character password into existing encryption/decryption commands.
    Preserve case and avoid spaces or code fences. A decrypted Discord ID is a claim, not proof
    of account ownership.
 
@@ -38,8 +35,9 @@ requests per minute. Fresh Discord membership checks precede generation and deri
 
 DH3 uses the native 32-byte shared secret and HKDF-SHA256 with a 32-byte zero salt. The info is
 SHA256(JSON(["Mountain/DH3","X25519",guild,...lexically sorted canonical base64url public keys])).
-The same hash is the displayed fingerprint. This binds the protocol, curve, guild and both public
-keys independent of direction. No sender identity is authenticated by this transcript.
+This binds the protocol, curve, guild and both public keys independent of direction. The hash is
+internal key-derivation context and is not returned or displayed. Public keys do not authenticate
+a sender, and no exchange verification value is provided; active key substitution is not detected.
 The output is 32 bytes in unpadded base64url. Existing Argon2id, server-derived guild keys and
 AES-256-GCM are unchanged. Private import buffers and shared-secret buffers are cleared after use;
 JavaScript strings and native key-object memory cannot be explicitly zeroized by this application.
@@ -48,7 +46,7 @@ Discord and the bot server receive secrets; this does not provide end-to-end enc
 those services. Ephemeral messages may be copied by recipients. Secret inputs use modals and all
 DH responses are ephemeral. Exceptions carrying secrets are contained without forwarding interaction
 payloads to shared logging. No user keys are persisted. Before real secret communication,
-independently review the deployed anonymous-channel flow and fingerprint comparison procedure.
+independently review the deployed anonymous-channel flow and its sender-authentication limitations.
 
 Tests include the RFC 7748 section 6.1 known-answer exchange, symmetric derivation, exact key lengths,
 existing cipher round trips, malformed and noncanonical encodings, low-order public values,

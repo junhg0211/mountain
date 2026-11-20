@@ -110,7 +110,7 @@ export async function handleDhModal(interaction: ModalSubmitInteraction): Promis
 		const field = (id: string) => interaction.fields.getTextInputValue(id);
 		const result = sharedKey(guild, field('private'), field('peer'));
 		await interaction.editReply({
-			content: `🔓 공유키 생성 완료\n공유 암호키:\n\`\`\`\n${result.key}\n\`\`\`\n기존 /암호 암호화 및 /암호 복호화의 비밀번호로 사용하세요.\n\n키 교환 확인값:\n\`${result.fingerprint}\`\n상대방과 확인값을 신뢰할 수 있는 경로로 비교하세요. 공개키는 발신자 인증을 포함하지 않습니다. 확인값 비교 없이 상대방을 신뢰하지 마세요. 복호화한 Discord ID도 상대방이 주장한 정보입니다.`,
+			content: `🔓 공유키 생성 완료\n공유 암호키:\n\`\`\`\n${result.key}\n\`\`\`\n기존 /암호 암호화 및 /암호 복호화의 비밀번호로 사용하세요.`,
 			allowedMentions: { parse: [] }
 		});
 	} catch (error) {
