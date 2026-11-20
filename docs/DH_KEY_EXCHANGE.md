@@ -1,59 +1,60 @@
-# DH key exchange
+# X25519 key exchange
 
-## Public server parameters
+## Setup and use
 
-The server uses RFC 7919 ffdhe2048 with g=2, a 2048-bit safe prime p and q=(p-1)/2.
-These are public constants, not secrets. Do not generate arbitrary replacement primes.
-Source: https://www.rfc-editor.org/rfc/rfc7919.html#appendix-A.1
+Key exchange uses X25519 (RFC 7748 section 6.1). Private keys, public keys and derived passwords
+are all 32-byte values displayed as exactly 43 unpadded base64url characters. No key registration,
+lookup service or permanent key storage is required.
 
-`.env.example` contains the complete decimal `DH_P` and `DH_Q` values. To print a fresh copy
-of the standard configuration from the repository root:
+`DH_P`, `DH_Q` and `DH_SIGNING_KEY` are no longer used and can be removed from deployment
+configuration. Existing TOKUCRYPT keys remain required for encryption/decryption.
+The previous finite-field decimal key pairs cannot be used in this version; both participants
+must generate new pairs. Already derived old passwords still decrypt existing ciphertext.
 
-```sh
-bun -e "import { parameterEnvironment } from './src/lib/server/tokucrypt/dh.ts'; process.stdout.write(parameterEnvironment());"
-```
-
-Copy the two output lines into the deployment environment. Keep each number on a single line.
-When both variables are omitted, the same standard group is used. If either is set, both must
-exactly match the supported standard pair; commands fail closed for mismatched or custom values.
-Validation runs before DH operations. `DH_SIGNING_KEY` is no longer used and may be removed.
-Existing TOKUCRYPT keys remain necessary for encryption/decryption.
-
-## Use
-
-1. Each participant runs `/암호 키쌍생성`. Keep the private number secret; exchange only the
-   public decimal number. Responses are ephemeral. No certificates or expiry apply.
-2. `/암호 공유키생성` takes your private number and the peer's public number. Your own public
-   key is computed automatically. Commands and modals have no group selection; the server always
-   uses its fixed ffdhe2048 parameters.
+1. Each participant runs `/암호 키쌍생성`. Keep the private key secret and exchange only the
+   complete 43-character public key. Replies are ephemeral.
+2. `/암호 공유키생성` takes your private key and your peer's public key. Your own public key is
+   computed automatically. There is no group selection or parameter command.
 3. Compare the full exchange fingerprint through a trusted path associated with the intended
-   participant. Numeric public keys do not authenticate a sender: an attacker who substitutes
-   keys can perform a man-in-the-middle attack unless this comparison is trustworthy.
+   participant. Public keys do not authenticate a sender: substitution can enable a man-in-the-middle
+   attack unless the comparison is trustworthy.
 4. Copy the resulting 43-character password into existing encryption/decryption commands.
-   Avoid whitespace and code fences. A decrypted Discord ID is a claim, not proof of ownership.
+   Preserve case and avoid spaces or code fences. A decrypted Discord ID is a claim, not proof
+   of account ownership.
 
-The command map already includes `crypt`. Re-register the complete command list using
-`reloadCommands` after deployment (see ECONOMY_DEVELOPMENT.md). Registration preserves the global
+The command map already includes `crypt`. Re-register the complete list through `reloadCommands`
+when command definitions change (see ECONOMY_DEVELOPMENT.md). Registration preserves the global
 Activity Entry Point and does not start a second gateway client.
 
-## Implementation review
+## Protocol and security review
 
-Exponents are independent, uniform rejection samples in [1,q-1] from cryptographic random bytes.
-OpenSSL performs secret exponent operations; JavaScript modular exponentiation only validates
-public subgroup membership. Public values require 2 <= B <= p-2 and B^q mod p = 1. Inputs are
-bounded before integer parsing; requests are limited to five per user per minute. Fresh Discord
-membership checks remain required for command execution. No user keys are persisted or logged.
+OpenSSL generates independent X25519 key pairs and performs private scalar operations. Raw private
+values use the RFC 8410 PKCS#8 wrapper for import. The application requires canonical unpadded
+base64url and canonical public field elements below 2^255-19; unlike the general RFC 7748 function,
+this application's input format rejects high-bit/noncanonical aliases. Native X25519 failures,
+low-order inputs producing zero secrets and reflected own keys are rejected. All-zero shared secrets
+are explicitly rejected as well. Inputs are bounded before decoding; each caller is limited to five
+requests per minute. Fresh Discord membership checks precede generation and derivation.
 
-DH2 derives a 256-byte big-endian shared integer. HKDF-SHA256 uses a 32-byte zero salt and the
-SHA256 hash of JSON(["Mountain/DH2",group,guild,...sorted fixed-width hexadecimal public keys])
-as info. This hash is also displayed as the fingerprint. Fixed-width encoding normalizes leading
-zeros and key order. The output is 32 bytes in unpadded base64url. Existing Argon2id, server-derived
-guild keys and AES-256-GCM remain unchanged. New DH2 keys differ from prior DH1 certificate keys;
-already generated passwords remain usable with existing ciphertext.
+DH3 uses the native 32-byte shared secret and HKDF-SHA256 with a 32-byte zero salt. The info is
+SHA256(JSON(["Mountain/DH3","X25519",guild,...lexically sorted canonical base64url public keys])).
+The same hash is the displayed fingerprint. This binds the protocol, curve, guild and both public
+keys independent of direction. No sender identity is authenticated by this transcript.
+The output is 32 bytes in unpadded base64url. Existing Argon2id, server-derived guild keys and
+AES-256-GCM are unchanged. Private import buffers and shared-secret buffers are cleared after use;
+JavaScript strings and native key-object memory cannot be explicitly zeroized by this application.
 
-Discord and the bot server receive secrets; this is not end-to-end encryption against those
-services. Ephemeral messages may be copied by recipients. JavaScript strings cannot be reliably
-zeroized; computed shared-secret buffers are cleared. Exceptions containing secret input are
-contained without forwarding to shared logging. Numeric keys deliberately remove the former
-server-issued ownership/session certificate; fingerprints require a trusted comparison channel.
-Independently review the complete deployed anonymous-channel flow before real secret communication.
+Discord and the bot server receive secrets; this does not provide end-to-end encryption against
+those services. Ephemeral messages may be copied by recipients. Secret inputs use modals and all
+DH responses are ephemeral. Exceptions carrying secrets are contained without forwarding interaction
+payloads to shared logging. No user keys are persisted. Before real secret communication,
+independently review the deployed anonymous-channel flow and fingerprint comparison procedure.
+
+Tests include the RFC 7748 section 6.1 known-answer exchange, symmetric derivation, exact key lengths,
+existing cipher round trips, malformed and noncanonical encodings, low-order public values,
+reflection, guild/transcript binding and ephemeral sanitized Discord replies.
+
+Sources:
+
+- https://www.rfc-editor.org/rfc/rfc7748.html#section-6.1
+- https://www.rfc-editor.org/rfc/rfc8410.html#section-7

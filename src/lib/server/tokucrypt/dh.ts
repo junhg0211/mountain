@@ -1,71 +1,46 @@
-import { createDiffieHellman, createHash, hkdfSync, randomBytes } from 'node:crypto';
+import {
+	createHash,
+	createPrivateKey,
+	createPublicKey,
+	diffieHellman,
+	generateKeyPairSync,
+	hkdfSync,
+	type KeyObject
+} from 'node:crypto';
 
-export const GROUP_ID = 'ffdhe2048';
-// RFC 7919, Appendix A.1. Only this pinned group is accepted.
-export const PRIME_HEX = `FFFFFFFF FFFFFFFF ADF85458 A2BB4A9A AFDC5620 273D3CF1
-D8B9C583 CE2D3695 A9E13641 146433FB CC939DCE 249B3EF9
-7D2FE363 630C75D8 F681B202 AEC4617A D3DF1ED5 D5FD6561
-2433F51F 5F066ED0 85636555 3DED1AF3 B557135E 7F57C935
-984F0C70 E0E68B77 E2A689DA F3EFE872 1DF158A1 36ADE735
-30ACCA4F 483A797A BC0AB182 B324FB61 D108A94B B2C8E3FB
-B96ADAB7 60D7F468 1D4F42A3 DE394DF4 AE56EDE7 6372BB19
-0B07A7C8 EE0A6D70 9E02FCE1 CDF7E2EC C03404CD 28342F61
-9172FE9C E98583FF 8E4F1232 EEF28183 C3FE3B1B 4C6FAD73
-3BB5FCBC 2EC22005 C58EF183 7D1683B2 C6F34A26 C1B2EFFA
-886B4238 61285C97 FFFFFFFF FFFFFFFF`
-	.replace(/\s/g, '')
-	.toLowerCase();
-export const P = BigInt('0x' + PRIME_HEX);
-export const Q = (P - 1n) / 2n;
+export const GROUP_ID = 'X25519';
 export class DhError extends Error {
-	constructor(public code: 'group' | 'private' | 'public' | 'format' | 'config' | 'limit') {
+	constructor(public code: 'public' | 'format' | 'limit') {
 		super(code);
 	}
 }
 const fail = (code: DhError['code']): never => {
 	throw new DhError(code);
 };
-export function validateGroup(group: string) {
-	if (group !== GROUP_ID) fail('group');
-	validateParameters();
+// RFC 8410 PKCS#8 wrapper for the raw 32-byte X25519 private value.
+const PRIVATE_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex');
+function decode(value: string) {
+	if (!/^[A-Za-z0-9_-]{43}$/.test(value)) return fail('format');
+	const raw = Buffer.from(value, 'base64url');
+	if (raw.length !== 32 || raw.toString('base64url') !== value) return fail('format');
+	return raw;
 }
-// Configuration is an allowlist, not permission to use arbitrary DH parameters.
-export function validateParameters() {
-	const p = process.env.DH_P;
-	const q = process.env.DH_Q;
-	if (p === undefined && q === undefined) return;
-	if (p !== P.toString() || q !== Q.toString()) fail('config');
+function privateObject(value: string): KeyObject {
+	const raw = decode(value);
+	const der = Buffer.concat([PRIVATE_PREFIX, raw]);
+	try {
+		return createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
+	} finally {
+		raw.fill(0);
+		der.fill(0);
+	}
 }
-export function parameterEnvironment() {
-	return `DH_P=${P}\nDH_Q=${Q}\n`;
-}
-function number(value: string) {
-	if (!/^[0-9]{1,617}$/.test(value)) return fail('format');
-	return BigInt(value);
-}
-export function validatePrivate(value: string) {
-	const a = number(value);
-	if (a < 1n || a >= Q) return fail('private');
-	return a;
-}
-// This exponent is public. Secret exponent operations use OpenSSL below.
-function pow(base: bigint, exponent: bigint) {
-	let result = 1n;
-	for (; exponent; exponent >>= 1n, base = (base * base) % P)
-		if (exponent & 1n) result = (result * base) % P;
-	return result;
-}
-export function validatePublic(value: string) {
-	const b = number(value);
-	if (b < 2n || b > P - 2n || pow(b, Q) !== 1n) return fail('public');
-	return b;
-}
-const bytes = (value: bigint) => Buffer.from(value.toString(16).padStart(512, '0'), 'hex');
-function engine(a: bigint) {
-	const dh = createDiffieHellman(Buffer.from(PRIME_HEX, 'hex'), 2);
-	dh.setPrivateKey(bytes(a));
-	dh.generateKeys();
-	return dh;
+function publicObject(value: string) {
+	const raw = decode(value);
+	// This application accepts canonical field elements only so the transcript has one encoding.
+	const prime = (1n << 255n) - 19n;
+	if (BigInt('0x' + Buffer.from(raw).reverse().toString('hex')) >= prime) return fail('public');
+	return createPublicKey({ key: { kty: 'OKP', crv: 'X25519', x: value }, format: 'jwk' });
 }
 const requests = new Map<string, { count: number; expires: number }>();
 export function limitDh(user: string) {
@@ -76,30 +51,34 @@ export function limitDh(user: string) {
 	item.count++;
 	requests.set(user, item);
 }
-export function generatePair(group: string) {
-	validateGroup(group);
-	let a: bigint;
-	do {
-		a = BigInt('0x' + randomBytes(256).toString('hex'));
-	} while (a < 1n || a >= Q);
+export function generatePair() {
+	const pair = generateKeyPairSync('x25519');
 	return {
-		privateKey: a.toString(),
-		publicKey: BigInt('0x' + engine(a).getPublicKey('hex')).toString()
+		privateKey: pair.privateKey.export({ format: 'jwk' }).d!,
+		publicKey: pair.publicKey.export({ format: 'jwk' }).x!
 	};
 }
-export function sharedKey(group: string, guild: string, privateKey: string, peerPublicKey: string) {
-	validateGroup(group);
-	const a = validatePrivate(privateKey);
-	const peer = validatePublic(peerPublicKey);
-	const dh = engine(a);
-	const own = BigInt('0x' + dh.getPublicKey('hex'));
-	if (own === peer) return fail('public');
-	// Fixed-width public values form a canonical transcript regardless of input order/leading zeros.
-	const publicKeys = [bytes(own).toString('hex'), bytes(peer).toString('hex')].sort();
-	const context = JSON.stringify(['Mountain/DH2', GROUP_ID, guild, ...publicKeys]);
+export function sharedKey(guild: string, privateKey: string, peerPublicKey: string) {
+	const own = privateObject(privateKey);
+	const peer = publicObject(peerPublicKey);
+	const ownPublic = createPublicKey(own).export({ format: 'jwk' }).x!;
+	if (ownPublic === peerPublicKey) return fail('public');
+	// Version and curve separate this protocol from previous finite-field DH keys.
+	const context = JSON.stringify([
+		'Mountain/DH3',
+		GROUP_ID,
+		guild,
+		...[ownPublic, peerPublicKey].sort()
+	]);
 	const transcript = createHash('sha256').update(context).digest();
-	const secret = dh.computeSecret(bytes(peer));
+	let secret: Buffer;
 	try {
+		secret = diffieHellman({ privateKey: own, publicKey: peer });
+	} catch {
+		return fail('public');
+	}
+	try {
+		if (secret.every((byte) => byte === 0)) return fail('public');
 		return {
 			key: Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(32), transcript, 32)).toString(
 				'base64url'

@@ -46,11 +46,8 @@ async function failure(
 	error: unknown
 ) {
 	const messages = {
-		group: '지원되지 않는 DH 그룹입니다.',
-		private: '비밀키가 허용 범위를 벗어났습니다.',
 		public: '상대방의 공개키가 유효하지 않습니다.',
 		format: '입력한 키의 형식을 확인하세요.',
-		config: '서버 DH 매개변수 설정이 올바르지 않습니다. 관리자에게 문의하세요.',
 		limit: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.'
 	};
 	const content =
@@ -76,13 +73,14 @@ export async function executeDh(interaction: ChatInputCommandInteraction): Promi
 		if (mode === 'shared') {
 			const modal = new ModalBuilder().setCustomId('mountain-dh:shared').setTitle('DH 공유키 생성');
 			for (const [id, label, max] of [
-				['private', '자신의 비밀키 (화면에 표시됩니다)', 617],
-				['peer', '상대방의 공개키 (숫자)', 617]
+				['private', '자신의 비밀키 (43자, 화면에 표시됩니다)', 43],
+				['peer', '상대방의 공개키 (43자)', 43]
 			] as const) {
 				const input = new TextInputBuilder()
 					.setCustomId(id)
 					.setLabel(label)
-					.setStyle(TextInputStyle.Paragraph)
+					.setStyle(TextInputStyle.Short)
+					.setMinLength(max)
 					.setMaxLength(max)
 					.setRequired(true);
 				modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
@@ -93,9 +91,9 @@ export async function executeDh(interaction: ChatInputCommandInteraction): Promi
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 		await member(interaction);
 		limitDh(interaction.user.id);
-		const pair = generatePair(GROUP_ID);
+		const pair = generatePair();
 		await interaction.editReply({
-			content: `🔐 키쌍 생성 완료\n그룹: ${GROUP_ID}\n비밀키:\n\`\`\`\n${pair.privateKey}\n\`\`\`\n공개키:\n\`\`\`\n${pair.publicKey}\n\`\`\`\n⚠️ 비밀키는 공개하지 마세요. 공개키 숫자만 상대방에게 전달하세요. 공유키생성에는 자신의 비밀키와 상대방 공개키를 입력하세요.`,
+			content: `🔐 키쌍 생성 완료\n그룹: ${GROUP_ID}\n비밀키:\n\`\`\`\n${pair.privateKey}\n\`\`\`\n공개키:\n\`\`\`\n${pair.publicKey}\n\`\`\`\n⚠️ 비밀키는 공개하지 마세요. 공개키 43자 전체만 상대방에게 전달하세요. 공유키생성에는 자신의 비밀키와 상대방 공개키를 입력하세요.`,
 			allowedMentions: { parse: [] }
 		});
 	} catch (error) {
@@ -110,9 +108,9 @@ export async function handleDhModal(interaction: ModalSubmitInteraction): Promis
 		const guild = await member(interaction);
 		limitDh(interaction.user.id);
 		const field = (id: string) => interaction.fields.getTextInputValue(id);
-		const result = sharedKey(GROUP_ID, guild, field('private'), field('peer'));
+		const result = sharedKey(guild, field('private'), field('peer'));
 		await interaction.editReply({
-			content: `🔓 공유키 생성 완료\n공유 암호키:\n\`\`\`\n${result.key}\n\`\`\`\n기존 /암호 암호화 및 /암호 복호화의 비밀번호로 사용하세요.\n\n키 교환 확인값:\n\`${result.fingerprint}\`\n상대방과 확인값을 신뢰할 수 있는 경로로 비교하세요. 공개키 숫자는 발신자 인증을 포함하지 않습니다. 확인값 비교 없이 상대방을 신뢰하지 마세요. 복호화한 Discord ID도 상대방이 주장한 정보입니다.`,
+			content: `🔓 공유키 생성 완료\n공유 암호키:\n\`\`\`\n${result.key}\n\`\`\`\n기존 /암호 암호화 및 /암호 복호화의 비밀번호로 사용하세요.\n\n키 교환 확인값:\n\`${result.fingerprint}\`\n상대방과 확인값을 신뢰할 수 있는 경로로 비교하세요. 공개키는 발신자 인증을 포함하지 않습니다. 확인값 비교 없이 상대방을 신뢰하지 마세요. 복호화한 Discord ID도 상대방이 주장한 정보입니다.`,
 			allowedMentions: { parse: [] }
 		});
 	} catch (error) {
