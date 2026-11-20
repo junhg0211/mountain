@@ -12,6 +12,7 @@ import {
 	type ModalSubmitInteraction
 } from 'discord.js';
 import { transform, TokucryptError } from '../../../tokucrypt';
+import { addDhCommands, executeDh, handleDhModal } from './crypt-dh';
 
 const data = new SlashCommandBuilder()
 	.setName('crypt')
@@ -44,6 +45,8 @@ for (const [name, ko, ja, description, descriptionKo, descriptionJa] of [
 			})
 	);
 
+addDhCommands(data);
+
 async function execute(interaction: ChatInputCommandInteraction) {
 	if (!interaction.inGuild()) {
 		await interaction.reply({
@@ -52,6 +55,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		});
 		return;
 	}
+	if (await executeDh(interaction)) return;
 	const mode = interaction.options.getSubcommand();
 	const modal = new ModalBuilder()
 		.setCustomId(`tokucrypt:${mode}`)
@@ -77,6 +81,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 	await interaction.showModal(modal);
 }
 export async function handleCryptModal(interaction: ModalSubmitInteraction): Promise<boolean> {
+	if (await handleDhModal(interaction)) return true;
 	if (!interaction.customId.startsWith('tokucrypt:')) return false;
 	// Never let exceptions carrying interaction fields reach the shared logging handler.
 	try {
