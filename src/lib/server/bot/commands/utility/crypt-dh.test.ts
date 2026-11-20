@@ -33,7 +33,12 @@ function fake(mode: string) {
 }
 test('all subcommands registered with three locales and valid Discord schema', () => {
 	const json = crypt.data.toJSON();
-	expect(json.options?.length).toBe(5);
+	expect(json.options?.map((option) => option.name)).toEqual([
+		'encrypt',
+		'decrypt',
+		'keypair',
+		'shared'
+	]);
 	for (const option of json.options ?? []) {
 		expect(option.name_localizations?.ko).toBeDefined();
 		expect(option.name_localizations?.ja).toBeDefined();

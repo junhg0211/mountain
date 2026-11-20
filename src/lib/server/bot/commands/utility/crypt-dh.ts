@@ -9,27 +9,10 @@ import {
 	type ModalSubmitInteraction,
 	type SlashCommandBuilder
 } from 'discord.js';
-import {
-	DhError,
-	GROUP_ID,
-	P,
-	Q,
-	validateParameters,
-	generatePair,
-	sharedKey,
-	limitDh
-} from '../../../tokucrypt/dh';
+import { DhError, GROUP_ID, generatePair, sharedKey, limitDh } from '../../../tokucrypt/dh';
 
 export function addDhCommands(data: SlashCommandBuilder) {
 	for (const [name, ko, ja, en, descriptionKo, descriptionJa] of [
-		[
-			'parameters',
-			'매개변수생성',
-			'パラメータ生成',
-			'Show the standard DH parameters.',
-			'표준 DH 공개 매개변수를 확인합니다.',
-			'標準DH公開パラメータを表示します。'
-		],
 		[
 			'keypair',
 			'키쌍생성',
@@ -88,7 +71,7 @@ async function member(interaction: ChatInputCommandInteraction | ModalSubmitInte
 }
 export async function executeDh(interaction: ChatInputCommandInteraction): Promise<boolean> {
 	const mode = interaction.options.getSubcommand();
-	if (!['parameters', 'keypair', 'shared'].includes(mode)) return false;
+	if (!['keypair', 'shared'].includes(mode)) return false;
 	try {
 		if (mode === 'shared') {
 			const modal = new ModalBuilder().setCustomId('mountain-dh:shared').setTitle('DH 공유키 생성');
@@ -109,19 +92,12 @@ export async function executeDh(interaction: ChatInputCommandInteraction): Promi
 		}
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 		await member(interaction);
-		validateParameters();
 		limitDh(interaction.user.id);
-		if (mode === 'parameters') {
-			await interaction.editReply(
-				`🔑 Diffie–Hellman 매개변수\n그룹: ${GROUP_ID}\ng: 2\np (10진수): ${P}\nq (10진수): ${Q}\n\n공개해도 안전합니다. 서버의 고정 매개변수가 자동으로 사용됩니다.`
-			);
-		} else {
-			const pair = generatePair(GROUP_ID);
-			await interaction.editReply({
-				content: `🔐 키쌍 생성 완료\n그룹: ${GROUP_ID}\n비밀키:\n\`\`\`\n${pair.privateKey}\n\`\`\`\n공개키:\n\`\`\`\n${pair.publicKey}\n\`\`\`\n⚠️ 비밀키는 공개하지 마세요. 공개키 숫자만 상대방에게 전달하세요. 공유키생성에는 자신의 비밀키와 상대방 공개키를 입력하세요.`,
-				allowedMentions: { parse: [] }
-			});
-		}
+		const pair = generatePair(GROUP_ID);
+		await interaction.editReply({
+			content: `🔐 키쌍 생성 완료\n그룹: ${GROUP_ID}\n비밀키:\n\`\`\`\n${pair.privateKey}\n\`\`\`\n공개키:\n\`\`\`\n${pair.publicKey}\n\`\`\`\n⚠️ 비밀키는 공개하지 마세요. 공개키 숫자만 상대방에게 전달하세요. 공유키생성에는 자신의 비밀키와 상대방 공개키를 입력하세요.`,
+			allowedMentions: { parse: [] }
+		});
 	} catch (error) {
 		await failure(interaction, error);
 	}
