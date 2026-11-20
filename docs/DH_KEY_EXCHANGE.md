@@ -1,63 +1,59 @@
 # DH key exchange
 
-## Setup and use
+## Public server parameters
 
-Set `DH_SIGNING_KEY` to an independently generated 32-byte hexadecimal secret in the server
-environment (`openssl rand -hex 32`). Keep it stable across restarts and identical across instances.
-It is separate from TOKUCRYPT keys; rotating it invalidates outstanding public-key certificates.
-No user keys or identities are stored in a database. Missing configuration fails closed.
+The server uses RFC 7919 ffdhe2048 with g=2, a 2048-bit safe prime p and q=(p-1)/2.
+These are public constants, not secrets. Do not generate arbitrary replacement primes.
+Source: https://www.rfc-editor.org/rfc/rfc7919.html#appendix-A.1
 
-The existing command map already contains `crypt`; its definition now includes `parameters`,
-`keypair`, and `shared`, localized in English, Korean and Japanese. Re-register the complete command
-list with `reloadCommands` (see ECONOMY_DEVELOPMENT.md); its bulk overwrite preserves the Activity
-Entry Point. Registration uses REST and does not start another gateway client.
+`.env.example` contains the complete decimal `DH_P` and `DH_Q` values. To print a fresh copy
+of the standard configuration from the repository root:
 
-1. `/암호 매개변수생성` shows the public ffdhe2048 group, g=2 and decimal p.
-2. Each participant runs `/암호 키쌍생성`, keeps the private exponent, and copies only the
-   complete `DH1.…` signed public-key certificate to the anonymous channel. All replies are ephemeral.
-3. Within 24 hours, each runs `/암호 공유키생성` and enters their private exponent, their own
-   certificate and their peer's certificate. The group defaults to ffdhe2048. Raw public integers
-   are deliberately not accepted: accepting them would discard authenticated sender/session binding.
-4. Compare the full exchange fingerprint through a trusted path bound to the intended anonymous
-   participant. A valid certificate proves issuance by Mountain, not the identity of an anonymous
-   poster. A relay can replace both certificates with legitimately issued attacker certificates;
-   checking the fingerprint is essential for protection against that active attack.
-5. Copy the 43-character shared password into the existing encryption/decryption password field.
-   Do not copy code fences, whitespace or newlines. A decrypted Discord ID remains a claim until
-   verified from the account concerned. Identity disclosure is optional.
+```sh
+bun -e "import { parameterEnvironment } from './src/lib/server/tokucrypt/dh.ts'; process.stdout.write(parameterEnvironment());"
+```
 
-## Protocol and implementation security review
+Copy the two output lines into the deployment environment. Keep each number on a single line.
+When both variables are omitted, the same standard group is used. If either is set, both must
+exactly match the supported standard pair; commands fail closed for mismatched or custom values.
+Validation runs before DH operations. `DH_SIGNING_KEY` is no longer used and may be removed.
+Existing TOKUCRYPT keys remain necessary for encryption/decryption.
 
-The pinned prime is RFC 7919 Appendix A.1:
-https://www.rfc-editor.org/rfc/rfc7919.html#appendix-A.1
-No custom parameters are accepted. q=(p-1)/2; rejection sampling over cryptographic 256-byte random
-values selects a uniform exponent in [1,q-1]. OpenSSL performs private exponentiation; JavaScript
-modular exponentiation is used only for public subgroup validation. Inputs are length bounded before
-integer parsing. Public keys require 2 <= B <= p-2 and B^q mod p = 1. Requests are limited to five
-per user per minute, with a bounded rate-limit map.
+## Use
 
-Certificates contain guild, random nonce, per-key HMAC pseudonym, expiry and decimal public key.
-HMAC-SHA256 covers the DH1 version and entire payload. No Discord user ID appears in the certificate;
-the pseudonym is HMAC(domain,guild,authenticated user,nonce). Fresh REST membership checks precede
-issuance and derivation; the own certificate must match both the authenticated caller and exponent.
-Certificates expire after 24 hours and cannot cross guilds. They are not one-time tokens; no replay
-registry or permanent user-key storage is introduced.
+1. `/암호 매개변수생성` displays the public group, g, p and q.
+2. Each participant runs `/암호 키쌍생성`. Keep the private number secret; exchange only the
+   public decimal number. Responses are ephemeral. No certificates or expiry apply.
+3. `/암호 공유키생성` takes your private number and the peer's public number. Your own public
+   key is computed automatically. The fixed group defaults to ffdhe2048.
+4. Compare the full exchange fingerprint through a trusted path associated with the intended
+   participant. Numeric public keys do not authenticate a sender: an attacker who substitutes
+   keys can perform a man-in-the-middle attack unless this comparison is trustworthy.
+5. Copy the resulting 43-character password into existing encryption/decryption commands.
+   Avoid whitespace and code fences. A decrypted Discord ID is a claim, not proof of ownership.
 
-The shared integer is serialized to exactly 256 big-endian bytes. HKDF-SHA256 uses 32 zero salt
-bytes and SHA256(JSON(["Mountain/DH1",group,guild,...lexically sorted complete certificates])) as info.
-The transcript hash is also the displayed fingerprint. Output is 32 bytes encoded as unpadded
-base64url. The existing Argon2id, server-derived guild key and AES-256-GCM path remains unchanged.
-The server and Discord receive secrets, so this is not end-to-end encryption against either service.
-Compromise of the server's TOKUCRYPT key plus a shared password enables decryption of that guild's
-ciphertext. Server-generated and submitted exponents are ephemeral process values, not persisted;
-JavaScript strings cannot be reliably zeroized. Computed shared-secret buffers are cleared.
+The command map already includes `crypt`. Re-register the complete command list using
+`reloadCommands` after deployment (see ECONOMY_DEVELOPMENT.md). Registration preserves the global
+Activity Entry Point and does not start a second gateway client.
 
-Secret inputs use modals; results use ephemeral responses. All errors in DH handling, including
-Discord response failures, are contained without forwarding interaction payloads to logs. Ephemeral
-messages still exist at Discord and can be copied or captured by the recipient.
+## Implementation review
 
-Automated coverage verifies the safe prime, subgroup, independent generation, symmetric HKDF,
-existing cipher round trips, ownership/guild binding, tampering, expiry and bounded inputs/output.
-Before real secret communications, independently review the deployed server, Discord permissions,
-anonymous-channel identity binding and fingerprint verification procedure. This implementation review
-and automated tests do not replace an independent cryptographic audit.
+Exponents are independent, uniform rejection samples in [1,q-1] from cryptographic random bytes.
+OpenSSL performs secret exponent operations; JavaScript modular exponentiation only validates
+public subgroup membership. Public values require 2 <= B <= p-2 and B^q mod p = 1. Inputs are
+bounded before integer parsing; requests are limited to five per user per minute. Fresh Discord
+membership checks remain required for command execution. No user keys are persisted or logged.
+
+DH2 derives a 256-byte big-endian shared integer. HKDF-SHA256 uses a 32-byte zero salt and the
+SHA256 hash of JSON(["Mountain/DH2",group,guild,...sorted fixed-width hexadecimal public keys])
+as info. This hash is also displayed as the fingerprint. Fixed-width encoding normalizes leading
+zeros and key order. The output is 32 bytes in unpadded base64url. Existing Argon2id, server-derived
+guild keys and AES-256-GCM remain unchanged. New DH2 keys differ from prior DH1 certificate keys;
+already generated passwords remain usable with existing ciphertext.
+
+Discord and the bot server receive secrets; this is not end-to-end encryption against those
+services. Ephemeral messages may be copied by recipients. JavaScript strings cannot be reliably
+zeroized; computed shared-secret buffers are cleared. Exceptions containing secret input are
+contained without forwarding to shared logging. Numeric keys deliberately remove the former
+server-issued ownership/session certificate; fingerprints require a trusted comparison channel.
+Independently review the complete deployed anonymous-channel flow before real secret communication.

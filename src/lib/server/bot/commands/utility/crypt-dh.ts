@@ -9,7 +9,16 @@ import {
 	type ModalSubmitInteraction,
 	type SlashCommandBuilder
 } from 'discord.js';
-import { DhError, GROUP_ID, P, generatePair, sharedKey, limitDh } from '../../../tokucrypt/dh';
+import {
+	DhError,
+	GROUP_ID,
+	P,
+	Q,
+	validateParameters,
+	generatePair,
+	sharedKey,
+	limitDh
+} from '../../../tokucrypt/dh';
 
 export function addDhCommands(data: SlashCommandBuilder) {
 	for (const [name, ko, ja, en, descriptionKo, descriptionJa] of [
@@ -25,17 +34,17 @@ export function addDhCommands(data: SlashCommandBuilder) {
 			'keypair',
 			'키쌍생성',
 			'鍵ペア生成',
-			'Generate a private DH key and signed public key.',
-			'DH 비밀키와 서명된 공개키를 생성합니다.',
-			'DH秘密鍵と署名付き公開鍵を生成します。'
+			'Generate a private DH key and public key.',
+			'DH 비밀키와 공개키를 생성합니다.',
+			'DH秘密鍵と公開鍵を生成します。'
 		],
 		[
 			'shared',
 			'공유키생성',
 			'共有鍵生成',
-			'Derive a shared password from signed public keys.',
-			'서명된 공개키로 공유 암호키를 생성합니다.',
-			'署名付き公開鍵から共有パスワードを導出します。'
+			'Derive a shared password from a peer public key.',
+			'상대방 공개키로 공유 암호키를 생성합니다.',
+			'相手の公開鍵から共有パスワードを導出します。'
 		]
 	])
 		data.addSubcommand((sub) =>
@@ -66,9 +75,9 @@ async function failure(
 	const messages = {
 		group: '지원되지 않는 DH 그룹입니다.',
 		private: '비밀키가 허용 범위를 벗어났습니다.',
-		public: '상대방 또는 자신의 공개키가 유효하지 않거나 만료되었습니다.',
+		public: '상대방의 공개키가 유효하지 않습니다.',
 		format: '입력한 키의 형식을 확인하세요.',
-		config: '서버 DH 서명 키 설정이 필요합니다. 관리자에게 문의하세요.',
+		config: '서버 DH 매개변수 설정이 올바르지 않습니다. 관리자에게 문의하세요.',
 		limit: '요청이 너무 많습니다. 잠시 후 다시 시도하세요.'
 	};
 	const content =
@@ -96,8 +105,7 @@ export async function executeDh(interaction: ChatInputCommandInteraction): Promi
 			for (const [id, label, max] of [
 				['group', '그룹 (ffdhe2048)', 32],
 				['private', '자신의 비밀키 (화면에 표시됩니다)', 617],
-				['own', '자신의 서명된 공개키 (DH1.…)', 1400],
-				['peer', '상대방의 서명된 공개키 (DH1.…)', 1400]
+				['peer', '상대방의 공개키 (숫자)', 617]
 			] as const) {
 				const input = new TextInputBuilder()
 					.setCustomId(id)
@@ -112,20 +120,17 @@ export async function executeDh(interaction: ChatInputCommandInteraction): Promi
 			return true;
 		}
 		await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-		const guild = await member(interaction);
+		await member(interaction);
+		validateParameters();
 		limitDh(interaction.user.id);
 		if (mode === 'parameters') {
 			await interaction.editReply(
-				`🔑 Diffie–Hellman 매개변수\n그룹: ${GROUP_ID}\ng: 2\np (10진수): ${P}\n\n공개해도 안전합니다. 키쌍생성에서 같은 group_id를 사용하세요.`
+				`🔑 Diffie–Hellman 매개변수\n그룹: ${GROUP_ID}\ng: 2\np (10진수): ${P}\nq (10진수): ${Q}\n\n공개해도 안전합니다. 키쌍생성에서 같은 group_id를 사용하세요.`
 			);
 		} else {
-			const pair = generatePair(
-				interaction.options.getString('group_id') ?? GROUP_ID,
-				guild,
-				interaction.user.id
-			);
+			const pair = generatePair(interaction.options.getString('group_id') ?? GROUP_ID);
 			await interaction.editReply({
-				content: `🔐 키쌍 생성 완료\n그룹: ${GROUP_ID}\n비밀키:\n\`\`\`\n${pair.privateKey}\n\`\`\`\n서명된 공개키 (24시간 유효):\n\`\`\`\n${pair.token}\n\`\`\`\n⚠️ 비밀키는 공개하지 마세요. DH1.으로 시작하는 공개키 전체만 상대방에게 전달하세요. 공유키생성에는 자신의 공개키도 필요합니다.`,
+				content: `🔐 키쌍 생성 완료\n그룹: ${GROUP_ID}\n비밀키:\n\`\`\`\n${pair.privateKey}\n\`\`\`\n공개키:\n\`\`\`\n${pair.publicKey}\n\`\`\`\n⚠️ 비밀키는 공개하지 마세요. 공개키 숫자만 상대방에게 전달하세요. 공유키생성에는 자신의 비밀키와 상대방 공개키를 입력하세요.`,
 				allowedMentions: { parse: [] }
 			});
 		}
@@ -141,16 +146,9 @@ export async function handleDhModal(interaction: ModalSubmitInteraction): Promis
 		const guild = await member(interaction);
 		limitDh(interaction.user.id);
 		const field = (id: string) => interaction.fields.getTextInputValue(id);
-		const result = sharedKey(
-			field('group'),
-			guild,
-			interaction.user.id,
-			field('private'),
-			field('own'),
-			field('peer')
-		);
+		const result = sharedKey(field('group'), guild, field('private'), field('peer'));
 		await interaction.editReply({
-			content: `🔓 공유키 생성 완료\n공유 암호키:\n\`\`\`\n${result.key}\n\`\`\`\n기존 /암호 암호화 및 /암호 복호화의 비밀번호로 사용하세요.\n\n키 교환 확인값:\n\`${result.fingerprint}\`\n상대방과 확인값을 신뢰할 수 있는 경로로 비교하세요. 서명은 봇이 발급한 키임을 확인하며, 익명 게시자의 신원을 증명하지 않습니다. 복호화한 Discord ID도 상대방이 주장한 정보입니다.`,
+			content: `🔓 공유키 생성 완료\n공유 암호키:\n\`\`\`\n${result.key}\n\`\`\`\n기존 /암호 암호화 및 /암호 복호화의 비밀번호로 사용하세요.\n\n키 교환 확인값:\n\`${result.fingerprint}\`\n상대방과 확인값을 신뢰할 수 있는 경로로 비교하세요. 공개키 숫자는 발신자 인증을 포함하지 않습니다. 확인값 비교 없이 상대방을 신뢰하지 마세요. 복호화한 Discord ID도 상대방이 주장한 정보입니다.`,
 			allowedMentions: { parse: [] }
 		});
 	} catch (error) {

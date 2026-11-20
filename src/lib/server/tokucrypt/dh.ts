@@ -1,11 +1,4 @@
-import {
-	createDiffieHellman,
-	createHash,
-	createHmac,
-	hkdfSync,
-	randomBytes,
-	timingSafeEqual
-} from 'node:crypto';
+import { createDiffieHellman, createHash, hkdfSync, randomBytes } from 'node:crypto';
 
 export const GROUP_ID = 'ffdhe2048';
 // RFC 7919, Appendix A.1. Only this pinned group is accepted.
@@ -34,6 +27,17 @@ const fail = (code: DhError['code']): never => {
 };
 export function validateGroup(group: string) {
 	if (group !== GROUP_ID) fail('group');
+	validateParameters();
+}
+// Configuration is an allowlist, not permission to use arbitrary DH parameters.
+export function validateParameters() {
+	const p = process.env.DH_P;
+	const q = process.env.DH_Q;
+	if (p === undefined && q === undefined) return;
+	if (p !== P.toString() || q !== Q.toString()) fail('config');
+}
+export function parameterEnvironment() {
+	return `DH_P=${P}\nDH_Q=${Q}\n`;
 }
 function number(value: string) {
 	if (!/^[0-9]{1,617}$/.test(value)) return fail('format');
@@ -63,53 +67,6 @@ function engine(a: bigint) {
 	dh.generateKeys();
 	return dh;
 }
-function signingKey() {
-	const hex = process.env.DH_SIGNING_KEY ?? '';
-	if (!/^[a-fA-F0-9]{64}$/.test(hex)) return fail('config');
-	return Buffer.from(hex, 'hex');
-}
-function mac(value: string) {
-	return createHmac('sha256', signingKey()).update(value).digest();
-}
-function owner(guild: string, user: string, nonce: string) {
-	return mac(JSON.stringify(['Mountain/DH1/owner', guild, user, nonce])).toString('base64url');
-}
-// No identities or secrets in the public token. The per-key pseudonym is unlinkable without the server key.
-type Certificate = {
-	guild: string;
-	nonce: string;
-	owner: string;
-	expires: number;
-	publicKey: string;
-};
-function certificate(token: string, guild: string): Certificate {
-	if (token.length > 1400 || !/^DH1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(token))
-		return fail('format');
-	const [, payload, signature] = token.split('.');
-	const signed = 'DH1.' + payload;
-	if (
-		Buffer.from(payload, 'base64url').toString('base64url') !== payload ||
-		Buffer.from(signature, 'base64url').toString('base64url') !== signature
-	)
-		return fail('format');
-	if (!timingSafeEqual(mac(signed), Buffer.from(signature, 'base64url'))) return fail('public');
-	try {
-		const c = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Certificate;
-		if (
-			c.guild !== guild ||
-			typeof c.nonce !== 'string' ||
-			typeof c.owner !== 'string' ||
-			!Number.isSafeInteger(c.expires) ||
-			c.expires <= Date.now() ||
-			typeof c.publicKey !== 'string'
-		)
-			return fail('public');
-		validatePublic(c.publicKey);
-		return c;
-	} catch {
-		return fail('public');
-	}
-}
 const requests = new Map<string, { count: number; expires: number }>();
 export function limitDh(user: string) {
 	const now = Date.now();
@@ -119,67 +76,35 @@ export function limitDh(user: string) {
 	item.count++;
 	requests.set(user, item);
 }
-export function generatePair(group: string, guild: string, user: string) {
+export function generatePair(group: string) {
 	validateGroup(group);
 	let a: bigint;
 	do {
 		a = BigInt('0x' + randomBytes(256).toString('hex'));
 	} while (a < 1n || a >= Q);
-	const publicKey = BigInt('0x' + engine(a).getPublicKey('hex')).toString();
-	const nonce = randomBytes(16).toString('base64url');
-	const c: Certificate = {
-		guild,
-		nonce,
-		owner: owner(guild, user, nonce),
-		expires: Date.now() + 86400_000,
-		publicKey
-	};
-	const signed = 'DH1.' + Buffer.from(JSON.stringify(c)).toString('base64url');
 	return {
 		privateKey: a.toString(),
-		publicKey,
-		token: signed + '.' + mac(signed).toString('base64url')
+		publicKey: BigInt('0x' + engine(a).getPublicKey('hex')).toString()
 	};
 }
-export function sharedKey(
-	group: string,
-	guild: string,
-	user: string,
-	privateKey: string,
-	ownToken: string,
-	peerToken: string
-) {
+export function sharedKey(group: string, guild: string, privateKey: string, peerPublicKey: string) {
 	validateGroup(group);
 	const a = validatePrivate(privateKey);
-	const own = certificate(ownToken, guild);
-	const peer = certificate(peerToken, guild);
+	const peer = validatePublic(peerPublicKey);
 	const dh = engine(a);
-	if (
-		own.owner !== owner(guild, user, own.nonce) ||
-		own.publicKey !== BigInt('0x' + dh.getPublicKey('hex')).toString() ||
-		ownToken === peerToken
-	)
-		return fail('public');
-	// Sorting complete signed certificates binds identities, sessions and both public keys independent of direction.
-	const context = JSON.stringify([
-		'Mountain/DH1',
-		GROUP_ID,
-		guild,
-		...[ownToken, peerToken].sort()
-	]);
-	const secret = dh.computeSecret(bytes(BigInt(peer.publicKey)));
+	const own = BigInt('0x' + dh.getPublicKey('hex'));
+	if (own === peer) return fail('public');
+	// Fixed-width public values form a canonical transcript regardless of input order/leading zeros.
+	const publicKeys = [bytes(own).toString('hex'), bytes(peer).toString('hex')].sort();
+	const context = JSON.stringify(['Mountain/DH2', GROUP_ID, guild, ...publicKeys]);
+	const transcript = createHash('sha256').update(context).digest();
+	const secret = dh.computeSecret(bytes(peer));
 	try {
 		return {
-			key: Buffer.from(
-				hkdfSync(
-					'sha256',
-					secret,
-					Buffer.alloc(32),
-					createHash('sha256').update(context).digest(),
-					32
-				)
-			).toString('base64url'),
-			fingerprint: createHash('sha256').update(context).digest('hex')
+			key: Buffer.from(hkdfSync('sha256', secret, Buffer.alloc(32), transcript, 32)).toString(
+				'base64url'
+			),
+			fingerprint: transcript.toString('hex')
 		};
 	} finally {
 		secret.fill(0);

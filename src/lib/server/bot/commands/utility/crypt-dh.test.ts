@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import {
 	MessageFlags,
 	type ChatInputCommandInteraction,
@@ -6,12 +6,6 @@ import {
 } from 'discord.js';
 import crypt from './crypt';
 import { executeDh, handleDhModal } from './crypt-dh';
-const previous = process.env.DH_SIGNING_KEY;
-process.env.DH_SIGNING_KEY = 'ef'.repeat(32);
-afterAll(() => {
-	if (previous === undefined) delete process.env.DH_SIGNING_KEY;
-	else process.env.DH_SIGNING_KEY = previous;
-});
 function fake(mode: string) {
 	const replies: Array<{ content: string }> = [];
 	const flags: number[] = [];
@@ -51,7 +45,8 @@ test('private key replies are ephemeral and fit Discord with full snowflakes', a
 	const mock = fake('keypair');
 	expect(await executeDh(mock.interaction as unknown as ChatInputCommandInteraction)).toBe(true);
 	expect(mock.flags).toEqual([MessageFlags.Ephemeral]);
-	expect(mock.replies[0].content).toContain('DH1.');
+	expect(mock.replies[0].content).toMatch(/공개키:\n```\n[0-9]+\n```/);
+	expect(mock.replies[0].content).not.toContain('DH1.');
 	expect(mock.replies[0].content.length).toBeLessThanOrEqual(2000);
 });
 test('modal errors are ephemeral, sanitized and never escape even when Discord fails', async () => {

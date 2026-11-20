@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { checkPrimeSync } from 'node:crypto';
 import {
 	GROUP_ID,
@@ -9,16 +9,12 @@ import {
 	sharedKey,
 	validateGroup,
 	validatePrivate,
-	validatePublic
+	validatePublic,
+	validateParameters,
+	parameterEnvironment
 } from './dh';
 import { transform } from './index';
-const original = process.env.DH_SIGNING_KEY;
-process.env.DH_SIGNING_KEY = 'ab'.repeat(32);
-afterAll(() => {
-	if (original === undefined) delete process.env.DH_SIGNING_KEY;
-	else process.env.DH_SIGNING_KEY = original;
-});
-const pair = (user: string) => generatePair(GROUP_ID, '123', user);
+const pair = () => generatePair(GROUP_ID);
 
 test('pinned safe prime and subgroup generator', () => {
 	expect(PRIME_HEX.length).toBe(512);
@@ -27,15 +23,15 @@ test('pinned safe prime and subgroup generator', () => {
 	expect(validatePublic('2')).toBe(2n);
 });
 test('independent keys, symmetric canonical HKDF and existing cipher compatibility', async () => {
-	const a = pair('a'),
-		b = pair('b');
+	const a = pair(),
+		b = pair();
 	expect(a.privateKey).not.toBe(b.privateKey);
 	expect(a.publicKey).not.toBe(b.publicKey);
-	const left = sharedKey(GROUP_ID, '123', 'a', a.privateKey, a.token, b.token);
-	const right = sharedKey(GROUP_ID, '123', 'b', b.privateKey, b.token, a.token);
+	const left = sharedKey(GROUP_ID, '123', a.privateKey, b.publicKey);
+	const right = sharedKey(GROUP_ID, '123', b.privateKey, a.publicKey);
 	expect(left).toEqual(right);
 	expect(left.key).toMatch(/^[A-Za-z0-9_-]{43}$/);
-	expect(a.token.length + a.privateKey.length + 230).toBeLessThan(2000);
+	expect(a.publicKey.length + a.privateKey.length + 230).toBeLessThan(2000);
 	const keys = process.env.TOKUCRYPT_KEYS,
 		id = process.env.TOKUCRYPT_ACTIVE_KEY_ID;
 	try {
@@ -59,24 +55,40 @@ test('range, subgroup, format and unsupported group rejection', () => {
 		expect(() => validatePrivate(value)).toThrow('format');
 	expect(() => validateGroup('modp14')).toThrow('group');
 });
-test('signed ownership, guild, private/public match and transcript binding', () => {
-	const a = pair('a'),
-		b = pair('b'),
-		c = pair('c');
-	expect(() => sharedKey(GROUP_ID, '123', 'c', a.privateKey, a.token, b.token)).toThrow('public');
-	expect(() => sharedKey(GROUP_ID, '456', 'a', a.privateKey, a.token, b.token)).toThrow('public');
-	expect(() => sharedKey(GROUP_ID, '123', 'a', b.privateKey, a.token, b.token)).toThrow('public');
-	expect(() =>
-		sharedKey(GROUP_ID, '123', 'a', a.privateKey, a.token, b.token.slice(0, -2) + 'aa')
-	).toThrow();
-	expect(sharedKey(GROUP_ID, '123', 'a', a.privateKey, a.token, b.token).key).not.toBe(
-		sharedKey(GROUP_ID, '123', 'a', a.privateKey, a.token, c.token).key
+test('canonical numeric public keys and transcript binding', () => {
+	const a = pair(),
+		b = pair(),
+		c = pair();
+	const left = sharedKey(GROUP_ID, '123', a.privateKey, b.publicKey);
+	expect(sharedKey(GROUP_ID, '123', a.privateKey, '0002')).toEqual(
+		sharedKey(GROUP_ID, '123', a.privateKey, '2')
 	);
-	const now = Date.now;
+	expect(sharedKey(GROUP_ID, '456', a.privateKey, b.publicKey).key).not.toBe(left.key);
+	expect(sharedKey(GROUP_ID, '123', a.privateKey, c.publicKey).key).not.toBe(left.key);
+	expect(() => sharedKey(GROUP_ID, '123', a.privateKey, a.publicKey)).toThrow('public');
+});
+test('environment only accepts the pinned standard pair and exports copyable values', () => {
+	const oldP = process.env.DH_P,
+		oldQ = process.env.DH_Q;
 	try {
-		Date.now = () => now() + 86400_001;
-		expect(() => sharedKey(GROUP_ID, '123', 'a', a.privateKey, a.token, b.token)).toThrow('public');
+		delete process.env.DH_P;
+		delete process.env.DH_Q;
+		expect(() => validateParameters()).not.toThrow();
+		process.env.DH_P = P.toString();
+		process.env.DH_Q = Q.toString();
+		expect(() => validateParameters()).not.toThrow();
+		expect(parameterEnvironment()).toBe(`DH_P=${P}\nDH_Q=${Q}\n`);
+		process.env.DH_Q = '11';
+		expect(() => validateParameters()).toThrow('config');
+		process.env.DH_Q = Q.toString();
+		process.env.DH_P = '23';
+		expect(() => generatePair(GROUP_ID)).toThrow('config');
+		delete process.env.DH_P;
+		expect(() => validateParameters()).toThrow('config');
 	} finally {
-		Date.now = now;
+		if (oldP === undefined) delete process.env.DH_P;
+		else process.env.DH_P = oldP;
+		if (oldQ === undefined) delete process.env.DH_Q;
+		else process.env.DH_Q = oldQ;
 	}
 });
