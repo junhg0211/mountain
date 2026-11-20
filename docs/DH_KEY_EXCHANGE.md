@@ -25,7 +25,8 @@ Existing TOKUCRYPT keys remain necessary for encryption/decryption.
 2. Each participant runs `/암호 키쌍생성`. Keep the private number secret; exchange only the
    public decimal number. Responses are ephemeral. No certificates or expiry apply.
 3. `/암호 공유키생성` takes your private number and the peer's public number. Your own public
-   key is computed automatically. The fixed group defaults to ffdhe2048.
+   key is computed automatically. Commands and modals have no group selection; the server always
+   uses its fixed ffdhe2048 parameters.
 4. Compare the full exchange fingerprint through a trusted path associated with the intended
    participant. Numeric public keys do not authenticate a sender: an attacker who substitutes
    keys can perform a man-in-the-middle attack unless this comparison is trustworthy.
