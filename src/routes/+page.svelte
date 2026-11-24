@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import ExchangeRateChart from '$lib/components/ExchangeRateChart.svelte';
-	import { formatMoneyDisplay } from '$lib/economy/money-display';
+	import { formatMoneyDisplay, formatSignificantDigits } from '$lib/economy/money-display';
 
 	const { data, form } = $props();
 	const selectedGuild = $derived(
@@ -271,7 +271,7 @@
 						<p class="card-label">REPORTED FIAT VALUE</p>
 						<h3>현실화폐 연동 안내</h3>
 						<div class="fiat-values">
-							{#if data.fiatEconomy.exchangeRatePublic}<span>환율 <b>{data.fiatEconomy.exchangeRate ?? '산정 불가'} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}</b></span>{/if}
+							{#if data.fiatEconomy.exchangeRatePublic}<span>환율 <b>{data.fiatEconomy.exchangeRate ? formatSignificantDigits(data.fiatEconomy.exchangeRate) : '산정 불가'} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}</b></span>{/if}
 							{#if data.fiatEconomy.reservePublic}<span>장부상 준비금 <b>{formatMoneyDisplay(data.fiatEconomy.reserveAmount)} {data.fiatEconomy.currencyCode}</b></span>{/if}
 							{#if data.fiatEconomy.supplyPublic}<span>유통량 <b>{formatMoneyDisplay(data.fiatEconomy.tokenSupply)} {selectedGuild.currencyUnit}</b></span>{/if}
 						</div>

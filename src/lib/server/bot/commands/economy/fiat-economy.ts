@@ -1,5 +1,5 @@
 import { getLanguage } from '$lib/server/bot/i18n';
-import { formatMoneyDisplay } from '$lib/economy/money-display';
+import { formatMoneyDisplay, formatSignificantDigits } from '$lib/economy/money-display';
 import {
 	calculateFiatValue,
 	getFiatEconomy
@@ -113,7 +113,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		}
 	}
 	const rate = snapshot.exchangeRate
-		? `${snapshot.exchangeRate} ${snapshot.currencyCode}/${unit}`
+		? `${formatSignificantDigits(snapshot.exchangeRate)} ${snapshot.currencyCode}/${unit}`
 		: language === 'ko'
 			? '산정 불가'
 			: language === 'ja'

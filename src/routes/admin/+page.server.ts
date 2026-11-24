@@ -45,7 +45,7 @@ import {
 	setFiatEconomySettings
 } from '$lib/server/db/fiat-economy';
 import { moneyToCents, parseMoney } from '$lib/server/economy/money';
-import { formatMoneyDisplay } from '$lib/economy/money-display';
+import { formatMoneyDisplay, formatSignificantDigits } from '$lib/economy/money-display';
 import { selectGuildContext } from '$lib/server/guild-context';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
@@ -225,7 +225,7 @@ export const actions: Actions = {
 			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
 		try {
 			const result = await adjustReportedReserve({ guildId, administratorId: user.id, delta, reason, referenceNumber, notes });
-			return { success: true, message: `신고 준비금을 ${formatMoneyDisplay(result.reserveBefore)}에서 ${formatMoneyDisplay(result.reserveAfter)}(으)로 변경했습니다. 환율: ${result.rateBefore ?? '산정 불가'} → ${result.rateAfter ?? '산정 불가'}` };
+			return { success: true, message: `신고 준비금을 ${formatMoneyDisplay(result.reserveBefore)}에서 ${formatMoneyDisplay(result.reserveAfter)}(으)로 변경했습니다. 환율: ${result.rateBefore ? formatSignificantDigits(result.rateBefore) : '산정 불가'} → ${result.rateAfter ? formatSignificantDigits(result.rateAfter) : '산정 불가'}` };
 		} catch (error) {
 			if (error instanceof InsufficientReserveError)
 				return fail(400, { message: '장부상 준비금은 0 미만으로 조정할 수 없습니다.' });
@@ -254,7 +254,7 @@ export const actions: Actions = {
 		try {
 			const result = await redeemAndBurn({ guildId, userId: targetId, administratorId: user.id, tokenAmount, referenceNumber, notes });
 			await sendTransactionNotification(guildId, `🏦 **Reserve-linked burn · 준비금 연계 소각**\n대상: <@${targetId}>\n소각: **${formatMoneyDisplay(tokenAmount)}**\n장부상 준비금 차감: **${formatMoneyDisplay(result.fiatAmount)}**\n처리 관리자: <@${user.id}>`).catch(console.error);
-			return { success: true, message: `${member.nick || member.user.username}님의 ${formatMoneyDisplay(tokenAmount)}을 소각하고 장부상 준비금 ${formatMoneyDisplay(result.fiatAmount)}을 차감했습니다. 환율: ${result.rateBefore ?? '산정 불가'} → ${result.rateAfter ?? '산정 불가'}` };
+			return { success: true, message: `${member.nick || member.user.username}님의 ${formatMoneyDisplay(tokenAmount)}을 소각하고 장부상 준비금 ${formatMoneyDisplay(result.fiatAmount)}을 차감했습니다. 환율: ${result.rateBefore ? formatSignificantDigits(result.rateBefore) : '산정 불가'} → ${result.rateAfter ? formatSignificantDigits(result.rateAfter) : '산정 불가'}` };
 		} catch (error) {
 			if (error instanceof FiatEconomyDisabledError) return fail(400, { message: '현실화폐 연동을 먼저 활성화해 주세요.' });
 			if (error instanceof InsufficientReserveError) return fail(400, { message: '장부상 준비금이 부족합니다.' });

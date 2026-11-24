@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatMoneyDisplay } from '$lib/economy/money-display';
+	import { formatMoneyDisplay, formatSignificantDigits } from '$lib/economy/money-display';
 	const { data, form } = $props();
 	const selectedGuild = $derived(
 		data.guilds.find((guild: { id: string }) => guild.id === data.selectedGuildId)
@@ -145,7 +145,7 @@
 			<div class="economy-overview">
 				<div class="supply"><span>총 유통량</span><strong>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong></div>
 				<div class="overview-metric"><span>현재 장부상 준비금</span><strong>{formatMoneyDisplay(data.fiatEconomy?.reserveAmount ?? '0.00')} {data.fiatEconomy?.currencyCode ?? 'KRW'}</strong><small>서버 운영자 신고 기준</small></div>
-				<div class="overview-metric"><span>현재 환율</span><strong>{data.fiatEconomy?.enabled ? (data.fiatEconomy.exchangeRate ?? '산정 불가') : '연동 비활성'}</strong><small>{data.fiatEconomy?.enabled && data.fiatEconomy.exchangeRate ? `${data.fiatEconomy.currencyCode}/${selectedGuild.currencyUnit}` : '장부상 준비금 ÷ 전체 유통량'}</small></div>
+				<div class="overview-metric"><span>현재 환율</span><strong>{data.fiatEconomy?.enabled ? (data.fiatEconomy.exchangeRate ? formatSignificantDigits(data.fiatEconomy.exchangeRate) : '산정 불가') : '연동 비활성'}</strong><small>{data.fiatEconomy?.enabled && data.fiatEconomy.exchangeRate ? `${data.fiatEconomy.currencyCode}/${selectedGuild.currencyUnit}` : '장부상 준비금 ÷ 전체 유통량'}</small></div>
 			</div>
 			<section class="fiat-economy">
 				<div class="fiat-heading">
@@ -154,7 +154,7 @@
 				</div>
 				{#if data.fiatEconomy?.enabled}<div class="fiat-metrics">
 					<div><small>장부상 준비금</small><strong>{formatMoneyDisplay(data.fiatEconomy.reserveAmount)} {data.fiatEconomy.currencyCode}</strong></div>
-					<div><small>현재 환율</small><strong>{data.fiatEconomy.exchangeRate ?? '산정 불가'}{#if data.fiatEconomy.exchangeRate} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}{/if}</strong></div>
+					<div><small>현재 환율</small><strong>{data.fiatEconomy.exchangeRate ? formatSignificantDigits(data.fiatEconomy.exchangeRate) : '산정 불가'}{#if data.fiatEconomy.exchangeRate} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}{/if}</strong></div>
 					<div><small>유통량</small><strong>{formatMoneyDisplay(data.fiatEconomy.tokenSupply)} {selectedGuild.currencyUnit}</strong></div>
 				</div>{/if}
 				<form method="POST" action={`?/fiatSettings&guild=${selectedGuild.id}`} class="fiat-settings">

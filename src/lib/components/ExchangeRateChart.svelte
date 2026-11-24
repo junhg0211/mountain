@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { formatSignificantDigits } from '$lib/economy/money-display';
 	import type { IChartApi, UTCTimestamp } from 'lightweight-charts';
 
 	type Candle = {
@@ -41,7 +42,7 @@
 				borderVisible: false,
 				wickUpColor: '#69d7ae',
 				wickDownColor: '#e57d91',
-				priceFormat: { type: 'price', precision: 8, minMove: 0.00000001 }
+				priceFormat: { type: 'custom', minMove: 0.000000000001, formatter: formatSignificantDigits }
 			});
 			series.setData(
 				candles.map((candle) => ({
@@ -65,7 +66,7 @@
 	<div><span>EXCHANGE RATE HISTORY</span><h3>환율 캔들스틱</h3><small>장부상 준비금과 전체 유통량을 기반으로 한 시간별 환율입니다.</small></div>
 	{#if candles.length}
 		<div bind:this={container} class="chart-canvas" aria-label={`${currencyCode}/${currencyUnit} exchange-rate chart`}></div>
-		<div class="legend"><span>{candles[0].label} KST</span><span>{candles[candles.length - 1].label} KST</span><b>최근 {candles[candles.length - 1].close} {currencyCode}/{currencyUnit}</b></div>
+		<div class="legend"><span>{candles[0].label} KST</span><span>{candles[candles.length - 1].label} KST</span><b>최근 {formatSignificantDigits(candles[candles.length - 1].close)} {currencyCode}/{currencyUnit}</b></div>
 		<a class="attribution" href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noreferrer">Powered by TradingView Lightweight Charts™</a>
 	{:else}<p class="empty">준비금 장부 변동이 쌓이면 여기에 환율 캔들스틱이 표시됩니다.</p>{/if}
 </section>
