@@ -2,7 +2,6 @@ import { getLanguage } from '$lib/server/bot/i18n';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
 import {
 	calculateFiatValue,
-	FIAT_ECONOMY_NOTICE,
 	getFiatEconomy
 } from '$lib/server/db/fiat-economy';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
@@ -130,7 +129,7 @@ async function execute(interaction: ChatInputCommandInteraction) {
 		: '';
 	const heading = command === 'exchange-rate' ? 'Exchange rate · 환율' : command === 'real-value' ? 'Reported value · 현실 가치' : command === 'redemption-cost' ? 'Reserve-linked burn calculation · 준비금 연계 소각 계산' : 'Conversion · 환산';
 	await interaction.reply({
-		content: `## ${heading}\n${language === 'ko' ? '현재 환율' : 'Current rate'}: **${rate}**${line ? `\n${line}` : ''}\n\n${FIAT_ECONOMY_NOTICE}${snapshot.payoutNotice ? `\n\n${snapshot.payoutNotice}` : ''}`,
+		content: `## ${heading}\n${language === 'ko' ? '현재 환율' : 'Current rate'}: **${rate}**${line ? `\n${line}` : ''}${snapshot.payoutNotice ? `\n\n${snapshot.payoutNotice}` : ''}`,
 		flags: MessageFlags.Ephemeral
 	});
 }

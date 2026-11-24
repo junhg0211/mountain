@@ -1,9 +1,6 @@
 import { getDB } from '$lib/server/db';
 import { centsToMoney, moneyToCents } from '$lib/server/economy/money';
 
-export const FIAT_ECONOMY_NOTICE =
-	'표시된 준비금 및 환율은 서버 운영자가 등록한 정보를 기반으로 산정됩니다. Mountain은 준비금의 실재 여부를 검증하지 않으며, 현실 재화의 보관·지급·환전을 보장하지 않습니다.';
-
 export interface FiatEconomySettings {
 	enabled: boolean;
 	currencyCode: string;

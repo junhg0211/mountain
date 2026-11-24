@@ -152,9 +152,6 @@
 					<div><span>REPORTED RESERVE LEDGER</span><h3>현실화폐 연동</h3></div>
 					{#if data.fiatEconomy?.enabled}<b>활성</b>{:else}<b class="inactive">비활성</b>{/if}
 				</div>
-				<p class="fiat-disclaimer">
-					표시된 준비금 및 환율은 서버 운영자가 등록한 정보를 기반으로 산정됩니다. Mountain은 준비금의 실재 여부를 검증하지 않으며, 현실 재화의 보관·지급·환전을 보장하지 않습니다.
-				</p>
 				{#if data.fiatEconomy?.enabled}<div class="fiat-metrics">
 					<div><small>장부상 준비금</small><strong>{formatMoneyDisplay(data.fiatEconomy.reserveAmount)} {data.fiatEconomy.currencyCode}</strong></div>
 					<div><small>현재 환율</small><strong>{data.fiatEconomy.exchangeRate ?? '산정 불가'}{#if data.fiatEconomy.exchangeRate} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}{/if}</strong></div>
@@ -794,7 +791,7 @@
 	.fiat-heading h3, .fiat-economy h4 { margin: 6px 0 0; font-size: 21px; }
 	.fiat-heading b { padding: 5px 9px; color: #79dfb7; background: #153c32; border-radius: 999px; font-size: 11px; }
 	.fiat-heading b.inactive { color: #a9b1be; background: #292e37; }
-	.fiat-disclaimer, .reserve-adjustment > p, .reserve-burn > p { color: #abb4c2; font-size: 12px; line-height: 1.6; }
+	.reserve-adjustment > p, .reserve-burn > p { color: #abb4c2; font-size: 12px; line-height: 1.6; }
 	.fiat-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
 	.fiat-metrics > div { padding: 13px; background: #102a24; border: 1px solid #1f4b40; border-radius: 9px; }
 	.fiat-metrics small { display: block; color: #89a99f; font-size: 11px; }

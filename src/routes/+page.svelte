@@ -270,7 +270,6 @@
 					<section class="card fiat-card">
 						<p class="card-label">REPORTED FIAT VALUE</p>
 						<h3>현실화폐 연동 안내</h3>
-						<p>표시된 준비금 및 환율은 서버 운영자가 등록한 정보를 기반으로 산정됩니다. Mountain은 준비금의 실재 여부를 검증하지 않으며, 현실 재화의 보관·지급·환전을 보장하지 않습니다.</p>
 						<div class="fiat-values">
 							{#if data.fiatEconomy.exchangeRatePublic}<span>환율 <b>{data.fiatEconomy.exchangeRate ?? '산정 불가'} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}</b></span>{/if}
 							{#if data.fiatEconomy.reservePublic}<span>장부상 준비금 <b>{formatMoneyDisplay(data.fiatEconomy.reserveAmount)} {data.fiatEconomy.currencyCode}</b></span>{/if}
