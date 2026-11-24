@@ -163,7 +163,7 @@
 				<form method="POST" action={`?/fiatSettings&guild=${selectedGuild.id}`} class="fiat-settings">
 					<input type="hidden" name="guildId" value={selectedGuild.id} />
 					<label class="toggle"><input type="checkbox" name="enabled" checked={data.fiatEconomy?.enabled} /><span><b>현실화폐 연동 활성화</b><small>서버 운영자가 신고한 준비금을 기록하고 현실 가치를 고지합니다.</small></span></label>
-					<div class="settings-grid"><label>기준 현실화폐 (ISO 4217)<input name="currencyCode" value={data.fiatEconomy?.currencyCode ?? 'KRW'} maxlength="3" pattern="[A-Za-z]{3}" required /></label><label>현실 재화 지급 안내문<textarea name="payoutNotice" maxlength="1000" rows="2" placeholder="서버 운영자가 직접 제공하는 안내문입니다.">{data.fiatEconomy?.payoutNotice ?? ''}</textarea></label></div>
+					<div class="settings-grid"><label>기준 현실화폐 (ISO 4217)<input name="currencyCode" value={data.fiatEconomy?.currencyCode ?? 'KRW'} maxlength="3" required /></label><label>현실 재화 지급 안내문<textarea name="payoutNotice" maxlength="1000" rows="2" placeholder="서버 운영자가 직접 제공하는 안내문입니다.">{data.fiatEconomy?.payoutNotice ?? ''}</textarea></label></div>
 					<div class="fiat-toggles"><label class="toggle"><input type="checkbox" name="exchangeRatePublic" checked={data.fiatEconomy?.exchangeRatePublic} /><span><b>환율 공개</b></span></label><label class="toggle"><input type="checkbox" name="reservePublic" checked={data.fiatEconomy?.reservePublic} /><span><b>준비금 공개</b></span></label><label class="toggle"><input type="checkbox" name="supplyPublic" checked={data.fiatEconomy?.supplyPublic} /><span><b>유통량 공개</b></span></label></div>
 					<button>현실화폐 연동 설정 저장</button>
 				</form>
