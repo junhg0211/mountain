@@ -4,6 +4,7 @@ import { getDB } from '$lib/server/db';
 import { createTeamBettingPool, getBettingPools } from '$lib/server/db/betting';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { publishBettingUpdate } from '$lib/server/realtime';
+import { selectGuildContext } from '$lib/server/guild-context';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -30,10 +31,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			: null,
 		canManage: canManageGuild(String(row.permissions))
 	}));
-	const requested = url.searchParams.get('guild');
-	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requested)
-		? requested
-		: guilds[0]?.id || null;
+	const selectedGuildId = selectGuildContext(cookies, url.searchParams.get('guild'), guilds);
 	return {
 		user,
 		guilds,

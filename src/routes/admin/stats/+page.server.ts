@@ -3,6 +3,7 @@ import { getDB } from '$lib/server/db';
 import { getMemberActivityRanking, koreanActivityDate } from '$lib/server/db/member-activity';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { getGuildMembers } from '$lib/server/discord/users';
+import { selectGuildContext } from '$lib/server/guild-context';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
@@ -30,10 +31,9 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			id: String(row.guild_id),
 			name: String(row.guild_name)
 		}));
-	const requestedGuildId = url.searchParams.get('guild');
-	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requestedGuildId)
-		? requestedGuildId
-		: guilds[0]?.id || null;
+	const selectedGuildId = selectGuildContext(cookies, url.searchParams.get('guild'), guilds, {
+		preserveInvalidStoredSelection: true
+	});
 	const today = koreanActivityDate();
 	let startDate = DATE_PATTERN.test(url.searchParams.get('start') || '')
 		? url.searchParams.get('start')!

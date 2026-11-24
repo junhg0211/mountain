@@ -46,6 +46,7 @@ import {
 } from '$lib/server/db/fiat-economy';
 import { moneyToCents, parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
+import { selectGuildContext } from '$lib/server/guild-context';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -110,10 +111,9 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 					: null
 			})
 		);
-	const requested = url.searchParams.get('guild');
-	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requested)
-		? requested
-		: guilds[0]?.id || null;
+	const selectedGuildId = selectGuildContext(cookies, url.searchParams.get('guild'), guilds, {
+		preserveInvalidStoredSelection: true
+	});
 	const totalSupply = selectedGuildId ? await getTotalSupply(selectedGuildId) : '0.00';
 	const channels = selectedGuildId ? await getGuildTextChannels(selectedGuildId) : [];
 	const transactions = selectedGuildId ? await getGuildTransactions(selectedGuildId) : [];

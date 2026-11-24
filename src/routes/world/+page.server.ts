@@ -3,6 +3,7 @@ import { getDB } from '$lib/server/db';
 import { getInventory } from '$lib/server/db/items';
 import { getWorldSettings, listWorldCanvasCells, listWorldDoors, listWorldProps, listWorldRooms, listWorldTiles, listWorldTileTypes, listWorldWalls } from '$lib/server/db/world';
 import { getGuildCategories, getGuildMember, getGuildRoles } from '$lib/server/discord/users';
+import { selectGuildContext } from '$lib/server/guild-context';
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 
@@ -39,9 +40,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const user = await getSessionUser(cookies);
 	if (!user) redirect(303, '/login');
 	const guilds = await userGuilds(user.id);
-	const requested = url.searchParams.get('guild');
-	const selectedGuild = guilds.find((guild: { id: string }) => guild.id === requested) || guilds[0];
-	const guildId = selectedGuild?.id;
+	const guildId = selectGuildContext(cookies, url.searchParams.get('guild'), guilds);
 	if (!guildId || !(await getGuildMember(guildId, user.id))) return { user, guilds, ...emptyWorld };
 
 	const canManage = true;

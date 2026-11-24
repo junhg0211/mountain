@@ -9,6 +9,7 @@ import { addGuildMemberRole, getGuildMember, removeGuildMemberRole } from '$lib/
 import { parseMoney } from '$lib/server/economy/money';
 import { fail, redirect } from '@sveltejs/kit';
 import { sendTransactionNotification } from '$lib/server/bot/notifications';
+import { selectGuildContext } from '$lib/server/guild-context';
 import type { Actions, PageServerLoad } from './$types';
 
 async function membership(cookies: Parameters<typeof getSessionUser>[0], guildId: string) {
@@ -29,8 +30,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 	const guilds = rows.map((r: Record<string, unknown>) => ({
 		id: String(r.guild_id), name: String(r.guild_name), currencyUnit: String(r.currency_unit)
 	}));
-	const requested = url.searchParams.get('guild');
-	const selectedGuildId = guilds.some((g: { id: string }) => g.id === requested) ? requested : guilds[0]?.id || null;
+	const selectedGuildId = selectGuildContext(cookies, url.searchParams.get('guild'), guilds);
 	const [plans, payments] = selectedGuildId
 		? await Promise.all([listRolePlans(selectedGuildId), getUserAutomaticPayments(selectedGuildId, user.id)])
 		: [[], { subscriptions: [], transfers: [], runs: [] }];

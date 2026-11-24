@@ -29,6 +29,7 @@ import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { publishBettingUpdate } from '$lib/server/realtime';
 import { InsufficientBalanceError } from '$lib/server/db/accounts';
 import { getOrCreateBalance } from '$lib/server/db/accounts';
+import { rememberGuildContext, SELECTED_GUILD_COOKIE } from '$lib/server/guild-context';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -57,9 +58,10 @@ async function requireContext(cookies: Parameters<typeof getSessionUser>[0], gui
 }
 
 export const load: PageServerLoad = async ({ cookies, params, url }) => {
-	const guildId = url.searchParams.get('guild') || '';
+	const guildId = url.searchParams.get('guild') || cookies.get(SELECTED_GUILD_COOKIE) || '';
 	const user = await requireContext(cookies, guildId);
 	if (!user) redirect(303, '/login');
+	rememberGuildContext(cookies, guildId);
 	const pool = await getBettingPool(guildId, params.poolId);
 	if (!pool) redirect(303, `/bets?guild=${encodeURIComponent(guildId)}`);
 	const extras = await getBettingPoolExtras(guildId, params.poolId, user.user.id);

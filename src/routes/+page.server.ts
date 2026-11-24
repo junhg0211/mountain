@@ -57,6 +57,7 @@ import {
 } from '$lib/server/db/daily-memories';
 import { calculateVoiceReward, getVoiceActivityRemaining } from '$lib/server/db/voice-activity';
 import { publishBettingUpdate } from '$lib/server/realtime';
+import { selectGuildContext } from '$lib/server/guild-context';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
@@ -135,10 +136,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 					: null
 		};
 	});
-	const requestedGuildId = url.searchParams.get('guild');
-	const selectedGuildId = guilds.some((guild: { id: string }) => guild.id === requestedGuildId)
-		? requestedGuildId
-		: guilds[0]?.id || null;
+	const selectedGuildId = selectGuildContext(cookies, url.searchParams.get('guild'), guilds);
 
 	const rankingEnabled =
 		selectedGuildId &&
