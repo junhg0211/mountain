@@ -63,7 +63,7 @@
 </script>
 
 <section class="chart" aria-label="Exchange-rate candlestick chart">
-	<div><span>EXCHANGE RATE HISTORY</span><h3>환율 캔들스틱</h3><small>장부상 준비금과 전체 유통량을 기반으로 한 시간별 환율입니다.</small></div>
+	<div><span>EXCHANGE RATE HISTORY</span><h3>일별 환율 캔들스틱</h3><small>장부상 준비금과 전체 유통량을 기반으로 한 한국 시간 일별 환율입니다.</small></div>
 	{#if candles.length}
 		<div bind:this={container} class="chart-canvas" aria-label={`${currencyCode}/${currencyUnit} exchange-rate chart`}></div>
 		<div class="legend"><span>{candles[0].label} KST</span><span>{candles[candles.length - 1].label} KST</span><b>최근 {formatSignificantDigits(candles[candles.length - 1].close)} {currencyCode}/{currencyUnit}</b></div>

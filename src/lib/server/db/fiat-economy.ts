@@ -245,13 +245,13 @@ export function calculateTokenValue(snapshot: FiatEconomySnapshot, fiatAmount: s
 
 export async function listExchangeRateCandles(guildId: string, limit = 120) {
 	const db = await getDB();
-	const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 240));
+	const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 365));
 	const rows = await db`
 		SELECT exchange_rate, created_at
 		FROM exchange_rate_history
 		WHERE guild_id=${guildId} AND exchange_rate IS NOT NULL
 		ORDER BY id DESC
-		LIMIT ${safeLimit}
+		LIMIT 10000
 	`;
 	const buckets = new Map<string, { time: number; label: string; open: string; high: string; low: string; close: string }>();
 	for (const row of [...rows].reverse() as Array<Record<string, unknown>>) {
@@ -260,14 +260,13 @@ export async function listExchangeRateCandles(guildId: string, limit = 120) {
 			timeZone: 'Asia/Seoul',
 			year: 'numeric',
 			month: '2-digit',
-			day: '2-digit',
-			hour: '2-digit'
+			day: '2-digit'
 		}).format(date);
 		const value = String(row.exchange_rate);
 		const existing = buckets.get(label);
 		if (!existing) {
 			buckets.set(label, {
-				time: Math.floor(date.getTime() / 1000),
+				time: Math.floor(Date.parse(`${label}T00:00:00.000Z`) / 1000),
 				label,
 				open: value,
 				high: value,
@@ -280,5 +279,5 @@ export async function listExchangeRateCandles(guildId: string, limit = 120) {
 		if (Number(value) > Number(existing.high)) existing.high = value;
 		if (Number(value) < Number(existing.low)) existing.low = value;
 	}
-	return [...buckets.values()];
+	return [...buckets.values()].slice(-safeLimit);
 }
