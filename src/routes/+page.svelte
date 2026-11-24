@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import ExchangeRateChart from '$lib/components/ExchangeRateChart.svelte';
 	import { formatMoneyDisplay } from '$lib/economy/money-display';
 
 	const { data, form } = $props();
@@ -117,7 +118,8 @@
 			| 'scheduled_transfer'
 			| 'item_use'
 			| 'item_purchase'
-			| 'item_sale';
+			| 'item_sale'
+			| 'redemption_burn';
 		direction: 'credit' | 'debit';
 		counterparty: string | null;
 		bettingPool: { id: string; title: string } | null;
@@ -132,6 +134,7 @@
 		if (transaction.type === 'item_use') return '아이템 사용 보상';
 		if (transaction.type === 'item_purchase') return '아이템 구매';
 		if (transaction.type === 'item_sale') return '아이템 판매';
+		if (transaction.type === 'redemption_burn') return '준비금 연계 소각';
 		if (transaction.type === 'bet_stake')
 			return `#${transaction.bettingPool?.id} ${transaction.bettingPool?.title} 베팅`;
 		if (transaction.type === 'bet_payout')
@@ -263,6 +266,20 @@
 					</div>
 					<p>이 잔액은 현재 선택한 서버에서만 사용됩니다.</p>
 				</section>
+				{#if data.fiatEconomy?.enabled}
+					<section class="card fiat-card">
+						<p class="card-label">REPORTED FIAT VALUE</p>
+						<h3>현실화폐 연동 안내</h3>
+						<p>표시된 준비금 및 환율은 서버 운영자가 등록한 정보를 기반으로 산정됩니다. Mountain은 준비금의 실재 여부를 검증하지 않으며, 현실 재화의 보관·지급·환전을 보장하지 않습니다.</p>
+						<div class="fiat-values">
+							{#if data.fiatEconomy.exchangeRatePublic}<span>환율 <b>{data.fiatEconomy.exchangeRate ?? '산정 불가'} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}</b></span>{/if}
+							{#if data.fiatEconomy.reservePublic}<span>장부상 준비금 <b>{formatMoneyDisplay(data.fiatEconomy.reserveAmount)} {data.fiatEconomy.currencyCode}</b></span>{/if}
+							{#if data.fiatEconomy.supplyPublic}<span>유통량 <b>{formatMoneyDisplay(data.fiatEconomy.tokenSupply)} {selectedGuild.currencyUnit}</b></span>{/if}
+						</div>
+						{#if data.fiatEconomy.payoutNotice}<p class="payout-notice">{data.fiatEconomy.payoutNotice}</p>{/if}
+					</section>
+					{#if data.fiatEconomy.exchangeRatePublic}<section class="card"><ExchangeRateChart candles={data.exchangeRateCandles} currencyCode={data.fiatEconomy.currencyCode} currencyUnit={selectedGuild.currencyUnit} /></section>{/if}
+				{/if}
 
 				<section class="card shop-card">
 					<div class="inventory-heading">
@@ -1042,6 +1059,13 @@
 		font-size: 13px;
 		max-width: 240px;
 	}
+	.fiat-card { grid-column: 1 / -1; background: linear-gradient(120deg, #10251f, #11141a 58%); }
+	.fiat-card h3 { margin: 4px 0 8px; font-size: 22px; }
+	.fiat-card > p { max-width: 760px; color: #aeb8c3; font-size: 13px; line-height: 1.55; }
+	.fiat-values { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 17px; }
+	.fiat-values span { display: grid; gap: 4px; padding: 10px 12px; background: #102c24; border: 1px solid #235044; border-radius: 9px; color: #93afa5; font-size: 11px; }
+	.fiat-values b { color: #edf4ef; font-size: 13px; font-variant-numeric: tabular-nums; }
+	.fiat-card .payout-notice { margin: 16px 0 0; padding: 12px; border-left: 3px solid #6ed0aa; background: #10221e; color: #d5e4dc; white-space: pre-wrap; }
 	.inventory-card {
 		grid-column: 1 / -1;
 	}

@@ -43,6 +43,7 @@ import {
 } from '$lib/server/db/betting';
 import { canManageGuild } from '$lib/server/db/user-guilds';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
+import { getFiatEconomy, listExchangeRateCandles } from '$lib/server/db/fiat-economy';
 import { ensureUser } from '$lib/server/db/users';
 import { getGuildMember } from '$lib/server/discord/users';
 import { parseMoney } from '$lib/server/economy/money';
@@ -87,6 +88,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 			shopItems: [],
 			itemMovements: [],
 			dailyMemories: [],
+			fiatEconomy: null,
+			exchangeRateCandles: [],
 			defaultMemoryDate: yesterday(koreanDate().date),
 			notice
 		};
@@ -153,7 +156,9 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		inventory,
 		itemMovements,
 		shopItems,
-		dailyMemories
+		dailyMemories,
+		fiatEconomy,
+		exchangeRateCandles
 	] = selectedGuildId
 		? await Promise.all([
 				rankingEnabled ? getBalanceRanking(selectedGuildId) : Promise.resolve([]),
@@ -164,9 +169,11 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				getInventory(selectedGuildId, user.id),
 				getItemMovements(selectedGuildId, user.id, 10),
 				listItemDefinitions(selectedGuildId),
-				getAccessibleDailyMemories(selectedGuildId, user.id)
+				getAccessibleDailyMemories(selectedGuildId, user.id),
+				getFiatEconomy(selectedGuildId),
+				listExchangeRateCandles(selectedGuildId)
 			])
-		: [[], [], null, [], '0.00', [], [], [], []];
+		: [[], [], null, [], '0.00', [], [], [], [], null, []];
 	return {
 		user,
 		guilds,
@@ -181,6 +188,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		itemMovements,
 		shopItems: shopItems.filter((item) => item.purchasePrice !== null || item.sellPrice !== null),
 		dailyMemories,
+		fiatEconomy,
+		exchangeRateCandles,
 		defaultMemoryDate: yesterday(koreanDate().date),
 		notice
 	};

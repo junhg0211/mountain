@@ -97,7 +97,8 @@
 		scheduled_transfer: '자동 송금',
 		item_use: '아이템 사용',
 		item_purchase: '아이템 구매',
-		item_sale: '아이템 판매'
+		item_sale: '아이템 판매',
+		redemption_burn: '준비금 연계 소각'
 	};
 	function transactionRoute(transaction: Transaction) {
 		const sender = transaction.sender?.name || '시스템';
@@ -146,6 +147,38 @@
 					>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong
 				>
 			</div>
+			<section class="fiat-economy">
+				<div class="fiat-heading">
+					<div><span>REPORTED RESERVE LEDGER</span><h3>현실화폐 연동</h3></div>
+					{#if data.fiatEconomy?.enabled}<b>활성</b>{:else}<b class="inactive">비활성</b>{/if}
+				</div>
+				<p class="fiat-disclaimer">
+					표시된 준비금 및 환율은 서버 운영자가 등록한 정보를 기반으로 산정됩니다. Mountain은 준비금의 실재 여부를 검증하지 않으며, 현실 재화의 보관·지급·환전을 보장하지 않습니다.
+				</p>
+				{#if data.fiatEconomy?.enabled}<div class="fiat-metrics">
+					<div><small>장부상 준비금</small><strong>{formatMoneyDisplay(data.fiatEconomy.reserveAmount)} {data.fiatEconomy.currencyCode}</strong></div>
+					<div><small>현재 환율</small><strong>{data.fiatEconomy.exchangeRate ?? '산정 불가'}{#if data.fiatEconomy.exchangeRate} {data.fiatEconomy.currencyCode}/{selectedGuild.currencyUnit}{/if}</strong></div>
+					<div><small>유통량</small><strong>{formatMoneyDisplay(data.fiatEconomy.tokenSupply)} {selectedGuild.currencyUnit}</strong></div>
+				</div>{/if}
+				<form method="POST" action={`?/fiatSettings&guild=${selectedGuild.id}`} class="fiat-settings">
+					<input type="hidden" name="guildId" value={selectedGuild.id} />
+					<label class="toggle"><input type="checkbox" name="enabled" checked={data.fiatEconomy?.enabled} /><span><b>현실화폐 연동 활성화</b><small>서버 운영자가 신고한 준비금을 기록하고 현실 가치를 고지합니다.</small></span></label>
+					<div class="settings-grid"><label>기준 현실화폐 (ISO 4217)<input name="currencyCode" value={data.fiatEconomy?.currencyCode ?? 'KRW'} maxlength="3" pattern="[A-Za-z]{3}" required /></label><label>현실 재화 지급 안내문<textarea name="payoutNotice" maxlength="1000" rows="2" placeholder="서버 운영자가 직접 제공하는 안내문입니다.">{data.fiatEconomy?.payoutNotice ?? ''}</textarea></label></div>
+					<div class="fiat-toggles"><label class="toggle"><input type="checkbox" name="exchangeRatePublic" checked={data.fiatEconomy?.exchangeRatePublic} /><span><b>환율 공개</b></span></label><label class="toggle"><input type="checkbox" name="reservePublic" checked={data.fiatEconomy?.reservePublic} /><span><b>준비금 공개</b></span></label><label class="toggle"><input type="checkbox" name="supplyPublic" checked={data.fiatEconomy?.supplyPublic} /><span><b>유통량 공개</b></span></label></div>
+					<button>현실화폐 연동 설정 저장</button>
+				</form>
+				<form method="POST" action={`?/adjustReserve&guild=${selectedGuild.id}`} class="reserve-adjustment">
+					<input type="hidden" name="guildId" value={selectedGuild.id} />
+					<h4>신고 준비금 추가 및 조정</h4><p>실제 입금·지급이나 증빙은 확인하지 않고 장부 기록만 변경합니다.</p>
+					<div class="settings-grid"><label>변동액 (+/-)<input name="amount" inputmode="decimal" placeholder="10000.00 또는 -10000.00" required /></label><label>변동 사유<input name="reason" maxlength="500" required /></label><label>참조번호<input name="referenceNumber" maxlength="120" /></label><label>비고<textarea name="notes" maxlength="1000" rows="2"></textarea></label></div><button>장부상 준비금 변경</button>
+				</form>
+				<form method="POST" action={`?/redeemBurn&guild=${selectedGuild.id}`} class="reserve-burn" onsubmit={(event) => { if (!confirm('선택한 회원의 서버 화폐를 소각하고 대응하는 장부상 준비금을 차감합니다. 실제 현실 재화 지급은 Mountain 외부에서 직접 처리해야 합니다. 계속하시겠습니까?')) event.preventDefault(); }}>
+					<input type="hidden" name="guildId" value={selectedGuild.id} /><input type="hidden" name="targetId" value={target?.id || ''} />
+					<h4>준비금 연계 소각</h4><p>현재 환율로 차감액을 계산하여 화폐 소각·준비금 차감·이력 기록을 하나의 장부 거래로 처리합니다. 현실 재화 지급은 처리하지 않습니다.</p>
+					<label class="search">대상 사용자<input bind:value={query} oninput={schedule} autocomplete="off" placeholder="닉네임 또는 사용자 이름 검색" />{#if searching}<span class="search-state">검색 중…</span>{/if}{#if results.length}<div class="results">{#each results as member}<button type="button" onclick={() => choose(member)}>{#if member.avatarUrl}<img src={member.avatarUrl} alt="" />{:else}<i>{member.username.slice(0, 1)}</i>{/if}<span>{member.username}</span></button>{/each}</div>{/if}</label>
+					<label>소각할 서버 화폐 ({selectedGuild.currencyUnit})<input name="tokenAmount" inputmode="decimal" placeholder="0.01" required /></label><label>참조번호<input name="referenceNumber" maxlength="120" /></label><label>비고<textarea name="notes" maxlength="1000" rows="2"></textarea></label><button class="danger" disabled={!target || !data.fiatEconomy?.enabled}>준비금 연계 소각 확인</button>
+				</form>
+			</section>
 			<section class="item-manager">
 				<div class="item-manager-heading">
 					<div>
@@ -735,6 +768,31 @@
 		font-size: 34px;
 		margin-top: 6px;
 	}
+	.fiat-economy {
+		margin: 28px 0;
+		padding: 24px;
+		background: linear-gradient(145deg, #10221f, #0c0f14 62%);
+		border: 1px solid #245047;
+		border-radius: 14px;
+	}
+	.fiat-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+	.fiat-heading span { color: #6cd3ad; font-size: 10px; font-weight: 800; letter-spacing: .15em; }
+	.fiat-heading h3, .fiat-economy h4 { margin: 6px 0 0; font-size: 21px; }
+	.fiat-heading b { padding: 5px 9px; color: #79dfb7; background: #153c32; border-radius: 999px; font-size: 11px; }
+	.fiat-heading b.inactive { color: #a9b1be; background: #292e37; }
+	.fiat-disclaimer, .reserve-adjustment > p, .reserve-burn > p { color: #abb4c2; font-size: 12px; line-height: 1.6; }
+	.fiat-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
+	.fiat-metrics > div { padding: 13px; background: #102a24; border: 1px solid #1f4b40; border-radius: 9px; }
+	.fiat-metrics small { display: block; color: #89a99f; font-size: 11px; }
+	.fiat-metrics strong { display: block; margin-top: 5px; font-size: 15px; font-variant-numeric: tabular-nums; }
+	.card .fiat-economy form { max-width: none; margin-top: 22px; }
+	.fiat-settings, .reserve-adjustment, .reserve-burn { padding-top: 22px; border-top: 1px solid #245047; }
+	.fiat-economy textarea { display: block; width: 100%; margin-top: 7px; resize: vertical; }
+	.fiat-toggles { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+	.fiat-toggles .toggle { min-width: 150px; }
+	.reserve-adjustment .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.reserve-burn { max-width: 620px !important; }
+	.reserve-burn .search { position: relative; }
 	.item-manager {
 		margin: 28px 0 34px;
 		padding: 24px;
@@ -1422,6 +1480,10 @@
 			grid-template-columns: 1fr;
 		}
 		.card .item-editor form {
+			grid-template-columns: 1fr;
+		}
+		.fiat-metrics,
+		.reserve-adjustment .settings-grid {
 			grid-template-columns: 1fr;
 		}
 		.edit-description,

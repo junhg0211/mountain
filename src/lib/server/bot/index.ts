@@ -24,6 +24,7 @@ import subscription from './commands/economy/subscription';
 import ranking from './commands/economy/ranking';
 import inventory from './commands/economy/inventory';
 import useItem from './commands/economy/use-item';
+import fiatEconomy from './commands/economy/fiat-economy';
 import dashboard from './commands/utility/dashboard';
 import crypt, { handleCryptModal } from './commands/utility/crypt';
 import memory from './commands/utility/memory';
@@ -121,6 +122,7 @@ const commands = new Map<string, Command>([
 	[ranking.data.name, ranking],
 	[inventory.data.name, inventory],
 	[useItem.data.name, useItem],
+	[fiatEconomy.data.name, fiatEconomy],
 	[dashboard.data.name, dashboard],
 	[crypt.data.name, crypt],
 	[memory.data.name, memory],

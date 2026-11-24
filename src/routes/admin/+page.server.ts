@@ -35,6 +35,15 @@ import {
 } from '$lib/server/discord/users';
 import { getGuildRoles } from '$lib/server/discord/users';
 import { disableRolePlan, listRolePlans, saveRolePlan } from '$lib/server/db/automatic-payments';
+import {
+	adjustReportedReserve,
+	FiatEconomyDisabledError,
+	getFiatEconomy,
+	InsufficientReserveError,
+	InvalidRedemptionError,
+	redeemAndBurn,
+	setFiatEconomySettings
+} from '$lib/server/db/fiat-economy';
 import { moneyToCents, parseMoney } from '$lib/server/economy/money';
 import { formatMoneyDisplay } from '$lib/economy/money-display';
 import { fail, redirect } from '@sveltejs/kit';
@@ -115,6 +124,7 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 				listItemDefinitions(selectedGuildId, true)
 			])
 		: [[], [], []];
+	const fiatEconomy = selectedGuildId ? await getFiatEconomy(selectedGuildId) : null;
 	return {
 		user,
 		guilds,
@@ -124,7 +134,8 @@ export const load: PageServerLoad = async ({ cookies, url }) => {
 		transactions,
 		roles: roles.filter((role) => !role.managed && role.name !== '@everyone'),
 		rolePlans,
-		items
+		items,
+		fiatEconomy
 	};
 };
 
@@ -169,6 +180,88 @@ async function handleAdjustment(cookies: Cookies, request: Request, type: Balanc
 }
 
 export const actions: Actions = {
+	fiatSettings: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const currencyCode = String(form.get('currencyCode') || '').trim().toUpperCase();
+		const payoutNotice = String(form.get('payoutNotice') || '').trim();
+		if (!/^[A-Z]{3}$/.test(currencyCode))
+			return fail(400, { message: '기준 현실화폐는 ISO 4217 세 글자 코드로 입력해 주세요.' });
+		if (payoutNotice.length > 1000)
+			return fail(400, { message: '현실 재화 지급 안내문은 1,000자 이하여야 합니다.' });
+		const db = await getDB();
+		const rows = await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
+		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		await setFiatEconomySettings(guildId, {
+			enabled: form.get('enabled') === 'on',
+			currencyCode,
+			exchangeRatePublic: form.get('exchangeRatePublic') === 'on',
+			reservePublic: form.get('reservePublic') === 'on',
+			supplyPublic: form.get('supplyPublic') === 'on',
+			payoutNotice: payoutNotice || null
+		});
+		return { success: true, message: '현실화폐 연동의 장부 및 공개 설정을 저장했습니다.' };
+	},
+	adjustReserve: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const delta = parseSignedMoney(String(form.get('amount') || '').trim());
+		const reason = String(form.get('reason') || '').trim();
+		const referenceNumber = String(form.get('referenceNumber') || '').trim();
+		const notes = String(form.get('notes') || '').trim();
+		if (!delta) return fail(400, { message: '0이 아닌 금액을 소수점 둘째 자리까지 입력해 주세요.' });
+		if (!reason || reason.length > 500)
+			return fail(400, { message: '변동 사유를 1~500자로 입력해 주세요.' });
+		if (referenceNumber.length > 120 || notes.length > 1000)
+			return fail(400, { message: '참조번호 또는 비고가 너무 깁니다.' });
+		const db = await getDB();
+		const rows = await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
+		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		try {
+			const result = await adjustReportedReserve({ guildId, administratorId: user.id, delta, reason, referenceNumber, notes });
+			return { success: true, message: `신고 준비금을 ${formatMoneyDisplay(result.reserveBefore)}에서 ${formatMoneyDisplay(result.reserveAfter)}(으)로 변경했습니다. 환율: ${result.rateBefore ?? '산정 불가'} → ${result.rateAfter ?? '산정 불가'}` };
+		} catch (error) {
+			if (error instanceof InsufficientReserveError)
+				return fail(400, { message: '장부상 준비금은 0 미만으로 조정할 수 없습니다.' });
+			throw error;
+		}
+	},
+	redeemBurn: async ({ cookies, request }) => {
+		const user = await getSessionUser(cookies);
+		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
+		const form = await request.formData();
+		const guildId = String(form.get('guildId') || '');
+		const targetId = String(form.get('targetId') || '');
+		const tokenAmount = parseMoney(String(form.get('tokenAmount') || '').trim());
+		const referenceNumber = String(form.get('referenceNumber') || '').trim();
+		const notes = String(form.get('notes') || '').trim();
+		if (!/^\d{17,20}$/.test(targetId) || !tokenAmount)
+			return fail(400, { message: '서버 구성원과 0.01 이상의 소각량을 선택해 주세요.' });
+		if (referenceNumber.length > 120 || notes.length > 1000)
+			return fail(400, { message: '참조번호 또는 비고가 너무 깁니다.' });
+		const db = await getDB();
+		const rows = await db`SELECT permissions FROM user_guilds WHERE user_id=${user.id} AND guild_id=${guildId} LIMIT 1`;
+		if (rows.length !== 1 || !canManageGuild(String(rows[0].permissions)))
+			return fail(403, { message: '서버 관리 권한이 필요합니다.' });
+		const member = await getGuildMember(guildId, targetId);
+		if (!member || member.user.bot) return fail(400, { message: '같은 서버의 사용자를 선택해 주세요.' });
+		try {
+			const result = await redeemAndBurn({ guildId, userId: targetId, administratorId: user.id, tokenAmount, referenceNumber, notes });
+			await sendTransactionNotification(guildId, `🏦 **Reserve-linked burn · 준비금 연계 소각**\n대상: <@${targetId}>\n소각: **${formatMoneyDisplay(tokenAmount)}**\n장부상 준비금 차감: **${formatMoneyDisplay(result.fiatAmount)}**\n처리 관리자: <@${user.id}>`).catch(console.error);
+			return { success: true, message: `${member.nick || member.user.username}님의 ${formatMoneyDisplay(tokenAmount)}을 소각하고 장부상 준비금 ${formatMoneyDisplay(result.fiatAmount)}을 차감했습니다. 환율: ${result.rateBefore ?? '산정 불가'} → ${result.rateAfter ?? '산정 불가'}` };
+		} catch (error) {
+			if (error instanceof FiatEconomyDisabledError) return fail(400, { message: '현실화폐 연동을 먼저 활성화해 주세요.' });
+			if (error instanceof InsufficientReserveError) return fail(400, { message: '장부상 준비금이 부족합니다.' });
+			if (error instanceof InvalidRedemptionError) return fail(400, { message: '소각할 잔액, 유통량 또는 환율이 충분하지 않습니다.' });
+			throw error;
+		}
+	},
 	editItem: async ({ cookies, request }) => {
 		const user = await getSessionUser(cookies);
 		if (!user) return fail(401, { message: '로그인이 필요합니다.' });
@@ -579,4 +672,11 @@ export const actions: Actions = {
 function optionalPrice(value: FormDataEntryValue | null): string | null | undefined {
 	const raw = String(value || '').trim();
 	return raw === '' ? null : (parseMoney(raw) ?? undefined);
+}
+
+function parseSignedMoney(value: string): string | null {
+	if (!/^-?(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value)) return null;
+	const negative = value.startsWith('-');
+	const amount = parseMoney(negative ? value.slice(1) : value);
+	return amount ? `${negative ? '-' : ''}${amount}` : null;
 }

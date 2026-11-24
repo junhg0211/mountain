@@ -142,6 +142,12 @@ CREATE TABLE IF NOT EXISTS guild_settings (
     world_lobby_channel_id VARCHAR(255),
     world_spawn_x DOUBLE NOT NULL DEFAULT 20,
     world_spawn_y DOUBLE NOT NULL DEFAULT 15,
+    fiat_economy_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    fiat_currency_code CHAR(3) NOT NULL DEFAULT 'KRW',
+    exchange_rate_public BOOLEAN NOT NULL DEFAULT FALSE,
+    reserve_public BOOLEAN NOT NULL DEFAULT FALSE,
+    supply_public BOOLEAN NOT NULL DEFAULT FALSE,
+    fiat_payout_notice VARCHAR(1000),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -507,4 +513,66 @@ CREATE TABLE IF NOT EXISTS transactions (
     FOREIGN KEY (betting_pool_id) REFERENCES betting_pools(id) ON DELETE SET NULL,
     FOREIGN KEY (item_use_id) REFERENCES item_uses(id) ON DELETE SET NULL,
     CHECK (amount >= 0.01)
+);
+
+-- These are operator-reported ledger figures only. Mountain neither holds nor verifies fiat funds.
+CREATE TABLE IF NOT EXISTS fiat_reserves (
+    guild_id VARCHAR(255) PRIMARY KEY,
+    amount DECIMAL(30, 2) NOT NULL DEFAULT 0.00,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CHECK (amount >= 0.00)
+);
+
+CREATE TABLE IF NOT EXISTS fiat_reserve_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    event_type VARCHAR(24) NOT NULL,
+    amount_delta DECIMAL(30, 2) NOT NULL,
+    reserve_before DECIMAL(30, 2) NOT NULL,
+    reserve_after DECIMAL(30, 2) NOT NULL,
+    reason VARCHAR(500),
+    reference_number VARCHAR(120),
+    notes VARCHAR(1000),
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX fiat_reserve_events_guild_created_idx (guild_id, created_at),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS currency_redemptions (
+    id CHAR(36) PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    user_id VARCHAR(255) NOT NULL,
+    administrator_id VARCHAR(255) NOT NULL,
+    token_amount DECIMAL(30, 2) NOT NULL,
+    fiat_amount DECIMAL(30, 2) NOT NULL,
+    reserve_before DECIMAL(30, 2) NOT NULL,
+    reserve_after DECIMAL(30, 2) NOT NULL,
+    supply_before DECIMAL(30, 2) NOT NULL,
+    supply_after DECIMAL(30, 2) NOT NULL,
+    reference_number VARCHAR(120),
+    notes VARCHAR(1000),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX currency_redemptions_guild_created_idx (guild_id, created_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    FOREIGN KEY (administrator_id) REFERENCES users(id) ON DELETE RESTRICT,
+    CHECK (token_amount >= 0.01),
+    CHECK (fiat_amount >= 0.01)
+);
+
+CREATE TABLE IF NOT EXISTS exchange_rate_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    guild_id VARCHAR(255) NOT NULL,
+    reserve_amount DECIMAL(30, 2) NOT NULL,
+    token_supply DECIMAL(30, 2) NOT NULL,
+    exchange_rate DECIMAL(30, 12),
+    event_type VARCHAR(24) NOT NULL,
+    reserve_event_id BIGINT,
+    redemption_id CHAR(36),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX exchange_rate_history_guild_created_idx (guild_id, created_at),
+    FOREIGN KEY (reserve_event_id) REFERENCES fiat_reserve_events(id) ON DELETE SET NULL,
+    FOREIGN KEY (redemption_id) REFERENCES currency_redemptions(id) ON DELETE SET NULL,
+    CHECK (reserve_amount >= 0.00),
+    CHECK (token_supply >= 0.00)
 );

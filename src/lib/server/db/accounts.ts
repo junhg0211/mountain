@@ -22,7 +22,8 @@ export type TransactionType =
 	| 'scheduled_transfer'
 	| 'item_use'
 	| 'item_purchase'
-	| 'item_sale';
+	| 'item_sale'
+	| 'redemption_burn';
 
 export async function getOrCreateBalance(guildId: string, userId: string): Promise<string> {
 	const db = await getDB();
