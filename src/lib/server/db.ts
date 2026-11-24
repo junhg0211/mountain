@@ -579,6 +579,39 @@ async function repairItemUseForeignKey(connection: SQL, databaseName: string): P
 	);
 }
 
+const EXCHANGE_RATE_HISTORY_TRIGGER = `
+	CREATE TRIGGER transactions_exchange_rate_history_after_insert
+	AFTER INSERT ON transactions FOR EACH ROW
+	INSERT INTO exchange_rate_history (guild_id, reserve_amount, token_supply, exchange_rate, event_type)
+	SELECT NEW.guild_id, snapshot.reserve_amount, snapshot.token_supply,
+		CASE WHEN snapshot.token_supply > 0.00 THEN snapshot.reserve_amount / snapshot.token_supply ELSE NULL END,
+		'supply_change'
+	FROM (
+		SELECT fiat_reserves.amount AS reserve_amount,
+			(SELECT COALESCE(SUM(balance), 0.00) FROM accounts WHERE guild_id=NEW.guild_id) +
+			(SELECT COALESCE(SUM(betting_entries.amount), 0.00)
+			 FROM betting_entries JOIN betting_pools ON betting_pools.id=betting_entries.pool_id
+			 WHERE betting_pools.guild_id=NEW.guild_id AND betting_pools.status='open') +
+			(SELECT COALESCE(SUM(house_balance), 0.00) FROM betting_pools
+			 WHERE guild_id=NEW.guild_id AND status<>'archived') AS token_supply
+		FROM fiat_reserves JOIN guild_settings ON guild_settings.guild_id=fiat_reserves.guild_id
+		WHERE fiat_reserves.guild_id=NEW.guild_id AND guild_settings.fiat_economy_enabled=TRUE
+	) AS snapshot
+	WHERE NEW.transaction_type IN (
+		'mint', 'burn', 'attendance', 'voice_activity', 'daily_memory', 'monthly_burn',
+		'role_subscription', 'item_use', 'item_purchase', 'item_sale'
+	)
+`;
+
+async function repairExchangeRateHistoryTrigger(connection: SQL, databaseName: string): Promise<void> {
+	const rows = await connection`
+		SELECT 1 FROM information_schema.TRIGGERS
+		WHERE TRIGGER_SCHEMA=${databaseName} AND TRIGGER_NAME='transactions_exchange_rate_history_after_insert'
+		LIMIT 1
+	`;
+	if (rows.length === 0) await connection.unsafe(EXCHANGE_RATE_HISTORY_TRIGGER);
+}
+
 function databaseUrl(databaseName?: string): string {
 	const required = ['DB_USER', 'DB_PASS', 'DB_HOST', 'DB_PORT', 'DB_NAME'] as const;
 	const missing = required.filter((key) => !process.env[key]);
@@ -619,6 +652,7 @@ async function initializeDatabase(): Promise<SQL> {
 		for (const statement of TABLES) await connection.unsafe(statement);
 		for (const statement of REPAIRS) await connection.unsafe(statement);
 		await repairItemUseForeignKey(connection, databaseName);
+		await repairExchangeRateHistoryTrigger(connection, databaseName);
 		return connection;
 	} catch (error) {
 		await connection.close();

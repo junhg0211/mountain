@@ -576,3 +576,32 @@ CREATE TABLE IF NOT EXISTS exchange_rate_history (
     CHECK (reserve_amount >= 0.00),
     CHECK (token_supply >= 0.00)
 );
+
+DROP TRIGGER IF EXISTS transactions_exchange_rate_history_after_insert;
+
+CREATE TRIGGER transactions_exchange_rate_history_after_insert
+AFTER INSERT ON transactions FOR EACH ROW
+INSERT INTO exchange_rate_history (guild_id, reserve_amount, token_supply, exchange_rate, event_type)
+SELECT
+    NEW.guild_id,
+    snapshot.reserve_amount,
+    snapshot.token_supply,
+    CASE WHEN snapshot.token_supply > 0.00 THEN snapshot.reserve_amount / snapshot.token_supply ELSE NULL END,
+    'supply_change'
+FROM (
+    SELECT
+        fiat_reserves.amount AS reserve_amount,
+        (SELECT COALESCE(SUM(balance), 0.00) FROM accounts WHERE guild_id=NEW.guild_id) +
+        (SELECT COALESCE(SUM(betting_entries.amount), 0.00)
+         FROM betting_entries JOIN betting_pools ON betting_pools.id=betting_entries.pool_id
+         WHERE betting_pools.guild_id=NEW.guild_id AND betting_pools.status='open') +
+        (SELECT COALESCE(SUM(house_balance), 0.00) FROM betting_pools
+         WHERE guild_id=NEW.guild_id AND status<>'archived') AS token_supply
+    FROM fiat_reserves
+    JOIN guild_settings ON guild_settings.guild_id=fiat_reserves.guild_id
+    WHERE fiat_reserves.guild_id=NEW.guild_id AND guild_settings.fiat_economy_enabled=TRUE
+) AS snapshot
+WHERE NEW.transaction_type IN (
+    'mint', 'burn', 'attendance', 'voice_activity', 'daily_memory', 'monthly_burn',
+    'role_subscription', 'item_use', 'item_purchase', 'item_sale'
+);
