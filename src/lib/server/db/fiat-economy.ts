@@ -235,6 +235,14 @@ export function calculateFiatValue(snapshot: FiatEconomySnapshot, tokenAmount: s
 	return centsToMoney((moneyToCents(tokenAmount) * reserve) / supply);
 }
 
+export function calculateTokenValue(snapshot: FiatEconomySnapshot, fiatAmount: string): string | null {
+	if (!snapshot.enabled) return null;
+	const reserve = moneyToCents(snapshot.reserveAmount);
+	const supply = moneyToCents(snapshot.tokenSupply);
+	if (reserve <= 0n || supply <= 0n) return null;
+	return centsToMoney((moneyToCents(fiatAmount) * supply) / reserve);
+}
+
 export async function listExchangeRateCandles(guildId: string, limit = 120) {
 	const db = await getDB();
 	const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 240));

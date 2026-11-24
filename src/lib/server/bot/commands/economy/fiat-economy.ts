@@ -2,6 +2,7 @@ import { getLanguage } from '$lib/server/bot/i18n';
 import { formatMoneyDisplay, formatSignificantDigits } from '$lib/economy/money-display';
 import {
 	calculateFiatValue,
+	calculateTokenValue,
 	getFiatEconomy
 } from '$lib/server/db/fiat-economy';
 import { getCurrencyUnit } from '$lib/server/db/guild-settings';
@@ -65,6 +66,17 @@ const data = new SlashCommandBuilder()
 				[Locale.Korean]: '내 현재 소지금의 신고 기준 현실 가치를 확인합니다.',
 				[Locale.Japanese]: '現在の所持金の申告基準の現実価値を確認します。'
 			})
+	)
+	.addSubcommand((subcommand) =>
+		subcommand
+			.setName('fiat-convert')
+			.setNameLocalizations({ [Locale.Korean]: '현실화폐환산', [Locale.Japanese]: '現実通貨換算' })
+			.setDescription('Calculate the equivalent server currency for a fiat amount.')
+			.setDescriptionLocalizations({
+				[Locale.Korean]: '현실화폐 금액에 대응하는 서버 화폐를 계산합니다.',
+				[Locale.Japanese]: '現実通貨額に対応するサーバー通貨を計算します。'
+			})
+			.addStringOption(fiatAmountOption)
 	);
 
 function amountOption(option: SlashCommandStringOption) {
@@ -75,6 +87,18 @@ function amountOption(option: SlashCommandStringOption) {
 		.setDescriptionLocalizations({
 			[Locale.Korean]: '0.01 이상의 서버 화폐 금액입니다.',
 			[Locale.Japanese]: '0.01以上のサーバー通貨額です。'
+		})
+		.setRequired(true);
+}
+
+function fiatAmountOption(option: SlashCommandStringOption) {
+	return option
+		.setName('amount')
+		.setNameLocalizations({ [Locale.Korean]: '금액', [Locale.Japanese]: '金額' })
+		.setDescription('Fiat amount, at least 0.01.')
+		.setDescriptionLocalizations({
+			[Locale.Korean]: '0.01 이상의 현실화폐 금액입니다.',
+			[Locale.Japanese]: '0.01以上の現実通貨額です。'
 		})
 		.setRequired(true);
 }
@@ -119,7 +143,12 @@ async function execute(interaction: ChatInputCommandInteraction) {
 			: language === 'ja'
 				? '算定不可'
 				: 'unavailable';
-	const calculated = amount ? calculateFiatValue(snapshot, amount) : null;
+	const isFiatConversion = command === 'fiat-convert';
+	const calculated = amount
+		? isFiatConversion
+			? calculateTokenValue(snapshot, amount)
+			: calculateFiatValue(snapshot, amount)
+		: null;
 	const line = amount && calculated
 		? language === 'ko'
 			? `**${formatMoneyDisplay(amount)} ${unit}** → **${formatMoneyDisplay(calculated)} ${snapshot.currencyCode}**`
@@ -127,9 +156,12 @@ async function execute(interaction: ChatInputCommandInteraction) {
 				? `**${formatMoneyDisplay(amount)} ${unit}** → **${formatMoneyDisplay(calculated)} ${snapshot.currencyCode}**`
 				: `**${formatMoneyDisplay(amount)} ${unit}** → **${formatMoneyDisplay(calculated)} ${snapshot.currencyCode}**`
 		: '';
-	const heading = command === 'exchange-rate' ? 'Exchange rate · 환율' : command === 'real-value' ? 'Reported value · 현실 가치' : command === 'redemption-cost' ? 'Reserve-linked burn calculation · 준비금 연계 소각 계산' : 'Conversion · 환산';
+	const conversionLine = isFiatConversion && amount && calculated
+		? `**${formatMoneyDisplay(amount)} ${snapshot.currencyCode}** → **${formatMoneyDisplay(calculated)} ${unit}**`
+		: line;
+	const heading = command === 'exchange-rate' ? 'Exchange rate · 환율' : command === 'real-value' ? 'Reported value · 현실 가치' : command === 'redemption-cost' ? 'Reserve-linked burn calculation · 준비금 연계 소각 계산' : command === 'fiat-convert' ? 'Fiat conversion · 현실화폐 환산' : 'Conversion · 환산';
 	await interaction.reply({
-		content: `## ${heading}\n${language === 'ko' ? '현재 환율' : 'Current rate'}: **${rate}**${line ? `\n${line}` : ''}${snapshot.payoutNotice ? `\n\n${snapshot.payoutNotice}` : ''}`,
+		content: `## ${heading}\n${language === 'ko' ? '현재 환율' : 'Current rate'}: **${rate}**${conversionLine ? `\n${conversionLine}` : ''}${snapshot.payoutNotice ? `\n\n${snapshot.payoutNotice}` : ''}`,
 		flags: MessageFlags.Ephemeral
 	});
 }
