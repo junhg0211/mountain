@@ -142,10 +142,10 @@
 	{#if selectedGuild}<section class="card">
 			<span>SERVER SETTINGS</span>
 			<h2>{selectedGuild.name}</h2>
-			<div class="supply">
-				<span>총 유통량</span><strong
-					>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong
-				>
+			<div class="economy-overview">
+				<div class="supply"><span>총 유통량</span><strong>{formatMoneyDisplay(data.totalSupply)} {selectedGuild.currencyUnit}</strong></div>
+				<div class="overview-metric"><span>현재 장부상 준비금</span><strong>{formatMoneyDisplay(data.fiatEconomy?.reserveAmount ?? '0.00')} {data.fiatEconomy?.currencyCode ?? 'KRW'}</strong><small>서버 운영자 신고 기준</small></div>
+				<div class="overview-metric"><span>현재 환율</span><strong>{data.fiatEconomy?.enabled ? (data.fiatEconomy.exchangeRate ?? '산정 불가') : '연동 비활성'}</strong><small>{data.fiatEconomy?.enabled && data.fiatEconomy.exchangeRate ? `${data.fiatEconomy.currencyCode}/${selectedGuild.currencyUnit}` : '장부상 준비금 ÷ 전체 유통량'}</small></div>
 			</div>
 			<section class="fiat-economy">
 				<div class="fiat-heading">
@@ -752,22 +752,36 @@
 	.card h2 {
 		font-size: 28px;
 	}
-	.supply {
+	.economy-overview {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 12px;
 		margin: 24px 0;
+	}
+	.supply,
+	.overview-metric {
 		padding: 20px;
 		background: #17132b;
 		border-radius: 12px;
 	}
-	.supply span {
+	.overview-metric {
+		background: #10241f;
+		border: 1px solid #1d493c;
+	}
+	.supply span,
+	.overview-metric span {
 		display: block;
 		color: #8f97a6;
 		font-size: 12px;
 	}
-	.supply strong {
+	.supply strong,
+	.overview-metric strong {
 		display: block;
-		font-size: 34px;
+		font-size: 24px;
 		margin-top: 6px;
+		font-variant-numeric: tabular-nums;
 	}
+	.overview-metric small { display: block; margin-top: 7px; color: #86a89b; font-size: 11px; }
 	.fiat-economy {
 		margin: 28px 0;
 		padding: 24px;
@@ -1483,6 +1497,7 @@
 			grid-template-columns: 1fr;
 		}
 		.fiat-metrics,
+		.economy-overview,
 		.reserve-adjustment .settings-grid {
 			grid-template-columns: 1fr;
 		}
