@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { formatSignificantDigits } from '$lib/economy/money-display';
-	import type { IChartApi, UTCTimestamp } from 'lightweight-charts';
+	import type { IChartApi, Time } from 'lightweight-charts';
 
 	type Candle = {
-		time: number;
+		time: string;
 		label: string;
 		open: string;
 		high: string;
@@ -17,6 +17,17 @@
 		currencyUnit
 	}: { candles: Candle[]; currencyCode: string; currencyUnit: string } = $props();
 	let container = $state<HTMLDivElement>();
+	function formatKoreanDate(time: Time): string {
+		if (typeof time === 'string') return time;
+		if (typeof time === 'number')
+			return new Intl.DateTimeFormat('sv-SE', {
+				timeZone: 'Asia/Seoul',
+				year: 'numeric',
+				month: '2-digit',
+				day: '2-digit'
+			}).format(new Date(time * 1000));
+		return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`;
+	}
 
 	onMount(() => {
 		if (!candles.length) return;
@@ -34,7 +45,13 @@
 				},
 				grid: { vertLines: { color: '#17352c' }, horzLines: { color: '#17352c' } },
 				rightPriceScale: { borderColor: '#315448' },
-				timeScale: { borderColor: '#315448', timeVisible: true, secondsVisible: false }
+				localization: { locale: 'ko-KR', timeFormatter: formatKoreanDate },
+				timeScale: {
+					borderColor: '#315448',
+					timeVisible: false,
+					secondsVisible: false,
+					tickMarkFormatter: (time: Time) => formatKoreanDate(time).slice(5)
+				}
 			});
 			const series = chart.addSeries(CandlestickSeries, {
 				upColor: '#69d7ae',
@@ -46,7 +63,7 @@
 			});
 			series.setData(
 				candles.map((candle) => ({
-					time: candle.time as UTCTimestamp,
+					time: candle.time as Time,
 					open: Number(candle.open),
 					high: Number(candle.high),
 					low: Number(candle.low),

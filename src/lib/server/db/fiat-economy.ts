@@ -253,7 +253,7 @@ export async function listExchangeRateCandles(guildId: string, limit = 120) {
 		ORDER BY id DESC
 		LIMIT 10000
 	`;
-	const buckets = new Map<string, { time: number; label: string; open: string; high: string; low: string; close: string }>();
+	const buckets = new Map<string, { time: string; label: string; open: string; high: string; low: string; close: string }>();
 	for (const row of [...rows].reverse() as Array<Record<string, unknown>>) {
 		const date = new Date(row.created_at as string | number | Date);
 		const label = new Intl.DateTimeFormat('sv-SE', {
@@ -266,7 +266,7 @@ export async function listExchangeRateCandles(guildId: string, limit = 120) {
 		const existing = buckets.get(label);
 		if (!existing) {
 			buckets.set(label, {
-				time: Math.floor(Date.parse(`${label}T00:00:00.000Z`) / 1000),
+				time: label,
 				label,
 				open: value,
 				high: value,
