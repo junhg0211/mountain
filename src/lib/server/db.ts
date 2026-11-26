@@ -5,6 +5,100 @@ dotenv.config();
 
 let dbPromise: Promise<SQL> | null = null;
 
+const LOTTERY_TABLES = [
+	`CREATE TABLE IF NOT EXISTS lottery_funds (
+		guild_id VARCHAR(255) PRIMARY KEY,
+		holder_id VARCHAR(255) NOT NULL,
+		balance DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		FOREIGN KEY (holder_id) REFERENCES users(id) ON DELETE RESTRICT,
+		CHECK (balance >= 0.00)
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_rounds (
+		guild_id VARCHAR(255) NOT NULL,
+		round_number INT NOT NULL,
+		opens_at BIGINT NOT NULL,
+		closes_at BIGINT NOT NULL,
+		drawn_at TIMESTAMP NULL,
+		settled_at TIMESTAMP NULL,
+		status VARCHAR(16) NOT NULL DEFAULT 'open',
+		carry_in DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+		sales DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+		fund_before DECIMAL(15,2),
+		winning_numbers JSON,
+		total_weight INT NOT NULL DEFAULT 0,
+		paid DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+		burned DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+		carry_out DECIMAL(15,2),
+		PRIMARY KEY (guild_id, round_number),
+		INDEX lottery_rounds_due (status, closes_at)
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_tickets (
+		id CHAR(36) PRIMARY KEY,
+		guild_id VARCHAR(255) NOT NULL,
+		round_number INT NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		number SMALLINT NOT NULL,
+		purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		rank_number TINYINT,
+		weight TINYINT NOT NULL DEFAULT 0,
+		payout DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+		INDEX lottery_tickets_owner (guild_id, round_number, user_id),
+		FOREIGN KEY (guild_id, round_number) REFERENCES lottery_rounds(guild_id, round_number),
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+		CHECK (number BETWEEN 0 AND 399)
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_fund_movements (
+		id BIGINT AUTO_INCREMENT PRIMARY KEY,
+		guild_id VARCHAR(255) NOT NULL,
+		round_number INT NOT NULL,
+		transaction_id BIGINT NOT NULL,
+		movement_type VARCHAR(16) NOT NULL,
+		amount DECIMAL(15,2) NOT NULL,
+		balance_before DECIMAL(15,2) NOT NULL,
+		balance_after DECIMAL(15,2) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE KEY lottery_movement_transaction (transaction_id),
+		FOREIGN KEY (guild_id, round_number) REFERENCES lottery_rounds(guild_id, round_number),
+		FOREIGN KEY (transaction_id) REFERENCES transactions(id),
+		CHECK (amount >= 0.01), CHECK (balance_after >= 0.00)
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_payouts (
+		guild_id VARCHAR(255) NOT NULL,
+		round_number INT NOT NULL,
+		user_id VARCHAR(255) NOT NULL,
+		ticket_ids JSON NOT NULL,
+		weight INT NOT NULL,
+		amount DECIMAL(15,2) NOT NULL,
+		transaction_id BIGINT,
+		paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (guild_id, round_number, user_id),
+		FOREIGN KEY (guild_id, round_number) REFERENCES lottery_rounds(guild_id, round_number),
+		FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+	)`,
+	`CREATE TABLE IF NOT EXISTS lottery_announcements (
+		guild_id VARCHAR(255) NOT NULL,
+		round_number INT NOT NULL,
+		chunk_index INT NOT NULL,
+		content TEXT NOT NULL,
+		nonce VARCHAR(25) NOT NULL,
+		reserved_at BIGINT,
+		sent_at TIMESTAMP NULL,
+		PRIMARY KEY (guild_id, round_number, chunk_index),
+		FOREIGN KEY (guild_id, round_number) REFERENCES lottery_rounds(guild_id, round_number)
+	)`
+] as const;
+
+const LOTTERY_ACCOUNT_GUARD = `CREATE TRIGGER accounts_lottery_fund_guard BEFORE UPDATE ON accounts FOR EACH ROW
+BEGIN
+		DECLARE reserved DECIMAL(15,2) DEFAULT 0.00;
+		SELECT COALESCE(MAX(balance), 0.00) INTO reserved FROM lottery_funds
+		WHERE guild_id=OLD.guild_id AND holder_id=OLD.user_id LOCK IN SHARE MODE;
+		IF NEW.balance < reserved THEN
+			SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Lottery fund is reserved; insufficient general funds';
+		END IF;
+END`;
+
 const TABLES = [
 	`CREATE TABLE IF NOT EXISTS users (
 		id VARCHAR(255) PRIMARY KEY,
@@ -489,7 +583,8 @@ const TABLES = [
 		FOREIGN KEY (reserve_event_id) REFERENCES fiat_reserve_events(id) ON DELETE SET NULL,
 		FOREIGN KEY (redemption_id) REFERENCES currency_redemptions(id) ON DELETE SET NULL,
 		CHECK (reserve_amount >= 0.00), CHECK (token_supply >= 0.00)
-	)`
+	)`,
+	...LOTTERY_TABLES
 ] as const;
 
 const REPAIRS = [
@@ -603,7 +698,10 @@ const EXCHANGE_RATE_HISTORY_TRIGGER = `
 	)
 `;
 
-async function repairExchangeRateHistoryTrigger(connection: SQL, databaseName: string): Promise<void> {
+async function repairExchangeRateHistoryTrigger(
+	connection: SQL,
+	databaseName: string
+): Promise<void> {
 	const rows = await connection`
 		SELECT 1 FROM information_schema.TRIGGERS
 		WHERE TRIGGER_SCHEMA=${databaseName} AND TRIGGER_NAME='transactions_exchange_rate_history_after_insert'
@@ -650,6 +748,9 @@ async function initializeDatabase(): Promise<SQL> {
 
 	try {
 		for (const statement of TABLES) await connection.unsafe(statement);
+		const guards =
+			await connection`SELECT 1 FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=${databaseName} AND TRIGGER_NAME='accounts_lottery_fund_guard'`;
+		if (!guards.length) await connection.unsafe(LOTTERY_ACCOUNT_GUARD);
 		for (const statement of REPAIRS) await connection.unsafe(statement);
 		await repairItemUseForeignKey(connection, databaseName);
 		await repairExchangeRateHistoryTrigger(connection, databaseName);

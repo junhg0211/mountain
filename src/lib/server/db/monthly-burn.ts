@@ -93,6 +93,8 @@ export async function runDueMonthlyBurns(now = Date.now()): Promise<MonthlyBurnR
 				`;
 				return null;
 			}
+			const funds =
+				await tx`SELECT holder_id, balance FROM lottery_funds WHERE guild_id=${guildId} FOR UPDATE`;
 			const accounts = await tx`
 				SELECT user_id, balance FROM accounts
 				WHERE guild_id=${guildId} AND balance >= 0.01
@@ -102,7 +104,14 @@ export async function runDueMonthlyBurns(now = Date.now()): Promise<MonthlyBurnR
 			let total = 0n;
 			let affected = 0;
 			for (const account of accounts) {
-				const amountText = calculateMonthlyBurn(money(account.balance), basisPoints);
+				const reserved = funds.find(
+					(f: { holder_id: unknown }) => String(f.holder_id) === String(account.user_id)
+				);
+				const available =
+					moneyToCents(money(account.balance)) -
+					(reserved ? moneyToCents(money(reserved.balance)) : 0n);
+				if (available < 0n) throw new Error('Lottery fund exceeds holder balance.');
+				const amountText = calculateMonthlyBurn(centsToMoney(available), basisPoints);
 				const amount = moneyToCents(amountText);
 				if (amount < 1n) continue;
 				await tx`

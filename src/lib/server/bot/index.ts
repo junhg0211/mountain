@@ -16,6 +16,8 @@ import {
 } from 'discord.js';
 import settings from './commands/administration/settings';
 import attendance from './commands/economy/attendance';
+import lottery from './commands/economy/lottery';
+import { startLotteryScheduler, stopLotteryScheduler } from './lottery';
 import balance from './commands/economy/balance';
 import bet from './commands/economy/bet';
 import pay from './commands/economy/pay';
@@ -75,6 +77,7 @@ async function shutdown(signal: NodeJS.Signals) {
 	try {
 		await stopVoiceActivityRewards();
 		stopMonthlyBurnScheduler();
+		stopLotteryScheduler();
 		stopAutomaticPaymentScheduler();
 		stopAttendanceReminderScheduler();
 		stopDailyMemoryScheduler();
@@ -114,6 +117,7 @@ interface Command {
 const commands = new Map<string, Command>([
 	[settings.data.name, settings],
 	[attendance.data.name, attendance],
+	[lottery.data.name, lottery],
 	[balance.data.name, balance],
 	[bet.data.name, bet],
 	[pay.data.name, pay],
@@ -196,6 +200,7 @@ async function start() {
 		client.once(Events.ClientReady, () => {
 			console.log(`Logged in as ${client.user?.tag}!`);
 			startVoiceActivityRewards(client);
+			startLotteryScheduler(client);
 		});
 		client.on(Events.Error, (error) => console.error('Discord client error:', error));
 		client.on(Events.MessageCreate, (message) => {

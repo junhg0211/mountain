@@ -332,3 +332,49 @@ git status --short
 
 Review the diff, stage only task-related files, and create a Git commit. Do not amend or fold in
 unrelated user work. Report what changed, what was verified, and the resulting commit hash.
+
+## Weekly TOKUN lottery
+
+`/lottery buy|status|tickets|result|rules` uses guild-scoped lottery services in
+`src/lib/server/db/lottery.ts`. A ticket costs 1.00 TOKUN, with up to five per member per round.
+Numbers are 000–399; duplicates are separate tickets. The 15-second scheduler closes sales at
+Saturday 09:00 Asia/Seoul, persists 17 cryptographically sampled distinct numbers, and commits that
+draw before settlement. Recovery always reuses persisted numbers and catches up past rounds in
+order, including empty weeks. Commands reject late purchases even while settlement is pending.
+
+`lottery_funds` reserves part of the actual bot account; it is never extra supply or a separate
+account. Every purchase, payout, and burn has a normal transfer/burn ledger row linked through
+`lottery_fund_movements`, and payouts retain winning ticket IDs. Settlement locks the guild fund,
+round, and affected accounts, floors only final per-user payouts and the ten-percent burn, and
+carries all remaining cents forward. The next round is created in that same transaction. No
+winner means no payout, but the fund still incurs the ten-percent burn.
+
+The `accounts_lottery_fund_guard` database trigger rejects **every** account update that would
+leave the bot below its reservation, including ordinary transfers, betting, subscriptions, item
+purchases, redemption, and admin burns. Monthly percentage burns apply only to the bot's general
+funds. Keep this trigger installed; initialization must fail if schema permissions cannot install
+it. Lottery operations lock the fund before accounts and decrease the reservation before debiting
+settlement amounts within the same transaction. An account balance below its reservation or a
+round/fund accounting mismatch suspends lottery operations and emits an administrator notice to
+the transaction notification channel (throttled to once per hour per process).
+
+Results use the existing transaction notification channel configured by server administrators.
+`lottery_announcements` is a persistent, chunked delivery queue. Failed delivery is retried with a
+five-minute lease and stable Discord nonces, without invoking settlement again. Discord nonce
+deduplication has a limited lifetime, so an ambiguous delivery failure may eventually repeat an
+announcement; it can never repeat a monetary settlement. Missing channel configuration leaves
+announcements queued until a channel is configured. Personal ticket queries always bind the
+current guild and authenticated member. Historical rounds, tickets, and payments are retained.
+
+Validation:
+
+```bash
+bun test src/lib/server/economy/lottery.test.ts
+# Isolated MariaDB schema only; DB_NAME must begin with mountain_lottery_test.
+RUN_LOTTERY_DB_TESTS=1 DB_NAME=mountain_lottery_test bun test src/lib/server/db/lottery.integration.test.ts
+```
+
+The runtime creates all lottery tables idempotently on fresh and existing installations and
+installs the reservation trigger when missing. `database.sql` contains the same schema and trigger
+for manual provisioning. Re-register all Discord commands after deployment, preserving the
+Activity Entry Point through the existing `reloadCommands` implementation.
