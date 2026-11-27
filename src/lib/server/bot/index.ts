@@ -31,6 +31,7 @@ import dashboard from './commands/utility/dashboard';
 import crypt, { handleCryptModal } from './commands/utility/crypt';
 import memory from './commands/utility/memory';
 import record from './commands/utility/record';
+import dictionary from './commands/utility/dictionary';
 import { getLanguage } from './i18n';
 import { startMonthlyBurnScheduler, stopMonthlyBurnScheduler } from './monthly-burn';
 import { startVoiceActivityRewards, stopVoiceActivityRewards } from './voice-activity';
@@ -130,7 +131,8 @@ const commands = new Map<string, Command>([
 	[dashboard.data.name, dashboard],
 	[crypt.data.name, crypt],
 	[memory.data.name, memory],
-	[record.data.name, record]
+	[record.data.name, record],
+	[dictionary.data.name, dictionary]
 ]);
 
 const LOGIN_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000] as const;
